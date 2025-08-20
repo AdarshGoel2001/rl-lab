@@ -1,0 +1,5 @@
+# Training budget: 100k frames, eval schedule, checkpoint cadence
+frames: 100000
+eval_every_frames: 10000
+checkpoint_every_frames: 50000
+

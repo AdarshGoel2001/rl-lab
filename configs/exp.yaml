@@ -1,0 +1,8 @@
+# Top-level experiment selector
+algo: ppo
+env: atari.pong
+backbone:
+  encoder: impala
+  dynamics: null
+budget: 100k
+

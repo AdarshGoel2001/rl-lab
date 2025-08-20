@@ -1,0 +1,5 @@
+algorithm: vjepa_head
+hyperparameters:
+  lr: 3e-4
+  prediction_horizon: 8
+

@@ -1,0 +1,3 @@
+_target_: algos.dreamer_v3
+import: ../algos/dreamer_v3/config.yaml
+
