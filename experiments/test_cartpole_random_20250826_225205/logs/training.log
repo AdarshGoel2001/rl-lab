@@ -1,0 +1,34 @@
+2025-08-26 22:52:05,299 - src.core.trainer - INFO - Logging setup complete. Log file: experiments/test_cartpole_random_20250826_225205/logs/training.log
+2025-08-26 22:52:05,301 - src.utils.registry - INFO - Registered algorithm: random -> RandomAgent
+2025-08-26 22:52:05,302 - src.utils.registry - INFO - Registered network: mlp -> MLP
+2025-08-26 22:52:05,302 - src.utils.registry - INFO - Registered network: actor_mlp -> ActorMLP
+2025-08-26 22:52:05,302 - src.utils.registry - INFO - Registered network: critic_mlp -> CriticMLP
+2025-08-26 22:52:05,302 - src.utils.registry - INFO - Registered network: dueling_mlp -> DuelingMLP
+2025-08-26 22:52:05,303 - src.utils.registry - INFO - Registered environment: gym -> GymWrapper
+2025-08-26 22:52:05,304 - src.utils.registry - INFO - Registered buffer: trajectory -> TrajectoryBuffer
+2025-08-26 22:52:05,304 - src.core.trainer - INFO - Initializing environment...
+2025-08-26 22:52:05,360 - src.environments.gym_wrapper - INFO - Created Gym environment: CartPole-v1
+2025-08-26 22:52:05,360 - src.core.trainer - INFO - Environment: CartPole-v1
+2025-08-26 22:52:05,360 - src.core.trainer - INFO - Observation space: (4,)
+2025-08-26 22:52:05,360 - src.core.trainer - INFO - Action space: (np.int64(2),), discrete: True
+2025-08-26 22:52:05,360 - src.core.trainer - INFO - Initializing networks...
+2025-08-26 22:52:05,368 - src.core.trainer - INFO - Created main network: mlp
+2025-08-26 22:52:05,369 - src.core.trainer - INFO - Initializing algorithm...
+2025-08-26 22:52:05,369 - src.core.trainer - INFO - Created algorithm: random
+2025-08-26 22:52:05,369 - src.core.trainer - INFO - Initializing buffer...
+2025-08-26 22:52:05,369 - src.core.trainer - INFO - Created buffer: trajectory
+2025-08-26 22:52:05,372 - src.environments.gym_wrapper - INFO - Seed will be applied on next reset: 42
+2025-08-26 22:52:05,372 - src.core.trainer - INFO - Random seeds set to 42
+2025-08-26 22:52:05,372 - src.core.trainer - INFO - All components initialized successfully
+2025-08-26 22:52:05,373 - src.utils.checkpoint - INFO - Checkpoint manager initialized at experiments/test_cartpole_random_20250826_225205/checkpoints
+2025-08-26 22:52:05,373 - src.utils.checkpoint - INFO - No checkpoint found to load
+2025-08-26 22:52:05,373 - src.core.trainer - INFO - No checkpoint found, starting from scratch
+2025-08-26 22:52:05,373 - src.core.trainer - INFO - Trainer initialized for experiment: test_cartpole_random
+2025-08-26 22:52:05,373 - src.core.trainer - INFO - Experiment directory: experiments/test_cartpole_random_20250826_225205
+2025-08-26 22:52:05,375 - src.utils.config - INFO - Configuration saved to experiments/test_cartpole_random_20250826_225205/configs/config.yaml
+2025-08-26 22:52:05,405 - src.core.trainer - INFO - Experiment config saved to experiments/test_cartpole_random_20250826_225205/configs/config.yaml
+2025-08-26 22:52:05,405 - __main__ - INFO - Experiment directory: experiments/test_cartpole_random_20250826_225205
+2025-08-26 22:52:05,405 - __main__ - INFO - Configuration hash: d035b14d
+2025-08-26 22:52:05,405 - __main__ - INFO - Dry run mode - components initialized successfully
+2025-08-26 22:52:05,405 - __main__ - INFO - Configuration:
+2025-08-26 22:52:05,407 - src.core.trainer - INFO - Trainer cleanup completed
