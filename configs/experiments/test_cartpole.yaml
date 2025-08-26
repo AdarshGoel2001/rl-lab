@@ -1,0 +1,43 @@
+# Test Configuration for CartPole Environment
+# This is a minimal example to test the framework components
+
+experiment:
+  name: "test_cartpole_random"
+  seed: 42
+  device: "cpu"
+  debug: true
+
+algorithm:
+  name: "random"
+  # No additional hyperparameters needed for random agent
+
+environment:
+  name: "CartPole-v1"
+  wrapper: "gym"
+  normalize_obs: false
+  normalize_reward: false
+  max_episode_steps: 500
+
+network:
+  type: "mlp"
+  hidden_dims: [64, 64]
+  activation: "relu"
+  output_activation: "linear"
+  # input_dim and output_dim will be auto-detected from environment
+
+buffer:
+  type: "trajectory"
+  capacity: 1000
+  batch_size: 32
+
+training:
+  total_timesteps: 5000
+  eval_frequency: 1000
+  checkpoint_frequency: 2000
+  num_eval_episodes: 5
+
+logging:
+  terminal: true
+  tensorboard: false
+  wandb_enabled: false
+  log_frequency: 500

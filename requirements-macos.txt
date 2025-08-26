@@ -1,0 +1,50 @@
+# macOS/Apple Silicon Optimized Requirements
+# Specifically tested for Apple Silicon Macs
+
+# Core ML frameworks (CPU/MPS optimized)
+torch>=2.0.0
+torchvision>=0.15.0
+numpy>=1.24.0
+scipy>=1.11.0
+scikit-learn>=1.3.0
+
+# RL Environments
+gymnasium>=0.28.0
+dm-control>=1.0.14
+
+# Data and visualization
+pandas>=2.0.0
+matplotlib>=3.7.0
+seaborn>=0.12.0
+pillow>=10.0.0
+imageio>=2.31.0
+
+# Configuration and utilities  
+pyyaml>=6.0
+hydra-core>=1.3.0
+tqdm>=4.65.0
+
+# Monitoring and logging
+tensorboard>=2.13.0
+wandb>=0.15.0
+
+# Hyperparameter optimization
+optuna>=3.2.0
+
+# Development tools
+pytest>=7.3.0
+black>=23.3.0
+flake8>=6.0.0
+mypy>=1.4.0
+
+# Additional utilities
+opencv-python>=4.8.0
+psutil>=5.9.0
+
+# Optional packages (uncomment as needed)
+# atari-py>=0.2.9              # For Atari environments
+# box2d-py>=2.3.5              # For Box2D environments  
+# pybullet>=3.2.5              # For PyBullet environments
+
+# Note: This requirements file is optimized for macOS and Apple Silicon
+# PyTorch will automatically use MPS acceleration when available
