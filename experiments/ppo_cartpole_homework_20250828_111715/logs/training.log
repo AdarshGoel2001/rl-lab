@@ -1,0 +1,20 @@
+2025-08-28 11:17:15,006 - src.core.trainer - INFO - Logging setup complete. Log file: experiments/ppo_cartpole_homework_20250828_111715/logs/training.log
+2025-08-28 11:17:15,010 - src.utils.registry - INFO - Registered network: mlp -> MLP
+2025-08-28 11:17:15,010 - src.utils.registry - INFO - Registered network: actor_mlp -> ActorMLP
+2025-08-28 11:17:15,010 - src.utils.registry - INFO - Registered network: critic_mlp -> CriticMLP
+2025-08-28 11:17:15,010 - src.utils.registry - INFO - Registered network: dueling_mlp -> DuelingMLP
+2025-08-28 11:17:15,010 - src.utils.registry - INFO - Registered algorithm: ppo -> PPOAlgorithm
+2025-08-28 11:17:15,010 - src.utils.registry - INFO - Registered algorithm: random -> RandomAgent
+2025-08-28 11:17:15,012 - src.utils.registry - INFO - Registered environment: gym -> GymWrapper
+2025-08-28 11:17:15,014 - src.utils.registry - INFO - Registered buffer: trajectory -> TrajectoryBuffer
+2025-08-28 11:17:15,014 - src.core.trainer - INFO - Initializing environment...
+2025-08-28 11:17:15,061 - src.environments.gym_wrapper - INFO - Created Gym environment: CartPole-v1
+2025-08-28 11:17:15,061 - src.core.trainer - INFO - Environment: CartPole-v1
+2025-08-28 11:17:15,061 - src.core.trainer - INFO - Observation space: (4,)
+2025-08-28 11:17:15,061 - src.core.trainer - INFO - Action space: (np.int64(2),), discrete: True
+2025-08-28 11:17:15,061 - src.core.trainer - INFO - Initializing networks...
+2025-08-28 11:17:15,088 - src.core.trainer - INFO - Created actor network: actor_mlp
+2025-08-28 11:17:15,088 - src.core.trainer - INFO - Created critic network: critic_mlp
+2025-08-28 11:17:15,088 - src.core.trainer - INFO - Initializing algorithm...
+2025-08-28 11:17:15,088 - src.core.trainer - ERROR - Failed to initialize components: '<=' not supported between instances of 'float' and 'str'
+2025-08-28 11:17:15,088 - __main__ - ERROR - Training failed: '<=' not supported between instances of 'float' and 'str'

@@ -269,9 +269,10 @@ class CheckpointManager:
     
     def _get_rng_states(self) -> Dict[str, Any]:
         """Get current random number generator states"""
+        import random
         rng_states = {
             'numpy': np.random.get_state(),
-            'python': np.random.getstate(),  # For built-in random module
+            'python': random.getstate(),  # For built-in random module
         }
         
         # PyTorch CPU RNG state

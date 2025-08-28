@@ -17,8 +17,7 @@ tqdm>=4.65.0
 # Optimization and Hyperparameter Tuning
 optuna>=3.2.0
 
-# Visualization
-matplotlib>=3.7.0
+# Visualization (handled by TensorBoard/WandB)
 seaborn>=0.12.0
 
 # Development and Testing

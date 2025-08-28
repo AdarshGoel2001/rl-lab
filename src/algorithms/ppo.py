@@ -73,21 +73,28 @@ class PPOAlgorithm(BaseAlgorithm):
         config.setdefault('normalize_advantages', True)
         config.setdefault('clip_value_loss', True)
         
-        # Store PPO hyperparameters
-        self.lr = config['lr']
-        self.clip_ratio = config['clip_ratio']
-        self.value_coef = config['value_coef'] 
-        self.entropy_coef = config['entropy_coef']
-        self.max_grad_norm = config['max_grad_norm']
-        self.ppo_epochs = config['ppo_epochs']
-        self.minibatch_size = config['minibatch_size']
-        self.normalize_advantages = config['normalize_advantages']
-        self.clip_value_loss = config['clip_value_loss']
+        # Store PPO hyperparameters with type conversion
+        self.lr = float(config['lr'])
+        self.clip_ratio = float(config['clip_ratio'])
+        self.value_coef = float(config['value_coef']) 
+        self.entropy_coef = float(config['entropy_coef'])
+        self.max_grad_norm = float(config['max_grad_norm'])
+        self.ppo_epochs = int(config['ppo_epochs'])
+        self.minibatch_size = int(config['minibatch_size'])
+        self.normalize_advantages = bool(config['normalize_advantages'])
+        self.clip_value_loss = bool(config['clip_value_loss'])
         
         # Environment info (will be set by trainer)
-        self.obs_dim = config.get('obs_dim')
-        self.action_dim = config.get('action_dim') 
-        self.action_space_type = config.get('action_space_type', 'discrete')  # 'discrete' or 'continuous'
+        if 'observation_space' in config and 'action_space' in config:
+            obs_space = config['observation_space']
+            action_space = config['action_space']
+            self.obs_dim = obs_space.shape[0] if len(obs_space.shape) == 1 else obs_space.shape
+            self.action_dim = action_space.n if hasattr(action_space, 'n') else action_space.shape[0]
+            self.action_space_type = 'discrete' if hasattr(action_space, 'n') else 'continuous'
+        else:
+            self.obs_dim = config.get('obs_dim')
+            self.action_dim = config.get('action_dim') 
+            self.action_space_type = config.get('action_space_type', 'discrete')
         
         super().__init__(config)
     
@@ -106,19 +113,32 @@ class PPOAlgorithm(BaseAlgorithm):
         - Store networks in self.networks dict with keys 'actor' and 'critic'
         - Store optimizers in self.optimizers dict with keys 'actor' and 'critic'
         """
-        # TODO: Create actor network
-        # actor_config = {...}
-        # self.networks['actor'] = ActorMLP(actor_config)
+        # Check if networks are already provided by trainer
+        if 'networks' in self.config:
+            # Networks are already created by trainer
+            self.networks = self.config['networks']
+        else:
+            # Create actor network - 4 layer MLP with 64 neurons each
+            actor_config = {
+                'input_dim': self.obs_dim,
+                'output_dim': self.action_dim,
+                'hidden_dims': self.config['network']['actor']['hidden_dims'],  # From YAML
+                'activation': self.config['network']['actor']['activation']      # From YAML
+            }
+            self.networks['actor'] = ActorMLP(actor_config)
+            
+            # Create critic network - 3 layer MLP with 32 neurons each  
+            critic_config = {
+                'input_dim': self.obs_dim,
+                'output_dim': 1,
+                'hidden_dims': self.config['network']['critic']['hidden_dims'],  # From YAML
+                'activation': self.config['network']['critic']['activation']      # From YAML
+            }
+            self.networks['critic'] = CriticMLP(critic_config)
         
-        # TODO: Create critic network  
-        # critic_config = {...}
-        # self.networks['critic'] = CriticMLP(critic_config)
-        
-        # TODO: Create optimizers
-        # self.optimizers['actor'] = torch.optim.Adam(self.networks['actor'].parameters(), lr=self.lr)
-        # self.optimizers['critic'] = torch.optim.Adam(self.networks['critic'].parameters(), lr=self.lr)
-        
-        raise NotImplementedError("TODO: Implement _setup_networks_and_optimizers")
+        # Create Adam optimizers for both networks
+        self.optimizers['actor'] = torch.optim.Adam(self.networks['actor'].parameters(), lr=self.lr)
+        self.optimizers['critic'] = torch.optim.Adam(self.networks['critic'].parameters(), lr=self.lr)
     
     def act(self, observation: torch.Tensor, deterministic: bool = False) -> torch.Tensor:
         """
@@ -141,24 +161,23 @@ class PPOAlgorithm(BaseAlgorithm):
         - Don't forget to handle both training and evaluation modes
         """
         # TODO: Get action logits/parameters from actor network
-        # logits = self.networks['actor'](observation)
+        logits = self.networks['actor'](observation)
         
         # TODO: Create appropriate distribution (Categorical or Normal)
-        # if self.action_space_type == 'discrete':
-        #     dist = Categorical(logits=logits)
-        # else:
-        #     # For continuous actions, assume fixed std=1.0 for now
-        #     dist = Normal(logits, torch.ones_like(logits))
+        if self.action_space_type == 'discrete':
+            dist = Categorical(logits=logits)
+        else:
+            # For continuous actions, assume fixed std=1.0 for now
+            dist = Normal(logits, torch.ones_like(logits))
         
         # TODO: Select action (deterministic vs stochastic)
-        # if deterministic:
-        #     action = dist.mode if hasattr(dist, 'mode') else dist.mean
-        # else:
-        #     action = dist.sample()
+        if deterministic:
+            action = dist.mode if hasattr(dist, 'mode') else dist.mean
+        else:
+            action = dist.sample()
         
-        # return action
+        return action
         
-        raise NotImplementedError("TODO: Implement act method")
     
     def get_action_and_value(self, observation: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
@@ -180,21 +199,20 @@ class PPOAlgorithm(BaseAlgorithm):
         - Make sure to return log probability of the sampled action
         """
         # TODO: Get action logits and value
-        # action_logits = self.networks['actor'](observation)
-        # value = self.networks['critic'](observation)
+        action_logits = self.networks['actor'](observation)
+        value = self.networks['critic'](observation)
         
         # TODO: Create distribution and sample action
-        # if self.action_space_type == 'discrete':
-        #     dist = Categorical(logits=action_logits)
-        # else:
-        #     dist = Normal(action_logits, torch.ones_like(action_logits))
+        if self.action_space_type == 'discrete':
+            dist = Categorical(logits=action_logits)
+        else:
+            dist = Normal(action_logits, torch.ones_like(action_logits))
         
-        # action = dist.sample()
-        # log_prob = dist.log_prob(action)
+        action = dist.sample()
+        log_prob = dist.log_prob(action)
         
-        # return action, log_prob, value.squeeze(-1)
+        return action, log_prob, value.squeeze(-1)
         
-        raise NotImplementedError("TODO: Implement get_action_and_value method")
     
     def evaluate_actions(self, observations: torch.Tensor, actions: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
@@ -219,22 +237,21 @@ class PPOAlgorithm(BaseAlgorithm):
         - Return log_probs, values, and entropy
         """
         # TODO: Forward pass through networks
-        # action_logits = self.networks['actor'](observations)
-        # values = self.networks['critic'](observations)
+        action_logits = self.networks['actor'](observations)
+        values = self.networks['critic'](observations)
         
         # TODO: Create distribution
-        # if self.action_space_type == 'discrete':
-        #     dist = Categorical(logits=action_logits)
-        # else:
-        #     dist = Normal(action_logits, torch.ones_like(action_logits))
+        if self.action_space_type == 'discrete':
+            dist = Categorical(logits=action_logits)
+        else:
+            dist = Normal(action_logits, torch.ones_like(action_logits))
         
         # TODO: Evaluate actions
-        # log_probs = dist.log_prob(actions)
-        # entropy = dist.entropy()
+        log_probs = dist.log_prob(actions)
+        entropy = dist.entropy()
         
-        # return log_probs, values.squeeze(-1), entropy
+        return log_probs, values.squeeze(-1), entropy
         
-        raise NotImplementedError("TODO: Implement evaluate_actions method")
     
     def compute_ppo_loss(self, batch: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
@@ -263,44 +280,43 @@ class PPOAlgorithm(BaseAlgorithm):
         - Don't forget to normalize advantages if self.normalize_advantages is True
         """
         # TODO: Extract data from batch
-        # observations = batch['observations'] 
-        # actions = batch['actions']
-        # old_log_probs = batch['old_log_probs']
-        # advantages = batch['advantages']
-        # returns = batch['returns']
+        observations = batch['observations'] 
+        actions = batch['actions']
+        old_log_probs = batch['old_log_probs']
+        advantages = batch['advantages']
+        returns = batch['returns']
         
         # TODO: Normalize advantages if requested
-        # if self.normalize_advantages:
-        #     advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+        if self.normalize_advantages:
+           advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
         
         # TODO: Evaluate actions under current policy
-        # log_probs, values, entropy = self.evaluate_actions(observations, actions)
+        log_probs, values, entropy = self.evaluate_actions(observations, actions)
         
         # TODO: Compute probability ratio
-        # ratio = torch.exp(log_probs - old_log_probs)
+        ratio = torch.exp(log_probs - old_log_probs)
         
         # TODO: Compute clipped surrogate objective
-        # surr1 = ratio * advantages
-        # surr2 = torch.clamp(ratio, 1 - self.clip_ratio, 1 + self.clip_ratio) * advantages
-        # policy_loss = -torch.min(surr1, surr2).mean()
+        surr1 = ratio * advantages
+        surr2 = torch.clamp(ratio, 1 - self.clip_ratio, 1 + self.clip_ratio) * advantages
+        policy_loss = -torch.min(surr1, surr2).mean()
         
         # TODO: Compute value loss
-        # if self.clip_value_loss and 'old_values' in batch:
+        if self.clip_value_loss and 'old_values' in batch:
         #     # Clipped value loss
-        #     old_values = batch['old_values']
-        #     values_clipped = old_values + torch.clamp(values - old_values, -self.clip_ratio, self.clip_ratio)
-        #     value_loss1 = F.mse_loss(values, returns)
-        #     value_loss2 = F.mse_loss(values_clipped, returns)
-        #     value_loss = torch.max(value_loss1, value_loss2)
-        # else:
-        #     value_loss = F.mse_loss(values, returns)
+            old_values = batch['old_values']
+            values_clipped = old_values + torch.clamp(values - old_values, -self.clip_ratio, self.clip_ratio)
+            value_loss1 = F.mse_loss(values, returns)
+            value_loss2 = F.mse_loss(values_clipped, returns)
+            value_loss = torch.max(value_loss1, value_loss2)
+        else:
+            value_loss = F.mse_loss(values, returns)
         
         # TODO: Compute entropy loss (negative because we want to maximize entropy)
-        # entropy_loss = -entropy.mean()
+        entropy_loss = -entropy.mean()
         
-        # return policy_loss, value_loss, entropy_loss
+        return policy_loss, value_loss, entropy_loss
         
-        raise NotImplementedError("TODO: Implement compute_ppo_loss method")
     
     def update(self, batch: Dict[str, torch.Tensor]) -> Dict[str, float]:
         """
@@ -325,74 +341,73 @@ class PPOAlgorithm(BaseAlgorithm):
         - Increment self.step
         """
         # TODO: Convert batch to appropriate device
-        # batch = {k: v.to(self.device) for k, v in batch.items()}
+        batch = {k: v.to(self.device) for k, v in batch.items()}
         
         # TODO: Get batch size and prepare for minibatching
-        # batch_size = batch['observations'].shape[0]
-        # indices = np.arange(batch_size)
+        batch_size = batch['observations'].shape[0]
+        indices = np.arange(batch_size)
         
-        # metrics = {
-        #     'policy_loss': 0.0,
-        #     'value_loss': 0.0, 
-        #     'entropy_loss': 0.0,
-        #     'total_loss': 0.0,
-        #     'grad_norm': 0.0
-        # }
+        metrics = {
+             'policy_loss': 0.0,
+             'value_loss': 0.0, 
+             'entropy_loss': 0.0,
+             'total_loss': 0.0,
+             'grad_norm': 0.0
+         }
         
         # TODO: Multi-epoch training
-        # for epoch in range(self.ppo_epochs):
+        for epoch in range(self.ppo_epochs):
         #     # Shuffle data for each epoch
-        #     np.random.shuffle(indices)
-        #     
+             np.random.shuffle(indices)
+             
         #     # Process minibatches
-        #     for start in range(0, batch_size, self.minibatch_size):
-        #         end = start + self.minibatch_size
-        #         mb_indices = indices[start:end]
+             for start in range(0, batch_size, self.minibatch_size):
+                 end = start + self.minibatch_size
+                 mb_indices = indices[start:end]
         #         
         #         # Create minibatch
-        #         minibatch = {k: v[mb_indices] for k, v in batch.items()}
+                 minibatch = {k: v[mb_indices] for k, v in batch.items()}
         #         
         #         # Compute losses
-        #         policy_loss, value_loss, entropy_loss = self.compute_ppo_loss(minibatch)
-        #         total_loss = policy_loss + self.value_coef * value_loss + self.entropy_coef * entropy_loss
+                 policy_loss, value_loss, entropy_loss = self.compute_ppo_loss(minibatch)
+                 total_loss = policy_loss + self.value_coef * value_loss + self.entropy_coef * entropy_loss
         #         
         #         # Zero gradients
-        #         for optimizer in self.optimizers.values():
-        #             optimizer.zero_grad()
+                 for optimizer in self.optimizers.values():
+                     optimizer.zero_grad()
         #         
         #         # Backward pass
-        #         total_loss.backward()
+                 total_loss.backward()
         #         
         #         # Gradient clipping
-        #         if self.max_grad_norm > 0:
-        #             grad_norm = torch.nn.utils.clip_grad_norm_(
-        #                 list(self.networks['actor'].parameters()) + list(self.networks['critic'].parameters()),
-        #                 self.max_grad_norm
-        #             )
-        #         else:
-        #             grad_norm = 0.0
-        #         
+                 if self.max_grad_norm > 0:
+                     grad_norm = torch.nn.utils.clip_grad_norm_(
+                         list(self.networks['actor'].parameters()) + list(self.networks['critic'].parameters()),
+                         self.max_grad_norm
+                     )
+                 else:
+                     grad_norm = 0.0
+                 
         #         # Update parameters
-        #         for optimizer in self.optimizers.values():
-        #             optimizer.step()
+                 for optimizer in self.optimizers.values():
+                     optimizer.step()
         #         
         #         # Accumulate metrics
-        #         metrics['policy_loss'] += policy_loss.item()
-        #         metrics['value_loss'] += value_loss.item()
-        #         metrics['entropy_loss'] += entropy_loss.item() 
-        #         metrics['total_loss'] += total_loss.item()
-        #         metrics['grad_norm'] += grad_norm if isinstance(grad_norm, float) else grad_norm.item()
+                 metrics['policy_loss'] += policy_loss.item()
+                 metrics['value_loss'] += value_loss.item()
+                 metrics['entropy_loss'] += entropy_loss.item() 
+                 metrics['total_loss'] += total_loss.item()
+                 metrics['grad_norm'] += grad_norm if isinstance(grad_norm, float) else grad_norm.item()
         
         # TODO: Average metrics and increment step
-        # num_updates = self.ppo_epochs * (batch_size // self.minibatch_size)
-        # for key in metrics:
-        #     metrics[key] /= num_updates
-        # 
-        # self.step += 1
-        # 
-        # return metrics
+        num_updates = self.ppo_epochs * (batch_size // self.minibatch_size)
+        for key in metrics:
+             metrics[key] /= num_updates
+         
+        self.step += 1
+         
+        return metrics
         
-        raise NotImplementedError("TODO: Implement update method")
     
     def get_metrics(self) -> Dict[str, float]:
         """Get additional PPO-specific metrics for logging"""

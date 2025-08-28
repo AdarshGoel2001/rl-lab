@@ -50,8 +50,18 @@ class AlgorithmConfig:
     name: str
     lr: float = 3e-4
     
-    def __post_init__(self):
-        if self.lr <= 0:
+    def __init__(self, **kwargs):
+        # Allow arbitrary algorithm-specific parameters
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+        
+        # Validate required fields
+        if not hasattr(self, 'name'):
+            raise ConfigError("Algorithm name is required")
+        if not hasattr(self, 'lr'):
+            self.lr = 3e-4
+        
+        if hasattr(self, 'lr') and isinstance(self.lr, (int, float)) and self.lr <= 0:
             raise ConfigError(f"Learning rate must be positive, got {self.lr}")
 
 
@@ -88,10 +98,22 @@ class BufferConfig:
     capacity: int = 100000
     batch_size: int = 64
     
-    def __post_init__(self):
-        if self.capacity <= 0:
+    def __init__(self, **kwargs):
+        # Allow arbitrary buffer-specific parameters
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+        
+        # Set defaults for required fields
+        if not hasattr(self, 'type'):
+            self.type = 'trajectory'
+        if not hasattr(self, 'capacity'):
+            self.capacity = 100000
+        if not hasattr(self, 'batch_size'):
+            self.batch_size = 64
+        
+        if hasattr(self, 'capacity') and isinstance(self.capacity, int) and self.capacity <= 0:
             raise ConfigError(f"Buffer capacity must be positive, got {self.capacity}")
-        if self.batch_size <= 0:
+        if hasattr(self, 'batch_size') and isinstance(self.batch_size, int) and self.batch_size <= 0:
             raise ConfigError(f"Batch size must be positive, got {self.batch_size}")
 
 
@@ -103,8 +125,22 @@ class TrainingConfig:
     checkpoint_frequency: int = 50000
     num_eval_episodes: int = 10
     
-    def __post_init__(self):
-        if self.total_timesteps <= 0:
+    def __init__(self, **kwargs):
+        # Allow arbitrary training-specific parameters
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+        
+        # Set defaults for required fields
+        if not hasattr(self, 'total_timesteps'):
+            self.total_timesteps = 1000000
+        if not hasattr(self, 'eval_frequency'):
+            self.eval_frequency = 10000
+        if not hasattr(self, 'checkpoint_frequency'):
+            self.checkpoint_frequency = 50000
+        if not hasattr(self, 'num_eval_episodes'):
+            self.num_eval_episodes = 10
+        
+        if hasattr(self, 'total_timesteps') and isinstance(self.total_timesteps, int) and self.total_timesteps <= 0:
             raise ConfigError(f"Total timesteps must be positive, got {self.total_timesteps}")
 
 
@@ -118,8 +154,26 @@ class LoggingConfig:
     wandb_tags: list = None
     log_frequency: int = 1000
     
-    def __post_init__(self):
-        if self.wandb_tags is None:
+    def __init__(self, **kwargs):
+        # Allow arbitrary logging-specific parameters
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+        
+        # Set defaults for required fields
+        if not hasattr(self, 'terminal'):
+            self.terminal = True
+        if not hasattr(self, 'tensorboard'):
+            self.tensorboard = False
+        if not hasattr(self, 'wandb_enabled'):
+            self.wandb_enabled = False
+        if not hasattr(self, 'wandb_project'):
+            self.wandb_project = None
+        if not hasattr(self, 'wandb_tags'):
+            self.wandb_tags = []
+        if not hasattr(self, 'log_frequency'):
+            self.log_frequency = 1000
+        
+        if hasattr(self, 'wandb_tags') and self.wandb_tags is None:
             self.wandb_tags = []
 
 

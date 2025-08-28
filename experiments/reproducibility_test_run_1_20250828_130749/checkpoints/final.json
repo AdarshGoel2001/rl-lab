@@ -1,0 +1,7 @@
+{
+  "step": 2000,
+  "name": "final",
+  "is_best": false,
+  "experiment_dir": "experiments/reproducibility_test_run_1_20250828_130749",
+  "compress": true
+}

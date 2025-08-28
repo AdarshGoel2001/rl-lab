@@ -1,0 +1,1 @@
+{"train/entropy_loss":-0.686872374266386,"_runtime":1,"train/policy_loss":-0.014862255498883314,"train/grad_norm":5.918313854344888,"_step":5000,"train/time_elapsed":1.1116061210632324,"_wandb":{"runtime":1},"step":5000,"train/value_loss":326.9187878370285,"train/total_loss":163.43766278028488,"train/steps_per_second":4497.996102448216,"_timestamp":1.7563630622294521e+09}

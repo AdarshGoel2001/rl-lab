@@ -86,7 +86,7 @@ class TrajectoryBuffer(BaseBuffer):
             next_observation: Next observation
             done: Episode termination flag
             value: Value estimate (for advantage computation)
-            log_prob: Log probability of action (for policy gradient)
+            log_prob: Log probability of action (for policy gradient, stored as old_log_probs)
             **kwargs: Additional data to store with the step
         """
         # Start new trajectory if needed
@@ -125,12 +125,16 @@ class TrajectoryBuffer(BaseBuffer):
                 - actions: List of actions
                 - rewards: List of rewards  
                 - dones: List of done flags
-                - values: List of value estimates (optional)
-                - log_probs: List of log probabilities (optional)
+                - old_values: List of value estimates from policy that collected data (optional)
+                - old_log_probs: List of log probabilities from policy that collected data (optional)
         """
         if len(trajectory.get('observations', [])) == 0:
             logger.warning("Attempted to add empty trajectory")
             return
+        
+        # Compute returns and advantages if requested
+        if self.compute_returns:
+            trajectory = self._compute_trajectory_statistics(trajectory)
         
         # Add trajectory to buffer
         self.trajectories.append(trajectory)
@@ -179,9 +183,9 @@ class TrajectoryBuffer(BaseBuffer):
         returns = self._compute_returns(rewards, dones)
         trajectory['returns'] = returns
         
-        # Compute GAE advantages if values are provided
-        if 'values' in trajectory:
-            values = trajectory['values']
+        # Compute GAE advantages if old_values are provided
+        if 'old_values' in trajectory:
+            values = trajectory['old_values']
             advantages = self._compute_gae_advantages(rewards, values, dones)
             trajectory['advantages'] = advantages
         

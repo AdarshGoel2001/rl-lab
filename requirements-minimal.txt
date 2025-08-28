@@ -9,7 +9,6 @@ pyyaml>=6.0
 tqdm>=4.65.0
 
 # Basic RL functionality
-matplotlib>=3.7.0
 pandas>=2.0.0
 
 # Development and testing

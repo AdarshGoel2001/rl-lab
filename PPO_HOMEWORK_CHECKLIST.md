@@ -103,13 +103,13 @@ Welcome to your first PPO implementation! I've created the boilerplate code and 
 ### 1. Quick Functionality Test
 ```bash
 # Test basic functionality (should not crash)
-python scripts/train.py --config configs/experiments/ppo_cartpole.yaml --debug --total_timesteps 1000
+python scripts/train.py --config configs/experiments/ppo_cartpole.yaml --debug --total-timesteps 1000
 ```
 
 ### 2. Learning Test  
 ```bash  
 # Test learning (should improve over time)
-python scripts/train.py --config configs/experiments/ppo_cartpole.yaml --total_timesteps 25000
+python scripts/train.py --config configs/experiments/ppo_cartpole.yaml --total-timesteps 25000
 ```
 
 ### 3. Full Training

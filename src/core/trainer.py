@@ -24,6 +24,7 @@ import torch
 
 from src.utils.config import Config, ConfigManager
 from src.utils.checkpoint import CheckpointManager  
+from src.utils.logger import create_logger
 from src.utils.registry import (
     get_algorithm, get_environment, get_network, get_buffer,
     auto_import_modules, RegistryMixin
@@ -91,6 +92,13 @@ class Trainer(RegistryMixin):
             self.experiment_dir,
             auto_save_frequency=config.training.checkpoint_frequency,
             max_checkpoints=5
+        )
+        
+        # Initialize experiment logger
+        self.experiment_logger = create_logger(
+            self.experiment_dir,
+            config.logging.__dict__,
+            config.to_dict()
         )
         
         # Try to resume from checkpoint
@@ -198,6 +206,11 @@ class Trainer(RegistryMixin):
             
             logger.info("All components initialized successfully")
             
+            # Watch model parameters for W&B
+            if hasattr(self, 'experiment_logger'):
+                for name, network in self.networks.items():
+                    self.experiment_logger.watch_model(network, log_freq=1000)
+            
         except Exception as e:
             logger.error(f"Failed to initialize components: {e}")
             raise
@@ -303,6 +316,16 @@ class Trainer(RegistryMixin):
             }
             
             logger.info(f"Training completed successfully in {training_time:.1f}s")
+            
+            # Log final hyperparameters and results
+            self.experiment_logger.log_hyperparameters(
+                self._flatten_config_for_logging(self.config.to_dict()),
+                final_results
+            )
+            
+            # Cleanup logging
+            self.experiment_logger.finish()
+            
             return final_results
             
         except KeyboardInterrupt:
@@ -311,6 +334,9 @@ class Trainer(RegistryMixin):
             self.checkpoint_manager.save_checkpoint(
                 self._get_trainer_state(), self.step, name="interrupted"
             )
+            # Cleanup logging
+            if hasattr(self, 'experiment_logger'):
+                self.experiment_logger.finish()
             raise
             
         except Exception as e:
@@ -323,6 +349,10 @@ class Trainer(RegistryMixin):
                 logger.info("Emergency checkpoint saved")
             except Exception as checkpoint_error:
                 logger.error(f"Failed to save emergency checkpoint: {checkpoint_error}")
+            
+            # Cleanup logging
+            if hasattr(self, 'experiment_logger'):
+                self.experiment_logger.finish()
             raise
     
     def _training_step(self):
@@ -340,6 +370,17 @@ class Trainer(RegistryMixin):
             update_metrics = self.algorithm.update(batch)
             self.metrics.update(update_metrics)
             
+            # Log training metrics immediately after update
+            if update_metrics:
+                # Add timing information
+                if self.start_time is not None:
+                    elapsed = time.time() - self.start_time
+                    update_metrics['time_elapsed'] = elapsed
+                    update_metrics['steps_per_second'] = self.step / elapsed if elapsed > 0 else 0
+                
+                # Log training metrics to monitoring systems
+                self.experiment_logger.log_metrics(update_metrics, self.step, prefix='train')
+            
             # Clear buffer for on-policy algorithms
             if self.config.buffer.type == 'trajectory':
                 self.buffer.clear()
@@ -351,8 +392,78 @@ class Trainer(RegistryMixin):
         Returns:
             Complete trajectory if episode finished, None otherwise
         """
-        # This is a simplified version - in practice this would be more sophisticated
-        # For now, return None to indicate no complete trajectory yet
+        observations = []
+        actions = []
+        rewards = []
+        old_values = []
+        old_log_probs = []
+        dones = []
+        
+        # Set algorithm to training mode
+        self.algorithm.train()
+        
+        # Reset environment if needed
+        if not hasattr(self, '_current_obs') or self._episode_done:
+            self._current_obs = self.environment.reset()
+            self._episode_done = False
+            self.episode += 1
+        
+        # Collect trajectory up to buffer capacity
+        steps_collected = 0
+        buffer_capacity = self.config.buffer.capacity
+        
+        while steps_collected < buffer_capacity and self.step < self.config.training.total_timesteps:
+            # Get observation as tensor
+            obs_tensor = torch.FloatTensor(self._current_obs).unsqueeze(0).to(self.algorithm.device)
+            
+            # Get action, log_prob, and value from algorithm
+            with torch.no_grad():
+                if hasattr(self.algorithm, 'get_action_and_value'):
+                    action, log_prob, value = self.algorithm.get_action_and_value(obs_tensor)
+                    action = action.cpu().numpy().item()
+                    log_prob = log_prob.cpu().numpy().item()
+                    value = value.cpu().numpy().item()
+                else:
+                    # Fallback if get_action_and_value not implemented
+                    action_tensor = self.algorithm.act(obs_tensor, deterministic=False)
+                    action = action_tensor.cpu().numpy().item()
+                    log_prob = 0.0  # Placeholder
+                    value = 0.0     # Placeholder
+            
+            # Step environment
+            next_obs, reward, done, info = self.environment.step(action)
+            
+            # Store experience
+            observations.append(self._current_obs)
+            actions.append(action)
+            rewards.append(reward)
+            old_values.append(value)
+            old_log_probs.append(log_prob)
+            dones.append(done)
+            
+            # Update state
+            self._current_obs = next_obs
+            self._episode_done = done
+            self.step += 1
+            steps_collected += 1
+            
+            # If episode is done, reset for next episode
+            if done:
+                self._current_obs = self.environment.reset()
+                self._episode_done = False
+                self.episode += 1
+        
+        # Return trajectory data
+        if steps_collected > 0:
+            return {
+                'observations': np.array(observations),
+                'actions': np.array(actions),
+                'rewards': np.array(rewards),
+                'old_values': np.array(old_values),
+                'old_log_probs': np.array(old_log_probs),
+                'dones': np.array(dones)
+            }
+        
         return None
     
     def _evaluation_step(self) -> Dict[str, float]:
@@ -386,7 +497,9 @@ class Trainer(RegistryMixin):
                 while not done and episode_length < 1000:  # Max episode length
                     # Select action deterministically
                     with torch.no_grad():
-                        action = self.algorithm.act(obs, deterministic=True)
+                        obs_tensor = torch.FloatTensor(obs).unsqueeze(0).to(self.algorithm.device)
+                        action_tensor = self.algorithm.act(obs_tensor, deterministic=True)
+                        action = action_tensor.cpu().numpy().item()
                     
                     # Step environment
                     obs, reward, done, info = self.environment.step(action)
@@ -429,21 +542,45 @@ class Trainer(RegistryMixin):
             self.metrics['time_elapsed'] = elapsed
             self.metrics['steps_per_second'] = self.step / elapsed if elapsed > 0 else 0
         
-        # Log to console
-        if self.config.logging.terminal:
-            log_str = f"Step {self.step}"
-            for key, value in self.metrics.items():
-                if isinstance(value, (int, float)):
-                    log_str += f" | {key}: {value:.4f}"
-            logger.info(log_str)
+        # Separate training and evaluation metrics
+        train_metrics = {}
+        eval_metrics = {}
         
-        # TODO: Add TensorBoard and WandB logging here
+        for key, value in self.metrics.items():
+            if key.startswith('eval_'):
+                eval_metrics[key] = value
+            else:
+                train_metrics[key] = value
+        
+        # Log training metrics
+        if train_metrics:
+            self.experiment_logger.log_metrics(train_metrics, self.step, prefix='train')
+        
+        # Log evaluation metrics
+        if eval_metrics:
+            self.experiment_logger.log_metrics(eval_metrics, self.step, prefix='eval')
     
     def _should_terminate(self) -> bool:
         """Check if training should terminate early"""
         # TODO: Add early termination conditions
         # e.g., solved environment, performance threshold, etc.
         return False
+    
+    def _flatten_config_for_logging(self, config: Dict[str, Any], prefix: str = '') -> Dict[str, Any]:
+        """Flatten nested config for hyperparameter logging"""
+        flat_config = {}
+        
+        for key, value in config.items():
+            new_key = f"{prefix}.{key}" if prefix else key
+            
+            if isinstance(value, dict):
+                flat_config.update(self._flatten_config_for_logging(value, new_key))
+            elif isinstance(value, (int, float, str, bool, type(None))):
+                flat_config[new_key] = value
+            else:
+                flat_config[new_key] = str(value)
+        
+        return flat_config
     
     def _get_trainer_state(self) -> Dict[str, Any]:
         """Get current trainer state for checkpointing"""

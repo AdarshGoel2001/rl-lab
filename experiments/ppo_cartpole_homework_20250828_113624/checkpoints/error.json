@@ -1,0 +1,7 @@
+{
+  "step": 2048,
+  "name": "error",
+  "is_best": false,
+  "experiment_dir": "experiments/ppo_cartpole_homework_20250828_113624",
+  "compress": true
+}

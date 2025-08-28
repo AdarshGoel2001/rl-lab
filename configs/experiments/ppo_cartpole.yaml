@@ -19,7 +19,7 @@ experiment:
   name: "ppo_cartpole_homework"
   seed: 42                    # For reproducibility
   device: "cpu"               # Use CPU (fine for CartPole)
-  debug: false                # Set to true for verbose logging
+  debug: true                # Set to true for verbose logging
 
 algorithm:
   name: "ppo"                 # Use your PPO implementation
@@ -89,7 +89,7 @@ logging:
   log_frequency: 1000         # Log metrics every 1k steps
   
   # Weights & Biases logging (optional)
-  wandb_enabled: false        # Set to true if you want to use W&B
+  wandb_enabled: true        # Set to true if you want to use W&B
   wandb:
     project: "rl-lab-homework"
     tags: ["ppo", "cartpole", "homework"]

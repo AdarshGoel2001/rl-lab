@@ -93,7 +93,6 @@ def check_core_dependencies():
         ('PyYAML', 'yaml'),
         ('tqdm', 'tqdm'),
         ('Pandas', 'pandas'),
-        ('Matplotlib', 'matplotlib'),
         ('SciPy', 'scipy'),
     ]
     

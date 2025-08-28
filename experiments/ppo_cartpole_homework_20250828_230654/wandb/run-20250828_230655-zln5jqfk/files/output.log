@@ -1,0 +1,30 @@
+2025-08-28 23:06:56,831 - src.utils.logger - INFO - W&B logging enabled: https://wandb.ai/adarshgoel-rl-lab/rl-lab-homework/runs/zln5jqfk
+2025-08-28 23:06:56,831 - src.utils.logger - INFO - Experiment logger initialized: experiments/ppo_cartpole_homework_20250828_230654
+2025-08-28 23:06:56,831 - src.utils.checkpoint - INFO - No checkpoint found to load
+2025-08-28 23:06:56,831 - src.core.trainer - INFO - No checkpoint found, starting from scratch
+2025-08-28 23:06:56,832 - src.core.trainer - INFO - Trainer initialized for experiment: ppo_cartpole_homework
+2025-08-28 23:06:56,832 - src.core.trainer - INFO - Experiment directory: experiments/ppo_cartpole_homework_20250828_230654
+2025-08-28 23:06:56,834 - src.utils.config - INFO - Configuration saved to experiments/ppo_cartpole_homework_20250828_230654/configs/config.yaml
+2025-08-28 23:06:56,843 - src.core.trainer - INFO - Experiment config saved to experiments/ppo_cartpole_homework_20250828_230654/configs/config.yaml
+2025-08-28 23:06:56,844 - __main__ - INFO - Experiment directory: experiments/ppo_cartpole_homework_20250828_230654
+2025-08-28 23:06:56,844 - __main__ - INFO - Configuration hash: 027067c0
+2025-08-28 23:06:56,844 - __main__ - INFO - Starting training loop...
+2025-08-28 23:06:56,844 - src.core.trainer - INFO - Starting training...
+2025-08-28 23:06:56,844 - src.core.trainer - INFO - Target steps: 25000
+2025-08-28 23:06:56,844 - src.core.trainer - INFO - Evaluation frequency: 5000
+2025-08-28 23:06:56,844 - src.core.trainer - INFO - Checkpoint frequency: 10000
+2025-08-28 23:06:59,011 - src.utils.checkpoint - INFO - Checkpoint saved: experiments/ppo_cartpole_homework_20250828_230654/checkpoints/auto_step_10240.pt (step 10240)
+2025-08-28 23:06:59,012 - src.core.trainer - INFO - Auto-saved checkpoint at step 10240
+2025-08-28 23:07:01,046 - src.utils.checkpoint - INFO - Checkpoint saved: experiments/ppo_cartpole_homework_20250828_230654/checkpoints/auto_step_20480.pt (step 20480)
+2025-08-28 23:07:01,047 - src.core.trainer - INFO - Auto-saved checkpoint at step 20480
+2025-08-28 23:07:01,881 - src.core.trainer - INFO - Running evaluation at step 25000
+2025-08-28 23:07:02,167 - src.core.trainer - INFO - Evaluation complete - Mean return: 444.10
+2025-08-28 23:07:02,167 - src.utils.logger - INFO - Step 25000 | train/policy_loss: -0.0018 | train/value_loss: 2937.1364 | train/entropy_loss: -0.5939 | train/total_loss: 1468.5604 | train/grad_norm: 16.4884 | train/time_elapsed: 5.3228 | train/steps_per_second: 4696.7806
+2025-08-28 23:07:02,168 - src.utils.logger - INFO - Step 25000 | eval/eval_step: 25000.0000 | eval/eval_episode_count: 10.0000 | eval/eval_return_mean: 444.1000 | eval/eval_return_std: 90.1515 | eval/eval_return_min: 268.0000 | eval/eval_return_max: 500.0000 | eval/eval_length_mean: 444.1000
+2025-08-28 23:07:02,169 - src.core.trainer - INFO - Training completed, running final evaluation...
+2025-08-28 23:07:02,169 - src.core.trainer - INFO - Running evaluation at step 25000
+2025-08-28 23:07:02,442 - src.core.trainer - INFO - Evaluation complete - Mean return: 444.10
+2025-08-28 23:07:02,445 - src.utils.checkpoint - INFO - Checkpoint saved: experiments/ppo_cartpole_homework_20250828_230654/checkpoints/final.pt (step 25000)
+2025-08-28 23:07:02,445 - src.core.trainer - INFO - Final checkpoint saved: experiments/ppo_cartpole_homework_20250828_230654/checkpoints/final.pt
+2025-08-28 23:07:02,445 - src.core.trainer - INFO - Training completed successfully in 5.6s
+2025-08-28 23:07:02,452 - src.utils.logger - INFO - TensorBoard writer closed

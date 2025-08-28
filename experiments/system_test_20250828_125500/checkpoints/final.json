@@ -1,0 +1,7 @@
+{
+  "step": 2000,
+  "name": "final",
+  "is_best": false,
+  "experiment_dir": "experiments/system_test_20250828_125500",
+  "compress": true
+}

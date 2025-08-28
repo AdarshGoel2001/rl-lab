@@ -1,0 +1,70 @@
+2025-08-28 11:40:44,562 - src.core.trainer - INFO - Logging setup complete. Log file: experiments/ppo_cartpole_homework_20250828_114044/logs/training.log
+2025-08-28 11:40:44,564 - src.utils.registry - INFO - Registered network: mlp -> MLP
+2025-08-28 11:40:44,564 - src.utils.registry - INFO - Registered network: actor_mlp -> ActorMLP
+2025-08-28 11:40:44,564 - src.utils.registry - INFO - Registered network: critic_mlp -> CriticMLP
+2025-08-28 11:40:44,564 - src.utils.registry - INFO - Registered network: dueling_mlp -> DuelingMLP
+2025-08-28 11:40:44,564 - src.utils.registry - INFO - Registered algorithm: ppo -> PPOAlgorithm
+2025-08-28 11:40:44,564 - src.utils.registry - INFO - Registered algorithm: random -> RandomAgent
+2025-08-28 11:40:44,566 - src.utils.registry - INFO - Registered environment: gym -> GymWrapper
+2025-08-28 11:40:44,569 - src.utils.registry - INFO - Registered buffer: trajectory -> TrajectoryBuffer
+2025-08-28 11:40:44,569 - src.core.trainer - INFO - Initializing environment...
+2025-08-28 11:40:44,616 - src.environments.gym_wrapper - INFO - Created Gym environment: CartPole-v1
+2025-08-28 11:40:44,616 - src.core.trainer - INFO - Environment: CartPole-v1
+2025-08-28 11:40:44,616 - src.core.trainer - INFO - Observation space: (4,)
+2025-08-28 11:40:44,616 - src.core.trainer - INFO - Action space: (np.int64(2),), discrete: True
+2025-08-28 11:40:44,616 - src.core.trainer - INFO - Initializing networks...
+2025-08-28 11:40:44,639 - src.core.trainer - INFO - Created actor network: actor_mlp
+2025-08-28 11:40:44,640 - src.core.trainer - INFO - Created critic network: critic_mlp
+2025-08-28 11:40:44,640 - src.core.trainer - INFO - Initializing algorithm...
+2025-08-28 11:40:45,221 - src.core.trainer - INFO - Created algorithm: ppo
+2025-08-28 11:40:45,221 - src.core.trainer - INFO - Initializing buffer...
+2025-08-28 11:40:45,221 - src.core.trainer - INFO - Created buffer: trajectory
+2025-08-28 11:40:45,223 - src.environments.gym_wrapper - INFO - Seed will be applied on next reset: 42
+2025-08-28 11:40:45,223 - src.core.trainer - INFO - Random seeds set to 42
+2025-08-28 11:40:45,223 - src.core.trainer - INFO - All components initialized successfully
+2025-08-28 11:40:45,223 - src.utils.checkpoint - INFO - Checkpoint manager initialized at experiments/ppo_cartpole_homework_20250828_114044/checkpoints
+2025-08-28 11:40:45,224 - src.utils.checkpoint - INFO - No checkpoint found to load
+2025-08-28 11:40:45,224 - src.core.trainer - INFO - No checkpoint found, starting from scratch
+2025-08-28 11:40:45,224 - src.core.trainer - INFO - Trainer initialized for experiment: ppo_cartpole_homework
+2025-08-28 11:40:45,224 - src.core.trainer - INFO - Experiment directory: experiments/ppo_cartpole_homework_20250828_114044
+2025-08-28 11:40:45,226 - src.utils.config - INFO - Configuration saved to experiments/ppo_cartpole_homework_20250828_114044/configs/config.yaml
+2025-08-28 11:40:45,234 - src.core.trainer - INFO - Experiment config saved to experiments/ppo_cartpole_homework_20250828_114044/configs/config.yaml
+2025-08-28 11:40:45,234 - __main__ - INFO - Experiment directory: experiments/ppo_cartpole_homework_20250828_114044
+2025-08-28 11:40:45,234 - __main__ - INFO - Configuration hash: 027067c0
+2025-08-28 11:40:45,234 - __main__ - INFO - Starting training loop...
+2025-08-28 11:40:45,234 - src.core.trainer - INFO - Starting training...
+2025-08-28 11:40:45,234 - src.core.trainer - INFO - Target steps: 25000
+2025-08-28 11:40:45,234 - src.core.trainer - INFO - Evaluation frequency: 5000
+2025-08-28 11:40:45,234 - src.core.trainer - INFO - Checkpoint frequency: 10000
+2025-08-28 11:40:47,302 - src.utils.checkpoint - INFO - Checkpoint saved: experiments/ppo_cartpole_homework_20250828_114044/checkpoints/auto_step_10240.pt (step 10240)
+2025-08-28 11:40:47,302 - src.core.trainer - INFO - Auto-saved checkpoint at step 10240
+2025-08-28 11:40:49,225 - src.utils.checkpoint - INFO - Checkpoint saved: experiments/ppo_cartpole_homework_20250828_114044/checkpoints/auto_step_20480.pt (step 20480)
+2025-08-28 11:40:49,226 - src.core.trainer - INFO - Auto-saved checkpoint at step 20480
+2025-08-28 11:40:50,042 - src.core.trainer - INFO - Running evaluation at step 25000
+2025-08-28 11:40:50,180 - src.core.trainer - INFO - Evaluation complete - Mean return: 227.60
+2025-08-28 11:40:50,180 - src.core.trainer - INFO - Step 25000 | policy_loss: -0.0004 | value_loss: 2730.6449 | entropy_loss: -0.5937 | total_loss: 1365.3161 | grad_norm: 14.9896 | eval_step: 25000.0000 | eval_episode_count: 10.0000 | eval_return_mean: 227.6000 | eval_return_std: 44.5066 | eval_return_min: 181.0000 | eval_return_max: 329.0000 | eval_length_mean: 227.6000 | time_elapsed: 4.9456 | steps_per_second: 5054.9567
+2025-08-28 11:40:50,180 - src.core.trainer - INFO - Training completed, running final evaluation...
+2025-08-28 11:40:50,180 - src.core.trainer - INFO - Running evaluation at step 25000
+2025-08-28 11:40:50,319 - src.core.trainer - INFO - Evaluation complete - Mean return: 227.60
+2025-08-28 11:40:50,322 - src.utils.checkpoint - INFO - Checkpoint saved: experiments/ppo_cartpole_homework_20250828_114044/checkpoints/final.pt (step 25000)
+2025-08-28 11:40:50,322 - src.core.trainer - INFO - Final checkpoint saved: experiments/ppo_cartpole_homework_20250828_114044/checkpoints/final.pt
+2025-08-28 11:40:50,322 - src.core.trainer - INFO - Training completed successfully in 5.1s
+2025-08-28 11:40:50,322 - __main__ - INFO - Training completed successfully!
+2025-08-28 11:40:50,322 - __main__ - INFO - Final results:
+2025-08-28 11:40:50,322 - __main__ - INFO -   final_step: 25000.0000
+2025-08-28 11:40:50,322 - __main__ - INFO -   training_time: 5.0876
+2025-08-28 11:40:50,322 - __main__ - INFO -   steps_per_second: 5054.9567
+2025-08-28 11:40:50,322 - __main__ - INFO -   policy_loss: -0.0004
+2025-08-28 11:40:50,322 - __main__ - INFO -   value_loss: 2730.6449
+2025-08-28 11:40:50,322 - __main__ - INFO -   entropy_loss: -0.5937
+2025-08-28 11:40:50,322 - __main__ - INFO -   total_loss: 1365.3161
+2025-08-28 11:40:50,322 - __main__ - INFO -   grad_norm: 14.9896
+2025-08-28 11:40:50,322 - __main__ - INFO -   eval_step: 25000.0000
+2025-08-28 11:40:50,322 - __main__ - INFO -   eval_episode_count: 10.0000
+2025-08-28 11:40:50,322 - __main__ - INFO -   eval_return_mean: 227.6000
+2025-08-28 11:40:50,322 - __main__ - INFO -   eval_return_std: 44.5066
+2025-08-28 11:40:50,322 - __main__ - INFO -   eval_return_min: 181.0000
+2025-08-28 11:40:50,322 - __main__ - INFO -   eval_return_max: 329.0000
+2025-08-28 11:40:50,322 - __main__ - INFO -   eval_length_mean: 227.6000
+2025-08-28 11:40:50,322 - __main__ - INFO -   time_elapsed: 4.9456
+2025-08-28 11:40:50,323 - src.core.trainer - INFO - Trainer cleanup completed
