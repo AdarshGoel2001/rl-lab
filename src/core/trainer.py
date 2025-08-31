@@ -22,7 +22,7 @@ from typing import Dict, Any, Optional, Tuple
 import numpy as np
 import torch
 
-from src.utils.config import Config, ConfigManager
+from src.utils.config import Config, ConfigManager, resolve_device
 from src.utils.checkpoint import CheckpointManager  
 from src.utils.logger import create_logger
 from src.utils.registry import (
@@ -153,6 +153,9 @@ class Trainer(RegistryMixin):
                 for net_name, net_config in self.config.network.items():
                     net_config_dict = net_config.__dict__.copy()
                     
+                    # Add device info to network config
+                    net_config_dict['device'] = resolve_device(self.config.experiment.device)
+                    
                     # Set dimensions if not specified
                     if net_config_dict.get('input_dim') is None:
                         net_config_dict['input_dim'] = obs_space.shape
@@ -163,6 +166,15 @@ class Trainer(RegistryMixin):
                         elif net_name == 'critic':
                             net_config_dict['output_dim'] = 1
                     
+                    # For continuous control actors, pass algorithm's continuous control parameters
+                    # Networks will use what they need and ignore the rest
+                    if net_name == 'actor' and not action_space.discrete:
+                        algorithm_config = self.config.algorithm.__dict__
+                        continuous_params = ['action_bounds', 'log_std_init', 'use_tanh_squashing']
+                        for param in continuous_params:
+                            if param in algorithm_config:
+                                net_config_dict[param] = algorithm_config[param]
+                    
                     net_class = get_network(net_config.type)
                     self.networks[net_name] = net_class(net_config_dict)
                     logger.info(f"Created {net_name} network: {net_config.type}")
@@ -170,6 +182,9 @@ class Trainer(RegistryMixin):
             else:
                 # Single network
                 net_config = self.config.network.__dict__.copy()
+                
+                # Add device info to network config
+                net_config['device'] = resolve_device(self.config.experiment.device)
                 
                 if net_config.get('input_dim') is None:
                     net_config['input_dim'] = obs_space.shape
@@ -186,7 +201,7 @@ class Trainer(RegistryMixin):
             algorithm_config['networks'] = self.networks
             algorithm_config['observation_space'] = obs_space
             algorithm_config['action_space'] = action_space
-            algorithm_config['device'] = self.config.experiment.device
+            algorithm_config['device'] = resolve_device(self.config.experiment.device)
             
             algorithm_class = get_algorithm(self.config.algorithm.name)
             self.algorithm = algorithm_class(algorithm_config)
@@ -195,7 +210,7 @@ class Trainer(RegistryMixin):
             # Initialize buffer
             logger.info("Initializing buffer...")
             buffer_config = self.config.buffer.__dict__.copy()
-            buffer_config['device'] = self.config.experiment.device
+            buffer_config['device'] = resolve_device(self.config.experiment.device)
             
             buffer_class = get_buffer(self.config.buffer.type)
             self.buffer = buffer_class(buffer_config)
@@ -340,7 +355,9 @@ class Trainer(RegistryMixin):
             raise
             
         except Exception as e:
+            import traceback
             logger.error(f"Training failed: {e}")
+            logger.error(f"Full traceback:\n{traceback.format_exc()}")
             # Save emergency checkpoint
             try:
                 self.checkpoint_manager.save_checkpoint(
@@ -455,7 +472,7 @@ class Trainer(RegistryMixin):
         
         # Return trajectory data
         if steps_collected > 0:
-            return {
+            trajectory = {
                 'observations': np.array(observations),
                 'actions': np.array(actions),
                 'rewards': np.array(rewards),
@@ -463,6 +480,21 @@ class Trainer(RegistryMixin):
                 'old_log_probs': np.array(old_log_probs),
                 'dones': np.array(dones)
             }
+            
+            # CRITICAL FIX: Add bootstrap value for truncated episodes
+            # If the last step was truncated (not terminated), we need the value of the final state
+            if steps_collected > 0 and hasattr(self, '_current_obs') and not self._episode_done:
+                # Get value of current state for bootstrapping
+                obs_tensor = torch.FloatTensor(self._current_obs).unsqueeze(0).to(self.algorithm.device)
+                with torch.no_grad():
+                    if hasattr(self.algorithm, 'networks') and 'critic' in self.algorithm.networks:
+                        bootstrap_value = self.algorithm.networks['critic'](obs_tensor).cpu().numpy().item()
+                        trajectory['bootstrap_value'] = bootstrap_value
+                        # Debug logging - disabled for now
+                        # if hasattr(self.algorithm, 'debug_network_outputs') and self.algorithm.debug_network_outputs:
+                        #     print(f"[DEBUG] Bootstrap value for truncated episode: {bootstrap_value:.2f}, steps_collected: {steps_collected}, episode_done: {self._episode_done}")
+            
+            return trajectory
         
         return None
     

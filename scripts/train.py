@@ -67,8 +67,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         '--device',
         type=str,
-        choices=['cpu', 'cuda', 'auto'],
-        help='Device override (cpu/cuda/auto)'
+        choices=['cpu', 'cuda', 'mps', 'auto'],
+        help='Device override (cpu/cuda/mps/auto)'
     )
     
     parser.add_argument(
@@ -157,9 +157,10 @@ def main():
             if not resume_dir.exists():
                 raise ValueError(f"Resume directory does not exist: {resume_dir}")
             
-            config_path = resume_dir / "configs" / "config.yaml"
+            # Use the NEW config file instead of old checkpoint config
+            config_path = Path(args.config)
             if not config_path.exists():
-                raise ValueError(f"No config found in resume directory: {config_path}")
+                raise ValueError(f"Configuration file does not exist: {config_path}")
             
             experiment_dir = resume_dir
             logger.info(f"Resuming experiment from: {resume_dir}")

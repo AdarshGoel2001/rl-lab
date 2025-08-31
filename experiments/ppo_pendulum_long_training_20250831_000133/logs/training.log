@@ -1,0 +1,43 @@
+2025-08-31 00:01:33,850 - src.core.trainer - INFO - Logging setup complete. Log file: experiments/ppo_pendulum_long_training_20250831_000133/logs/training.log
+2025-08-31 00:01:33,854 - src.utils.registry - INFO - Registered algorithm: ppo -> PPOAlgorithm
+2025-08-31 00:01:33,854 - src.utils.registry - INFO - Registered algorithm: random -> RandomAgent
+2025-08-31 00:01:33,855 - src.utils.registry - INFO - Registered network: mlp -> MLP
+2025-08-31 00:01:33,855 - src.utils.registry - INFO - Registered network: actor_mlp -> ActorMLP
+2025-08-31 00:01:33,855 - src.utils.registry - INFO - Registered network: critic_mlp -> CriticMLP
+2025-08-31 00:01:33,856 - src.utils.registry - INFO - Registered network: continuous_actor_mlp -> ContinuousActorMLP
+2025-08-31 00:01:33,856 - src.utils.registry - INFO - Registered network: dueling_mlp -> DuelingMLP
+2025-08-31 00:01:33,857 - src.utils.registry - INFO - Registered environment: gym -> GymWrapper
+2025-08-31 00:01:33,858 - src.utils.registry - INFO - Registered buffer: trajectory -> TrajectoryBuffer
+2025-08-31 00:01:33,858 - src.core.trainer - INFO - Initializing environment...
+2025-08-31 00:01:33,907 - src.environments.gym_wrapper - INFO - Created Gym environment: Pendulum-v1
+2025-08-31 00:01:33,907 - src.core.trainer - INFO - Environment: Pendulum-v1
+2025-08-31 00:01:33,907 - src.core.trainer - INFO - Observation space: (3,)
+2025-08-31 00:01:33,907 - src.core.trainer - INFO - Action space: (1,), discrete: False
+2025-08-31 00:01:33,907 - src.core.trainer - INFO - Initializing networks...
+2025-08-31 00:01:33,944 - src.core.trainer - INFO - Created actor network: continuous_actor_mlp
+2025-08-31 00:01:33,945 - src.core.trainer - INFO - Created critic network: critic_mlp
+2025-08-31 00:01:33,945 - src.core.trainer - INFO - Initializing algorithm...
+2025-08-31 00:01:34,551 - src.core.trainer - INFO - Created algorithm: ppo
+2025-08-31 00:01:34,551 - src.core.trainer - INFO - Initializing buffer...
+2025-08-31 00:01:34,551 - src.core.trainer - INFO - Created buffer: trajectory
+2025-08-31 00:01:34,554 - src.environments.gym_wrapper - INFO - Seed will be applied on next reset: 42
+2025-08-31 00:01:34,554 - src.core.trainer - INFO - Random seeds set to 42
+2025-08-31 00:01:34,554 - src.core.trainer - INFO - All components initialized successfully
+2025-08-31 00:01:34,554 - src.utils.checkpoint - INFO - Checkpoint manager initialized at experiments/ppo_pendulum_long_training_20250831_000133/checkpoints
+2025-08-31 00:01:34,556 - src.utils.logger - INFO - TensorBoard logging enabled: experiments/ppo_pendulum_long_training_20250831_000133/tensorboard
+2025-08-31 00:01:34,556 - src.utils.logger - INFO - Experiment logger initialized: experiments/ppo_pendulum_long_training_20250831_000133
+2025-08-31 00:01:34,556 - src.utils.checkpoint - INFO - No checkpoint found to load
+2025-08-31 00:01:34,556 - src.core.trainer - INFO - No checkpoint found, starting from scratch
+2025-08-31 00:01:34,557 - src.core.trainer - INFO - Trainer initialized for experiment: ppo_pendulum_long_training
+2025-08-31 00:01:34,557 - src.core.trainer - INFO - Experiment directory: experiments/ppo_pendulum_long_training_20250831_000133
+2025-08-31 00:01:34,559 - src.utils.config - INFO - Configuration saved to experiments/ppo_pendulum_long_training_20250831_000133/configs/config.yaml
+2025-08-31 00:01:34,568 - src.core.trainer - INFO - Experiment config saved to experiments/ppo_pendulum_long_training_20250831_000133/configs/config.yaml
+2025-08-31 00:01:34,568 - __main__ - INFO - Experiment directory: experiments/ppo_pendulum_long_training_20250831_000133
+2025-08-31 00:01:34,569 - __main__ - INFO - Configuration hash: 5eef404d
+2025-08-31 00:01:34,569 - __main__ - INFO - Starting training loop...
+2025-08-31 00:01:34,569 - src.core.trainer - INFO - Starting training...
+2025-08-31 00:01:34,569 - src.core.trainer - INFO - Target steps: 2000000
+2025-08-31 00:01:34,569 - src.core.trainer - INFO - Evaluation frequency: 25000
+2025-08-31 00:01:34,570 - src.core.trainer - INFO - Checkpoint frequency: 100000
+2025-08-31 00:02:01,750 - src.utils.checkpoint - INFO - Checkpoint saved: experiments/ppo_pendulum_long_training_20250831_000133/checkpoints/auto_step_100352.pt (step 100352)
+2025-08-31 00:02:01,751 - src.core.trainer - INFO - Auto-saved checkpoint at step 100352

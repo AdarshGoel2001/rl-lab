@@ -1,0 +1,49 @@
+2025-08-31 00:51:50,458 - src.core.trainer - INFO - Logging setup complete. Log file: experiments/ppo_pendulum_long_training_20250831_005150/logs/training.log
+2025-08-31 00:51:50,460 - src.utils.registry - INFO - Registered algorithm: ppo -> PPOAlgorithm
+2025-08-31 00:51:50,460 - src.utils.registry - INFO - Registered algorithm: random -> RandomAgent
+2025-08-31 00:51:50,461 - src.utils.registry - INFO - Registered network: mlp -> MLP
+2025-08-31 00:51:50,461 - src.utils.registry - INFO - Registered network: actor_mlp -> ActorMLP
+2025-08-31 00:51:50,461 - src.utils.registry - INFO - Registered network: critic_mlp -> CriticMLP
+2025-08-31 00:51:50,461 - src.utils.registry - INFO - Registered network: continuous_actor_mlp -> ContinuousActorMLP
+2025-08-31 00:51:50,461 - src.utils.registry - INFO - Registered network: dueling_mlp -> DuelingMLP
+2025-08-31 00:51:50,463 - src.utils.registry - INFO - Registered environment: gym -> GymWrapper
+2025-08-31 00:51:50,464 - src.utils.registry - INFO - Registered buffer: trajectory -> TrajectoryBuffer
+2025-08-31 00:51:50,464 - src.core.trainer - INFO - Initializing environment...
+2025-08-31 00:51:50,513 - src.environments.gym_wrapper - INFO - Created Gym environment: Pendulum-v1
+2025-08-31 00:51:50,513 - src.core.trainer - INFO - Environment: Pendulum-v1
+2025-08-31 00:51:50,513 - src.core.trainer - INFO - Observation space: (3,)
+2025-08-31 00:51:50,513 - src.core.trainer - INFO - Action space: (1,), discrete: False
+2025-08-31 00:51:50,513 - src.core.trainer - INFO - Initializing networks...
+2025-08-31 00:51:50,548 - src.core.trainer - INFO - Created actor network: continuous_actor_mlp
+2025-08-31 00:51:50,549 - src.core.trainer - INFO - Created critic network: critic_mlp
+2025-08-31 00:51:50,549 - src.core.trainer - INFO - Initializing algorithm...
+2025-08-31 00:51:51,105 - src.core.trainer - INFO - Created algorithm: ppo
+2025-08-31 00:51:51,105 - src.core.trainer - INFO - Initializing buffer...
+2025-08-31 00:51:51,105 - src.core.trainer - INFO - Created buffer: trajectory
+2025-08-31 00:51:51,108 - src.environments.gym_wrapper - INFO - Seed will be applied on next reset: 42
+2025-08-31 00:51:51,108 - src.core.trainer - INFO - Random seeds set to 42
+2025-08-31 00:51:51,108 - src.core.trainer - INFO - All components initialized successfully
+2025-08-31 00:51:51,108 - src.utils.checkpoint - INFO - Checkpoint manager initialized at experiments/ppo_pendulum_long_training_20250831_005150/checkpoints
+2025-08-31 00:51:51,109 - src.utils.logger - INFO - TensorBoard logging enabled: experiments/ppo_pendulum_long_training_20250831_005150/tensorboard
+2025-08-31 00:51:51,109 - src.utils.logger - INFO - Experiment logger initialized: experiments/ppo_pendulum_long_training_20250831_005150
+2025-08-31 00:51:51,109 - src.utils.checkpoint - INFO - No checkpoint found to load
+2025-08-31 00:51:51,109 - src.core.trainer - INFO - No checkpoint found, starting from scratch
+2025-08-31 00:51:51,109 - src.core.trainer - INFO - Trainer initialized for experiment: ppo_pendulum_long_training
+2025-08-31 00:51:51,110 - src.core.trainer - INFO - Experiment directory: experiments/ppo_pendulum_long_training_20250831_005150
+2025-08-31 00:51:51,111 - src.utils.config - INFO - Configuration saved to experiments/ppo_pendulum_long_training_20250831_005150/configs/config.yaml
+2025-08-31 00:51:51,121 - src.core.trainer - INFO - Experiment config saved to experiments/ppo_pendulum_long_training_20250831_005150/configs/config.yaml
+2025-08-31 00:51:51,121 - __main__ - INFO - Experiment directory: experiments/ppo_pendulum_long_training_20250831_005150
+2025-08-31 00:51:51,121 - __main__ - INFO - Configuration hash: 5eef404d
+2025-08-31 00:51:51,121 - __main__ - INFO - Starting training loop...
+2025-08-31 00:51:51,121 - src.core.trainer - INFO - Starting training...
+2025-08-31 00:51:51,122 - src.core.trainer - INFO - Target steps: 2000000
+2025-08-31 00:51:51,122 - src.core.trainer - INFO - Evaluation frequency: 25000
+2025-08-31 00:51:51,122 - src.core.trainer - INFO - Checkpoint frequency: 100000
+2025-08-31 00:52:17,693 - src.utils.checkpoint - INFO - Checkpoint saved: experiments/ppo_pendulum_long_training_20250831_005150/checkpoints/auto_step_100352.pt (step 100352)
+2025-08-31 00:52:17,693 - src.core.trainer - INFO - Auto-saved checkpoint at step 100352
+2025-08-31 00:52:44,374 - src.utils.checkpoint - INFO - Checkpoint saved: experiments/ppo_pendulum_long_training_20250831_005150/checkpoints/auto_step_200704.pt (step 200704)
+2025-08-31 00:52:44,374 - src.core.trainer - INFO - Auto-saved checkpoint at step 200704
+2025-08-31 00:52:58,746 - src.utils.logger - INFO - Step 256000 | train/policy_loss: 0.3698 | train/value_loss: 170551.6578 | train/entropy_loss: -0.9189 | train/total_loss: 119386.4817 | train/grad_norm: 2937.6648 | train/debug/update_mean_avg: 0.3596 | train/debug/update_mean_std: 0.0818 | train/debug/update_mean_min: 0.1685 | train/debug/update_mean_max: 0.4422 | train/debug/update_log_std_avg: -0.2740 | train/debug/update_std_avg: 0.6065 | train/debug/update_std_min: 0.6065 | train/debug/update_std_max: 0.6065 | train/debug/update_action_clipped_pct: 0.0000 | train/debug/update_network_output_shape: 2.0000 | train/debug/returns_mean: -378.4152 | train/debug/returns_std: 207.2531 | train/debug/returns_min: -747.2895 | train/debug/returns_max: -3.3094 | train/debug/advantages_mean: -0.0718 | train/debug/advantages_std: 1.0397 | train/debug/advantages_min: -1.4973 | train/debug/advantages_max: 2.6087 | train/debug/old_values_mean: -7.3466 | train/debug/old_values_std: 5.8125 | train/debug/value_error_mean: 371.0686 | train/time_elapsed: 67.6245 | train/steps_per_second: 3785.6085
+2025-08-31 00:52:58,749 - src.utils.logger - INFO - Step 256000 | train/policy_loss: 0.3698 | train/value_loss: 170551.6578 | train/entropy_loss: -0.9189 | train/total_loss: 119386.4817 | train/grad_norm: 2937.6648 | train/debug/update_mean_avg: 0.3596 | train/debug/update_mean_std: 0.0818 | train/debug/update_mean_min: 0.1685 | train/debug/update_mean_max: 0.4422 | train/debug/update_log_std_avg: -0.2740 | train/debug/update_std_avg: 0.6065 | train/debug/update_std_min: 0.6065 | train/debug/update_std_max: 0.6065 | train/debug/update_action_clipped_pct: 0.0000 | train/debug/update_network_output_shape: 2.0000 | train/debug/returns_mean: -378.4152 | train/debug/returns_std: 207.2531 | train/debug/returns_min: -747.2895 | train/debug/returns_max: -3.3094 | train/debug/advantages_mean: -0.0718 | train/debug/advantages_std: 1.0397 | train/debug/advantages_min: -1.4973 | train/debug/advantages_max: 2.6087 | train/debug/old_values_mean: -7.3466 | train/debug/old_values_std: 5.8125 | train/debug/value_error_mean: 371.0686 | train/time_elapsed: 67.6278 | train/steps_per_second: 3785.4275
+2025-08-31 00:53:10,570 - src.utils.checkpoint - INFO - Checkpoint saved: experiments/ppo_pendulum_long_training_20250831_005150/checkpoints/auto_step_301056.pt (step 301056)
+2025-08-31 00:53:10,571 - src.core.trainer - INFO - Auto-saved checkpoint at step 301056

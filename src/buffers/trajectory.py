@@ -186,7 +186,9 @@ class TrajectoryBuffer(BaseBuffer):
         # Compute GAE advantages if old_values are provided
         if 'old_values' in trajectory:
             values = trajectory['old_values']
-            advantages = self._compute_gae_advantages(rewards, values, dones)
+            bootstrap_value = trajectory.get('bootstrap_value', 0.0)
+            # print(f"[DEBUG] Processing trajectory: len={len(rewards)}, bootstrap={bootstrap_value}")
+            advantages = self._compute_gae_advantages(rewards, values, dones, bootstrap_value)
             trajectory['advantages'] = advantages
         
         return trajectory
@@ -215,7 +217,7 @@ class TrajectoryBuffer(BaseBuffer):
         return returns
     
     def _compute_gae_advantages(self, rewards: np.ndarray, values: np.ndarray, 
-                               dones: np.ndarray) -> np.ndarray:
+                               dones: np.ndarray, bootstrap_value: float = 0.0) -> np.ndarray:
         """
         Compute Generalized Advantage Estimation (GAE) advantages.
         
@@ -223,6 +225,7 @@ class TrajectoryBuffer(BaseBuffer):
             rewards: Array of rewards
             values: Array of value estimates
             dones: Array of done flags
+            bootstrap_value: Value estimate for final state (for truncated episodes)
             
         Returns:
             Array of GAE advantages
@@ -233,11 +236,13 @@ class TrajectoryBuffer(BaseBuffer):
         # Compute advantages backward through trajectory
         for t in reversed(range(len(rewards))):
             if t == len(rewards) - 1:
-                next_value = 0.0
+                # CRITICAL FIX: Use bootstrap value for final step if episode is truncated
+                next_value = bootstrap_value
             else:
                 next_value = values[t + 1]
             
             if dones[t]:
+                # Only zero out if actually terminated (not truncated)
                 next_value = 0.0
                 running_advantage = 0.0
             
@@ -299,6 +304,10 @@ class TrajectoryBuffer(BaseBuffer):
         
         for trajectory in self.trajectories:
             for key, values in trajectory.items():
+                # Skip bootstrap_value as it's trajectory-level metadata, not step data
+                if key == 'bootstrap_value':
+                    continue
+                    
                 if isinstance(values, np.ndarray) and values.ndim > 0:
                     all_data[key].extend(values.tolist())
                 else:

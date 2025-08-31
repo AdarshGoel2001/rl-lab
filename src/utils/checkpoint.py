@@ -288,6 +288,13 @@ class CheckpointManager:
         except Exception as e:
             logger.warning(f"Could not get PyTorch CUDA RNG state: {e}")
         
+        # PyTorch MPS RNG state (if available)
+        try:
+            if torch.backends.mps.is_available():
+                rng_states['torch_mps'] = torch.mps.get_rng_state()
+        except Exception as e:
+            logger.warning(f"Could not get PyTorch MPS RNG state: {e}")
+        
         return rng_states
     
     def _restore_rng_states(self, rng_states: Dict[str, Any]):
@@ -309,6 +316,12 @@ class CheckpointManager:
                 torch.cuda.set_rng_state_all(rng_states['torch_cuda'])
         except Exception as e:
             logger.warning(f"Could not restore PyTorch CUDA RNG state: {e}")
+        
+        try:
+            if 'torch_mps' in rng_states and torch.backends.mps.is_available():
+                torch.mps.set_rng_state(rng_states['torch_mps'])
+        except Exception as e:
+            logger.warning(f"Could not restore PyTorch MPS RNG state: {e}")
     
     def _update_latest_link(self, checkpoint_path: Path):
         """Update symbolic link to latest checkpoint"""

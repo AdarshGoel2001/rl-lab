@@ -31,8 +31,7 @@ import numpy as np
 from typing import Dict, Any, Tuple, Optional
 
 from src.algorithms.base import BaseAlgorithm
-from src.networks.mlp import ActorMLP, CriticMLP
-from src.utils.registry import register_algorithm
+from src.utils.registry import register_algorithm, get_network
 
 
 @register_algorithm("ppo")
@@ -63,7 +62,9 @@ class PPOAlgorithm(BaseAlgorithm):
             config: Configuration dictionary containing hyperparameters
         """
         # Set PPO-specific defaults
-        config.setdefault('lr', 3e-4)
+        config.setdefault('lr', 3e-4)  # Fallback if no separate rates specified
+        config.setdefault('actor_lr', config.get('lr', 3e-4))
+        config.setdefault('critic_lr', config.get('lr', 3e-4))
         config.setdefault('clip_ratio', 0.2) 
         config.setdefault('value_coef', 0.5)
         config.setdefault('entropy_coef', 0.01)
@@ -72,9 +73,17 @@ class PPOAlgorithm(BaseAlgorithm):
         config.setdefault('minibatch_size', 64)
         config.setdefault('normalize_advantages', True)
         config.setdefault('clip_value_loss', True)
+        config.setdefault('log_std_min', -20)  # Minimum log std (exp(-20) ≈ 2e-9)
+        config.setdefault('log_std_max', 2)    # Maximum log std (exp(2) ≈ 7.4)
+        
+        # Continuous control parameters
+        config.setdefault('log_std_init', 0.0)  # Initial log std
+        config.setdefault('action_bounds', None)  # [[low, high], ...] for each action dim
+        config.setdefault('use_tanh_squashing', True)  # Use tanh to bound actions
         
         # Store PPO hyperparameters with type conversion
-        self.lr = float(config['lr'])
+        self.actor_lr = float(config['actor_lr'])
+        self.critic_lr = float(config['critic_lr'])
         self.clip_ratio = float(config['clip_ratio'])
         self.value_coef = float(config['value_coef']) 
         self.entropy_coef = float(config['entropy_coef'])
@@ -83,14 +92,21 @@ class PPOAlgorithm(BaseAlgorithm):
         self.minibatch_size = int(config['minibatch_size'])
         self.normalize_advantages = bool(config['normalize_advantages'])
         self.clip_value_loss = bool(config['clip_value_loss'])
+        self.log_std_min = float(config['log_std_min'])  # Handles 2e-9, -20, etc.
+        self.log_std_max = float(config['log_std_max'])
+        
+        # Add debugging for network outputs
+        self.debug_network_outputs = config.get('debug_network_outputs', False)
+        self._step_count = 0
         
         # Environment info (will be set by trainer)
         if 'observation_space' in config and 'action_space' in config:
             obs_space = config['observation_space']
             action_space = config['action_space']
             self.obs_dim = obs_space.shape[0] if len(obs_space.shape) == 1 else obs_space.shape
-            self.action_dim = action_space.n if hasattr(action_space, 'n') else action_space.shape[0]
-            self.action_space_type = 'discrete' if hasattr(action_space, 'n') else 'continuous'
+            self.action_dim = action_space.n if (hasattr(action_space, 'n') and action_space.n is not None) else action_space.shape[0]
+            self.action_space_type = 'discrete' if (hasattr(action_space, 'n') and action_space.n is not None) else 'continuous'
+            # Action space detected successfully
         else:
             self.obs_dim = config.get('obs_dim')
             self.action_dim = config.get('action_dim') 
@@ -118,27 +134,35 @@ class PPOAlgorithm(BaseAlgorithm):
             # Networks are already created by trainer
             self.networks = self.config['networks']
         else:
-            # Create actor network - 4 layer MLP with 64 neurons each
+            # Create actor network using registry system
             actor_config = {
                 'input_dim': self.obs_dim,
                 'output_dim': self.action_dim,
                 'hidden_dims': self.config['network']['actor']['hidden_dims'],  # From YAML
-                'activation': self.config['network']['actor']['activation']      # From YAML
+                'activation': self.config['network']['actor']['activation'],     # From YAML
+                # Pass continuous control parameters to network
+                'log_std_init': self.config.get('log_std_init', 0.0),
+                'action_bounds': self.config.get('action_bounds'),
+                'use_tanh_squashing': self.config.get('use_tanh_squashing', True)
             }
-            self.networks['actor'] = ActorMLP(actor_config)
+            actor_type = self.config['network']['actor']['type']
+            ActorClass = get_network(actor_type)
+            self.networks['actor'] = ActorClass(actor_config)
             
-            # Create critic network - 3 layer MLP with 32 neurons each  
+            # Create critic network using registry system  
             critic_config = {
                 'input_dim': self.obs_dim,
                 'output_dim': 1,
                 'hidden_dims': self.config['network']['critic']['hidden_dims'],  # From YAML
                 'activation': self.config['network']['critic']['activation']      # From YAML
             }
-            self.networks['critic'] = CriticMLP(critic_config)
+            critic_type = self.config['network']['critic']['type']
+            CriticClass = get_network(critic_type)
+            self.networks['critic'] = CriticClass(critic_config)
         
-        # Create Adam optimizers for both networks
-        self.optimizers['actor'] = torch.optim.Adam(self.networks['actor'].parameters(), lr=self.lr)
-        self.optimizers['critic'] = torch.optim.Adam(self.networks['critic'].parameters(), lr=self.lr)
+        # Create Adam optimizers for both networks with separate learning rates
+        self.optimizers['actor'] = torch.optim.Adam(self.networks['actor'].parameters(), lr=self.actor_lr)
+        self.optimizers['critic'] = torch.optim.Adam(self.networks['critic'].parameters(), lr=self.critic_lr)
     
     def act(self, observation: torch.Tensor, deterministic: bool = False) -> torch.Tensor:
         """
@@ -150,33 +174,30 @@ class PPOAlgorithm(BaseAlgorithm):
             
         Returns:
             Selected action tensor
-            
-        TODO: Implement this method
-        Hints:
-        - Use self.networks['actor'] to get action logits/parameters
-        - For discrete actions: use Categorical distribution
-        - For continuous actions: use Normal distribution (assume fixed std for simplicity)
-        - If deterministic=True, return mode/argmax
-        - If deterministic=False, sample from distribution
-        - Don't forget to handle both training and evaluation modes
         """
-        # TODO: Get action logits/parameters from actor network
-        logits = self.networks['actor'](observation)
-        
-        # TODO: Create appropriate distribution (Categorical or Normal)
-        if self.action_space_type == 'discrete':
-            dist = Categorical(logits=logits)
-        else:
-            # For continuous actions, assume fixed std=1.0 for now
-            dist = Normal(logits, torch.ones_like(logits))
-        
-        # TODO: Select action (deterministic vs stochastic)
-        if deterministic:
-            action = dist.mode if hasattr(dist, 'mode') else dist.mean
-        else:
-            action = dist.sample()
-        
-        return action
+        with torch.no_grad():
+            if self.action_space_type == 'discrete':
+                # Discrete actions - use standard actor output as logits
+                logits = self.networks['actor'](observation)
+                dist = Categorical(logits=logits)
+            else:
+                # Continuous actions - actor outputs mean and log_std
+                actor_output = self.networks['actor'](observation)
+                action_dim = self.action_dim
+                
+                mean = actor_output[:, :action_dim]
+                log_std = actor_output[:, action_dim:]
+                std = torch.exp(log_std.clamp(self.log_std_min, self.log_std_max))
+                
+                dist = Normal(mean, std)
+            
+            # Select action (deterministic vs stochastic)
+            if deterministic:
+                action = dist.mode if hasattr(dist, 'mode') else dist.mean
+            else:
+                action = dist.sample()
+            
+            return action
         
     
     def get_action_and_value(self, observation: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -191,25 +212,36 @@ class PPOAlgorithm(BaseAlgorithm):
             
         Returns:
             Tuple of (action, log_prob, value)
-            
-        TODO: Implement this method
-        Hints:
-        - Similar to act() but also return log_prob and value
-        - Use both actor and critic networks
-        - Make sure to return log probability of the sampled action
         """
-        # TODO: Get action logits and value
-        action_logits = self.networks['actor'](observation)
+        # Get actor output and value
+        actor_output = self.networks['actor'](observation)
         value = self.networks['critic'](observation)
         
-        # TODO: Create distribution and sample action
+        # Create distribution and sample action
         if self.action_space_type == 'discrete':
-            dist = Categorical(logits=action_logits)
+            dist = Categorical(logits=actor_output)
         else:
-            dist = Normal(action_logits, torch.ones_like(action_logits))
+            # Continuous actions - actor outputs mean and log_std
+            action_dim = self.action_dim
+            mean = actor_output[:, :action_dim]
+            log_std = actor_output[:, action_dim:]
+            std = torch.exp(log_std.clamp(self.log_std_min, self.log_std_max))
+            dist = Normal(mean, std)
         
         action = dist.sample()
         log_prob = dist.log_prob(action)
+        
+        # Sum log_prob across action dimensions for continuous control
+        if self.action_space_type == 'continuous':
+            log_prob = log_prob.sum(axis=-1)
+        
+        # Debug logging during action collection
+        if self.debug_network_outputs and self._step_count % 1000 == 0:
+            self._step_count += 1
+            _ = self._debug_network_outputs(observation, step_name="collect")
+            # Debug metrics are computed but not used here (used in update method)
+        else:
+            self._step_count += 1
         
         return action, log_prob, value.squeeze(-1)
         
@@ -227,28 +259,30 @@ class PPOAlgorithm(BaseAlgorithm):
             
         Returns:
             Tuple of (log_probs, values, entropy)
-            
-        TODO: Implement this method  
-        Hints:
-        - Get action logits from actor and values from critic
-        - Create distribution from action logits
-        - Compute log_prob of given actions under current distribution
-        - Compute entropy of current distribution
-        - Return log_probs, values, and entropy
         """
-        # TODO: Forward pass through networks
-        action_logits = self.networks['actor'](observations)
+        # Forward pass through networks
+        actor_output = self.networks['actor'](observations)
         values = self.networks['critic'](observations)
         
-        # TODO: Create distribution
+        # Create distribution
         if self.action_space_type == 'discrete':
-            dist = Categorical(logits=action_logits)
+            dist = Categorical(logits=actor_output)
         else:
-            dist = Normal(action_logits, torch.ones_like(action_logits))
+            # Continuous actions - actor outputs mean and log_std
+            action_dim = self.action_dim
+            mean = actor_output[:, :action_dim]
+            log_std = actor_output[:, action_dim:]
+            std = torch.exp(log_std.clamp(self.log_std_min, self.log_std_max))
+            dist = Normal(mean, std)
         
-        # TODO: Evaluate actions
+        # Evaluate actions
         log_probs = dist.log_prob(actions)
         entropy = dist.entropy()
+        
+        # Sum log_prob and entropy across action dimensions for continuous control
+        if self.action_space_type == 'continuous':
+            log_probs = log_probs.sum(axis=-1)
+            entropy = entropy.sum(axis=-1)
         
         return log_probs, values.squeeze(-1), entropy
         
@@ -356,7 +390,7 @@ class PPOAlgorithm(BaseAlgorithm):
          }
         
         # TODO: Multi-epoch training
-        for epoch in range(self.ppo_epochs):
+        for _ in range(self.ppo_epochs):
         #     # Shuffle data for each epoch
              np.random.shuffle(indices)
              
@@ -405,8 +439,85 @@ class PPOAlgorithm(BaseAlgorithm):
              metrics[key] /= num_updates
          
         self.step += 1
+        
+        # Add debug metrics if enabled
+        if self.debug_network_outputs and batch_size > 0:
+            debug_metrics = self._debug_network_outputs(
+                batch['observations'][:min(64, batch_size)], # Sample for efficiency
+                step_name="update"
+            )
+            
+            # Add critical debugging for value learning issues
+            returns = batch['returns'][:min(64, batch_size)]
+            advantages = batch['advantages'][:min(64, batch_size)]
+            old_values = batch.get('old_values', torch.zeros_like(returns))[:min(64, batch_size)]
+            
+            debug_metrics.update({
+                'debug/returns_mean': returns.mean().item(),
+                'debug/returns_std': returns.std().item(),
+                'debug/returns_min': returns.min().item(),
+                'debug/returns_max': returns.max().item(),
+                'debug/advantages_mean': advantages.mean().item(),
+                'debug/advantages_std': advantages.std().item(),
+                'debug/advantages_min': advantages.min().item(),
+                'debug/advantages_max': advantages.max().item(),
+                'debug/old_values_mean': old_values.mean().item(),
+                'debug/old_values_std': old_values.std().item(),
+                'debug/value_error_mean': (returns - old_values).abs().mean().item(),
+            })
+            
+            metrics.update(debug_metrics)
          
         return metrics
+    
+    def _debug_network_outputs(self, observations: torch.Tensor, step_name: str = "") -> Dict[str, float]:
+        """
+        Debug method to log network mean/std outputs and detect issues.
+        
+        Args:
+            observations: Batch of observations to evaluate
+            step_name: Prefix for logging metrics
+            
+        Returns:
+            Dictionary of debugging metrics
+        """
+        if not self.debug_network_outputs:
+            return {}
+            
+        with torch.no_grad():
+            if self.action_space_type == 'continuous':
+                actor_output = self.networks['actor'](observations)
+                action_dim = self.action_dim
+                
+                # Split mean and log_std (PPO format)
+                mean = actor_output[:, :action_dim]
+                log_std = actor_output[:, action_dim:]
+                std = torch.exp(log_std.clamp(self.log_std_min, self.log_std_max))
+                
+                # Compute action bounds checking
+                action_clipped = (mean.abs() > 1.9).float().mean().item()  # Close to [-2,2] bounds
+                
+                metrics = {
+                    f'debug/{step_name}_mean_avg': mean.mean().item(),
+                    f'debug/{step_name}_mean_std': mean.std().item(),
+                    f'debug/{step_name}_mean_min': mean.min().item(),
+                    f'debug/{step_name}_mean_max': mean.max().item(),
+                    f'debug/{step_name}_log_std_avg': log_std.mean().item(),
+                    f'debug/{step_name}_std_avg': std.mean().item(),
+                    f'debug/{step_name}_std_min': std.min().item(),
+                    f'debug/{step_name}_std_max': std.max().item(),
+                    f'debug/{step_name}_action_clipped_pct': action_clipped,
+                    f'debug/{step_name}_network_output_shape': float(actor_output.shape[1]),
+                }
+                
+                return metrics
+            else:
+                # For discrete actions, just log basic stats
+                actor_output = self.networks['actor'](observations)
+                return {
+                    f'debug/{step_name}_logits_avg': actor_output.mean().item(),
+                    f'debug/{step_name}_logits_std': actor_output.std().item(),
+                }
         
     
     def get_metrics(self) -> Dict[str, float]:

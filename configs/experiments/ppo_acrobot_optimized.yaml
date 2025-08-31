@@ -1,0 +1,80 @@
+experiment:
+  name: "ppo_acrobot_first_try"
+  seed: 42
+  device: "cpu"
+  debug: true
+
+algorithm:
+  name: "ppo"
+  
+  # Higher learning rate for sparse reward environment
+  lr: 5e-4
+  
+  # Conservative clipping for stability
+  clip_ratio: 0.1
+  
+  # Standard value coefficient
+  value_coef: 0.5
+  
+  # Higher entropy for exploration in sparse reward setting
+  entropy_coef: 0.05
+  
+  # PPO training parameters
+  ppo_epochs: 4
+  minibatch_size: 128
+  max_grad_norm: 0.5
+  
+  # Advantage computation
+  normalize_advantages: true
+  clip_value_loss: true
+
+environment:
+  name: "Acrobot-v1"
+  wrapper: "gym"
+  normalize_obs: false
+  normalize_reward: false
+
+network:
+  # Slightly larger networks for more complex dynamics
+  actor:
+    type: "actor_mlp"
+    hidden_dims: [128, 128]
+    activation: "tanh"
+    output_activation: "linear"
+    
+  critic:
+    type: "critic_mlp"
+    hidden_dims: [128, 128]
+    activation: "tanh"
+    output_activation: "linear"
+
+buffer:
+  type: "trajectory"
+  # Larger buffer to capture diverse trajectories in sparse reward setting
+  capacity: 4096
+  batch_size: 4096
+  
+  # GAE parameters - higher lambda for long-term credit assignment
+  gamma: 0.99
+  gae_lambda: 0.98
+  compute_returns: true
+  normalize_advantages: true
+
+training:
+  # Longer training for complex control task
+  total_timesteps: 150000
+  eval_frequency: 10000
+  checkpoint_frequency: 25000
+  num_eval_episodes: 10
+  
+  # Early stopping when solved
+  early_stopping: true
+  target_reward: -110  # Acrobot solved when avg reward > -100, so -110 is good progress
+  patience: 2
+
+logging:
+  terminal: true
+  tensorboard: true
+  log_frequency: 2000
+  
+  wandb_enabled: false

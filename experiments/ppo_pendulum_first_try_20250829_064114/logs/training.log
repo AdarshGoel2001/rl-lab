@@ -1,0 +1,47 @@
+2025-08-29 06:41:14,256 - src.core.trainer - INFO - Logging setup complete. Log file: experiments/ppo_pendulum_first_try_20250829_064114/logs/training.log
+2025-08-29 06:41:14,260 - src.utils.registry - INFO - Registered algorithm: ppo -> PPOAlgorithm
+2025-08-29 06:41:14,260 - src.utils.registry - INFO - Registered algorithm: random -> RandomAgent
+2025-08-29 06:41:14,262 - src.utils.registry - INFO - Registered network: mlp -> MLP
+2025-08-29 06:41:14,262 - src.utils.registry - INFO - Registered network: actor_mlp -> ActorMLP
+2025-08-29 06:41:14,262 - src.utils.registry - INFO - Registered network: critic_mlp -> CriticMLP
+2025-08-29 06:41:14,262 - src.utils.registry - INFO - Registered network: continuous_actor_mlp -> ContinuousActorMLP
+2025-08-29 06:41:14,262 - src.utils.registry - INFO - Registered network: dueling_mlp -> DuelingMLP
+2025-08-29 06:41:14,263 - src.utils.registry - INFO - Registered environment: gym -> GymWrapper
+2025-08-29 06:41:14,266 - src.utils.registry - INFO - Registered buffer: trajectory -> TrajectoryBuffer
+2025-08-29 06:41:14,267 - src.core.trainer - INFO - Initializing environment...
+2025-08-29 06:41:14,310 - src.environments.gym_wrapper - INFO - Created Gym environment: Pendulum-v1
+2025-08-29 06:41:14,310 - src.core.trainer - INFO - Environment: Pendulum-v1
+2025-08-29 06:41:14,310 - src.core.trainer - INFO - Observation space: (3,)
+2025-08-29 06:41:14,310 - src.core.trainer - INFO - Action space: (1,), discrete: False
+2025-08-29 06:41:14,310 - src.core.trainer - INFO - Initializing networks...
+2025-08-29 06:41:14,351 - src.core.trainer - INFO - Created actor network: continuous_actor_mlp
+2025-08-29 06:41:14,352 - src.core.trainer - INFO - Created critic network: critic_mlp
+2025-08-29 06:41:14,352 - src.core.trainer - INFO - Initializing algorithm...
+2025-08-29 06:41:14,982 - src.core.trainer - INFO - Created algorithm: ppo
+2025-08-29 06:41:14,982 - src.core.trainer - INFO - Initializing buffer...
+2025-08-29 06:41:14,982 - src.core.trainer - INFO - Created buffer: trajectory
+2025-08-29 06:41:14,984 - src.environments.gym_wrapper - INFO - Seed will be applied on next reset: 42
+2025-08-29 06:41:14,984 - src.core.trainer - INFO - Random seeds set to 42
+2025-08-29 06:41:14,984 - src.core.trainer - INFO - All components initialized successfully
+2025-08-29 06:41:14,985 - src.utils.checkpoint - INFO - Checkpoint manager initialized at experiments/ppo_pendulum_first_try_20250829_064114/checkpoints
+2025-08-29 06:41:14,985 - src.utils.logger - INFO - TensorBoard logging enabled: experiments/ppo_pendulum_first_try_20250829_064114/tensorboard
+2025-08-29 06:41:14,985 - src.utils.logger - INFO - Experiment logger initialized: experiments/ppo_pendulum_first_try_20250829_064114
+2025-08-29 06:41:14,986 - src.utils.checkpoint - INFO - No checkpoint found to load
+2025-08-29 06:41:14,986 - src.core.trainer - INFO - No checkpoint found, starting from scratch
+2025-08-29 06:41:14,986 - src.core.trainer - INFO - Trainer initialized for experiment: ppo_pendulum_first_try
+2025-08-29 06:41:14,986 - src.core.trainer - INFO - Experiment directory: experiments/ppo_pendulum_first_try_20250829_064114
+2025-08-29 06:41:14,988 - src.utils.config - INFO - Configuration saved to experiments/ppo_pendulum_first_try_20250829_064114/configs/config.yaml
+2025-08-29 06:41:14,996 - src.core.trainer - INFO - Experiment config saved to experiments/ppo_pendulum_first_try_20250829_064114/configs/config.yaml
+2025-08-29 06:41:14,996 - __main__ - INFO - Experiment directory: experiments/ppo_pendulum_first_try_20250829_064114
+2025-08-29 06:41:14,997 - __main__ - INFO - Configuration hash: 5b38548c
+2025-08-29 06:41:14,997 - __main__ - INFO - Starting training loop...
+2025-08-29 06:41:14,997 - src.core.trainer - INFO - Starting training...
+2025-08-29 06:41:14,997 - src.core.trainer - INFO - Target steps: 5000
+2025-08-29 06:41:14,997 - src.core.trainer - INFO - Evaluation frequency: 10000
+2025-08-29 06:41:14,997 - src.core.trainer - INFO - Checkpoint frequency: 25000
+2025-08-29 06:41:15,316 - src.core.trainer - ERROR - Training failed: list index out of range
+2025-08-29 06:41:15,320 - src.utils.checkpoint - INFO - Checkpoint saved: experiments/ppo_pendulum_first_try_20250829_064114/checkpoints/error.pt (step 2048)
+2025-08-29 06:41:15,321 - src.core.trainer - INFO - Emergency checkpoint saved
+2025-08-29 06:41:15,321 - src.utils.logger - INFO - TensorBoard writer closed
+2025-08-29 06:41:15,321 - __main__ - ERROR - Training failed: list index out of range
+2025-08-29 06:41:15,321 - src.core.trainer - INFO - Trainer cleanup completed

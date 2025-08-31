@@ -1,0 +1,62 @@
+2025-08-31 00:48:40,039 - src.core.trainer - INFO - Logging setup complete. Log file: experiments/test_cartpole_random_20250831_004840/logs/training.log
+2025-08-31 00:48:40,040 - src.utils.registry - INFO - Registered algorithm: ppo -> PPOAlgorithm
+2025-08-31 00:48:40,040 - src.utils.registry - INFO - Registered algorithm: random -> RandomAgent
+2025-08-31 00:48:40,042 - src.utils.registry - INFO - Registered network: mlp -> MLP
+2025-08-31 00:48:40,042 - src.utils.registry - INFO - Registered network: actor_mlp -> ActorMLP
+2025-08-31 00:48:40,042 - src.utils.registry - INFO - Registered network: critic_mlp -> CriticMLP
+2025-08-31 00:48:40,042 - src.utils.registry - INFO - Registered network: continuous_actor_mlp -> ContinuousActorMLP
+2025-08-31 00:48:40,042 - src.utils.registry - INFO - Registered network: dueling_mlp -> DuelingMLP
+2025-08-31 00:48:40,043 - src.utils.registry - INFO - Registered environment: gym -> GymWrapper
+2025-08-31 00:48:40,044 - src.utils.registry - INFO - Registered buffer: trajectory -> TrajectoryBuffer
+2025-08-31 00:48:40,044 - src.core.trainer - INFO - Initializing environment...
+2025-08-31 00:48:40,087 - src.environments.gym_wrapper - INFO - Created Gym environment: CartPole-v1
+2025-08-31 00:48:40,087 - src.core.trainer - INFO - Environment: CartPole-v1
+2025-08-31 00:48:40,087 - src.core.trainer - INFO - Observation space: (4,)
+2025-08-31 00:48:40,087 - src.core.trainer - INFO - Action space: (np.int64(2),), discrete: True
+2025-08-31 00:48:40,087 - src.core.trainer - INFO - Initializing networks...
+2025-08-31 00:48:40,094 - src.core.trainer - INFO - Created main network: mlp
+2025-08-31 00:48:40,094 - src.core.trainer - INFO - Initializing algorithm...
+2025-08-31 00:48:40,101 - src.utils.config - INFO - Auto-detected device: MPS (Apple Silicon GPU)
+2025-08-31 00:48:40,101 - src.core.trainer - INFO - Created algorithm: random
+2025-08-31 00:48:40,101 - src.core.trainer - INFO - Initializing buffer...
+2025-08-31 00:48:40,101 - src.utils.config - INFO - Auto-detected device: MPS (Apple Silicon GPU)
+2025-08-31 00:48:40,101 - src.core.trainer - INFO - Created buffer: trajectory
+2025-08-31 00:48:40,103 - src.environments.gym_wrapper - INFO - Seed will be applied on next reset: 42
+2025-08-31 00:48:40,103 - src.core.trainer - INFO - Random seeds set to 42
+2025-08-31 00:48:40,103 - src.core.trainer - INFO - All components initialized successfully
+2025-08-31 00:48:40,103 - src.utils.checkpoint - INFO - Checkpoint manager initialized at experiments/test_cartpole_random_20250831_004840/checkpoints
+2025-08-31 00:48:40,103 - src.utils.logger - INFO - Experiment logger initialized: experiments/test_cartpole_random_20250831_004840
+2025-08-31 00:48:40,103 - src.utils.checkpoint - INFO - No checkpoint found to load
+2025-08-31 00:48:40,103 - src.core.trainer - INFO - No checkpoint found, starting from scratch
+2025-08-31 00:48:40,103 - src.core.trainer - INFO - Trainer initialized for experiment: test_cartpole_random
+2025-08-31 00:48:40,103 - src.core.trainer - INFO - Experiment directory: experiments/test_cartpole_random_20250831_004840
+2025-08-31 00:48:40,105 - src.utils.config - INFO - Configuration saved to experiments/test_cartpole_random_20250831_004840/configs/config.yaml
+2025-08-31 00:48:40,113 - src.core.trainer - INFO - Experiment config saved to experiments/test_cartpole_random_20250831_004840/configs/config.yaml
+2025-08-31 00:48:40,113 - __main__ - INFO - Experiment directory: experiments/test_cartpole_random_20250831_004840
+2025-08-31 00:48:40,114 - __main__ - INFO - Configuration hash: a0d8bd48
+2025-08-31 00:48:40,114 - __main__ - INFO - Starting training loop...
+2025-08-31 00:48:40,114 - src.core.trainer - INFO - Starting training...
+2025-08-31 00:48:40,114 - src.core.trainer - INFO - Target steps: 100
+2025-08-31 00:48:40,114 - src.core.trainer - INFO - Evaluation frequency: 1000
+2025-08-31 00:48:40,114 - src.core.trainer - INFO - Checkpoint frequency: 2000
+2025-08-31 00:48:40,953 - src.core.trainer - INFO - Training completed, running final evaluation...
+2025-08-31 00:48:40,953 - src.core.trainer - INFO - Running evaluation at step 100
+2025-08-31 00:48:41,001 - src.core.trainer - INFO - Evaluation complete - Mean return: 23.00
+2025-08-31 00:48:41,005 - src.utils.checkpoint - INFO - Checkpoint saved: experiments/test_cartpole_random_20250831_004840/checkpoints/final.pt (step 100)
+2025-08-31 00:48:41,005 - src.core.trainer - INFO - Final checkpoint saved: experiments/test_cartpole_random_20250831_004840/checkpoints/final.pt
+2025-08-31 00:48:41,005 - src.core.trainer - INFO - Training completed successfully in 0.9s
+2025-08-31 00:48:41,005 - __main__ - INFO - Training completed successfully!
+2025-08-31 00:48:41,005 - __main__ - INFO - Final results:
+2025-08-31 00:48:41,005 - __main__ - INFO -   final_step: 100.0000
+2025-08-31 00:48:41,005 - __main__ - INFO -   training_time: 0.8912
+2025-08-31 00:48:41,005 - __main__ - INFO -   steps_per_second: 112.2094
+2025-08-31 00:48:41,005 - __main__ - INFO -   random_step: 1.0000
+2025-08-31 00:48:41,005 - __main__ - INFO -   batch_size: 32.0000
+2025-08-31 00:48:41,005 - __main__ - INFO -   eval_step: 100.0000
+2025-08-31 00:48:41,005 - __main__ - INFO -   eval_episode_count: 5.0000
+2025-08-31 00:48:41,005 - __main__ - INFO -   eval_return_mean: 23.0000
+2025-08-31 00:48:41,005 - __main__ - INFO -   eval_return_std: 6.6933
+2025-08-31 00:48:41,005 - __main__ - INFO -   eval_return_min: 16.0000
+2025-08-31 00:48:41,005 - __main__ - INFO -   eval_return_max: 34.0000
+2025-08-31 00:48:41,005 - __main__ - INFO -   eval_length_mean: 23.0000
+2025-08-31 00:48:41,006 - src.core.trainer - INFO - Trainer cleanup completed

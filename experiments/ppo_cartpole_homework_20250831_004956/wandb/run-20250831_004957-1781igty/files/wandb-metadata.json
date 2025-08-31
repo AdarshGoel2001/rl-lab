@@ -1,0 +1,45 @@
+{
+  "os":  "macOS-15.6.1-arm64-arm-64bit",
+  "python":  "CPython 3.10.18",
+  "startedAt":  "2025-08-30T19:19:57.931695Z",
+  "args":  [
+    "--config",
+    "configs/experiments/ppo_cartpole.yaml",
+    "--device",
+    "mps",
+    "--total-timesteps",
+    "100"
+  ],
+  "program":  "/Users/martian/Documents/Code/rl-lab/scripts/train.py",
+  "codePath":  "scripts/train.py",
+  "codePathLocal":  "scripts/train.py",
+  "git":  {
+    "remote":  "git@github.com:AdarshGoel2001/rl-lab.git",
+    "commit":  "49e5c70d2f6775f37d21ece941ccb28fdff16f22"
+  },
+  "email":  "adarshgoel@gmail.com",
+  "root":  "experiments/ppo_cartpole_homework_20250831_004956",
+  "host":  "Adarshs-MacBook-Pro.local",
+  "executable":  "/Users/martian/miniconda3/envs/rl-lab/bin/python",
+  "cpu_count":  8,
+  "cpu_count_logical":  8,
+  "disk":  {
+    "/":  {
+      "total":  "245107195904",
+      "used":  "190656339968"
+    }
+  },
+  "memory":  {
+    "total":  "8589934592"
+  },
+  "apple":  {
+    "name":  "Apple M2",
+    "ecpuCores":  4,
+    "pcpuCores":  4,
+    "gpuCores":  10,
+    "memoryGb":  8,
+    "swapTotalBytes":  "4294967296",
+    "ramTotalBytes":  "8589934592"
+  },
+  "writerId":  "1kg43487yd8pc4gcakpuvadusr8vouiq"
+}

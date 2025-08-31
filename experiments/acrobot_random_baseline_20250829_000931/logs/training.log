@@ -1,0 +1,67 @@
+2025-08-29 00:09:31,484 - src.core.trainer - INFO - Logging setup complete. Log file: experiments/acrobot_random_baseline_20250829_000931/logs/training.log
+2025-08-29 00:09:31,487 - src.utils.registry - INFO - Registered network: mlp -> MLP
+2025-08-29 00:09:31,487 - src.utils.registry - INFO - Registered network: actor_mlp -> ActorMLP
+2025-08-29 00:09:31,487 - src.utils.registry - INFO - Registered network: critic_mlp -> CriticMLP
+2025-08-29 00:09:31,487 - src.utils.registry - INFO - Registered network: dueling_mlp -> DuelingMLP
+2025-08-29 00:09:31,487 - src.utils.registry - INFO - Registered algorithm: ppo -> PPOAlgorithm
+2025-08-29 00:09:31,487 - src.utils.registry - INFO - Registered algorithm: random -> RandomAgent
+2025-08-29 00:09:31,489 - src.utils.registry - INFO - Registered environment: gym -> GymWrapper
+2025-08-29 00:09:31,490 - src.utils.registry - INFO - Registered buffer: trajectory -> TrajectoryBuffer
+2025-08-29 00:09:31,490 - src.core.trainer - INFO - Initializing environment...
+2025-08-29 00:09:31,583 - src.environments.gym_wrapper - INFO - Created Gym environment: Acrobot-v1
+2025-08-29 00:09:31,583 - src.core.trainer - INFO - Environment: Acrobot-v1
+2025-08-29 00:09:31,583 - src.core.trainer - INFO - Observation space: (6,)
+2025-08-29 00:09:31,583 - src.core.trainer - INFO - Action space: (np.int64(3),), discrete: True
+2025-08-29 00:09:31,583 - src.core.trainer - INFO - Initializing networks...
+2025-08-29 00:09:31,612 - src.core.trainer - INFO - Created actor network: actor_mlp
+2025-08-29 00:09:31,612 - src.core.trainer - INFO - Created critic network: critic_mlp
+2025-08-29 00:09:31,612 - src.core.trainer - INFO - Initializing algorithm...
+2025-08-29 00:09:31,612 - src.core.trainer - INFO - Created algorithm: random
+2025-08-29 00:09:31,612 - src.core.trainer - INFO - Initializing buffer...
+2025-08-29 00:09:31,612 - src.core.trainer - INFO - Created buffer: trajectory
+2025-08-29 00:09:31,614 - src.environments.gym_wrapper - INFO - Seed will be applied on next reset: 42
+2025-08-29 00:09:31,614 - src.core.trainer - INFO - Random seeds set to 42
+2025-08-29 00:09:31,614 - src.core.trainer - INFO - All components initialized successfully
+2025-08-29 00:09:31,614 - src.utils.checkpoint - INFO - Checkpoint manager initialized at experiments/acrobot_random_baseline_20250829_000931/checkpoints
+2025-08-29 00:09:31,614 - src.utils.logger - INFO - Experiment logger initialized: experiments/acrobot_random_baseline_20250829_000931
+2025-08-29 00:09:31,615 - src.utils.checkpoint - INFO - No checkpoint found to load
+2025-08-29 00:09:31,615 - src.core.trainer - INFO - No checkpoint found, starting from scratch
+2025-08-29 00:09:31,615 - src.core.trainer - INFO - Trainer initialized for experiment: acrobot_random_baseline
+2025-08-29 00:09:31,615 - src.core.trainer - INFO - Experiment directory: experiments/acrobot_random_baseline_20250829_000931
+2025-08-29 00:09:31,616 - src.utils.config - INFO - Configuration saved to experiments/acrobot_random_baseline_20250829_000931/configs/config.yaml
+2025-08-29 00:09:31,626 - src.core.trainer - INFO - Experiment config saved to experiments/acrobot_random_baseline_20250829_000931/configs/config.yaml
+2025-08-29 00:09:31,626 - __main__ - INFO - Experiment directory: experiments/acrobot_random_baseline_20250829_000931
+2025-08-29 00:09:31,626 - __main__ - INFO - Configuration hash: caf34670
+2025-08-29 00:09:31,626 - __main__ - INFO - Starting training loop...
+2025-08-29 00:09:31,626 - src.core.trainer - INFO - Starting training...
+2025-08-29 00:09:31,626 - src.core.trainer - INFO - Target steps: 10000
+2025-08-29 00:09:31,626 - src.core.trainer - INFO - Evaluation frequency: 2000
+2025-08-29 00:09:31,626 - src.core.trainer - INFO - Checkpoint frequency: 10000
+2025-08-29 00:09:32,160 - src.core.trainer - INFO - Running evaluation at step 10000
+2025-08-29 00:09:32,409 - src.core.trainer - INFO - Evaluation complete - Mean return: -500.00
+2025-08-29 00:09:32,414 - src.utils.checkpoint - INFO - Checkpoint saved: experiments/acrobot_random_baseline_20250829_000931/checkpoints/auto_step_10000.pt (step 10000)
+2025-08-29 00:09:32,414 - src.core.trainer - INFO - Auto-saved checkpoint at step 10000
+2025-08-29 00:09:32,414 - src.utils.logger - INFO - Step 10000 | train/random_step: 4.0000 | train/batch_size: 2048.0000 | train/time_elapsed: 0.7877 | train/steps_per_second: 12695.3010
+2025-08-29 00:09:32,414 - src.utils.logger - INFO - Step 10000 | eval/eval_step: 10000.0000 | eval/eval_episode_count: 10.0000 | eval/eval_return_mean: -500.0000 | eval/eval_return_std: 0.0000 | eval/eval_return_min: -500.0000 | eval/eval_return_max: -500.0000 | eval/eval_length_mean: 500.0000
+2025-08-29 00:09:32,414 - src.core.trainer - INFO - Training completed, running final evaluation...
+2025-08-29 00:09:32,414 - src.core.trainer - INFO - Running evaluation at step 10000
+2025-08-29 00:09:32,666 - src.core.trainer - INFO - Evaluation complete - Mean return: -500.00
+2025-08-29 00:09:32,669 - src.utils.checkpoint - INFO - Checkpoint saved: experiments/acrobot_random_baseline_20250829_000931/checkpoints/final.pt (step 10000)
+2025-08-29 00:09:32,669 - src.core.trainer - INFO - Final checkpoint saved: experiments/acrobot_random_baseline_20250829_000931/checkpoints/final.pt
+2025-08-29 00:09:32,669 - src.core.trainer - INFO - Training completed successfully in 1.0s
+2025-08-29 00:09:32,669 - __main__ - INFO - Training completed successfully!
+2025-08-29 00:09:32,669 - __main__ - INFO - Final results:
+2025-08-29 00:09:32,669 - __main__ - INFO -   final_step: 10000.0000
+2025-08-29 00:09:32,669 - __main__ - INFO -   training_time: 1.0427
+2025-08-29 00:09:32,669 - __main__ - INFO -   steps_per_second: 12695.3010
+2025-08-29 00:09:32,669 - __main__ - INFO -   random_step: 4.0000
+2025-08-29 00:09:32,669 - __main__ - INFO -   batch_size: 2048.0000
+2025-08-29 00:09:32,670 - __main__ - INFO -   eval_step: 10000.0000
+2025-08-29 00:09:32,670 - __main__ - INFO -   eval_episode_count: 10.0000
+2025-08-29 00:09:32,670 - __main__ - INFO -   eval_return_mean: -500.0000
+2025-08-29 00:09:32,670 - __main__ - INFO -   eval_return_std: 0.0000
+2025-08-29 00:09:32,670 - __main__ - INFO -   eval_return_min: -500.0000
+2025-08-29 00:09:32,670 - __main__ - INFO -   eval_return_max: -500.0000
+2025-08-29 00:09:32,670 - __main__ - INFO -   eval_length_mean: 500.0000
+2025-08-29 00:09:32,670 - __main__ - INFO -   time_elapsed: 0.7877
+2025-08-29 00:09:32,670 - src.core.trainer - INFO - Trainer cleanup completed

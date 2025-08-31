@@ -1,0 +1,94 @@
+experiment:
+  name: "ppo_pendulum_5M"
+  seed: 42
+  device: "cpu"
+  debug: false
+
+algorithm:
+  name: "ppo"
+  
+  # Stabilized learning rates
+  actor_lr: 3e-4
+  critic_lr: 1e-4  # Reduced for value function stability
+  
+  # Enable debug logging for network outputs
+  debug_network_outputs: true
+  
+  # Standard PPO clipping
+  clip_ratio: 0.2
+  
+  # Increased value coefficient for better critic training
+  value_coef: 1.0
+  
+  # Increased entropy for breaking out of local optima
+  entropy_coef: 0.1
+  
+  # PPO training parameters
+  ppo_epochs: 10
+  minibatch_size: 64
+  max_grad_norm: 0.3
+  
+  # Value loss clipping (fixed contradiction)
+  clip_value_loss: true
+  
+  # Increased exploration bounds to break performance plateau
+  log_std_min: -2.0   # log(0.135) ≈ -2.0, so min std = 0.135
+  log_std_max: 0.0    # log(1.0) = 0.0, so max std = 1.0
+  
+  # Continuous control parameters
+  log_std_init: -1.5  # Start with std=exp(-1.5)≈0.22 for precise exploration
+  action_bounds: [[-2.0, 2.0]]  # Pendulum torque bounds: [low, high] for 1D action
+  use_tanh_squashing: true
+  
+  # Advantage computation
+  normalize_advantages: true
+
+environment:
+  name: "Pendulum-v1"
+  wrapper: "gym"
+  normalize_obs: false
+  normalize_reward: false
+
+network:
+  # Use continuous_actor_mlp for proper continuous control
+  actor:
+    type: "continuous_actor_mlp"
+    hidden_dims: [128, 128, 64, 64]  # Deeper network with 4 layers
+    activation: "tanh"
+    
+  critic:
+    type: "critic_mlp"
+    hidden_dims: [128, 128]  # Simpler 2-layer network for more stable training
+    activation: "tanh"
+    output_activation: "linear"
+
+buffer:
+  type: "trajectory"
+  # Smaller buffer for dense reward environment
+  capacity: 2048
+  batch_size: 2048
+  
+  # GAE parameters - standard for dense rewards
+  gamma: 0.99
+  gae_lambda: 0.95
+  compute_returns: true
+  normalize_advantages: true
+
+training:
+  # Very long training run - 5M steps
+  total_timesteps: 5000000
+  eval_frequency: 50000
+  checkpoint_frequency: 250000
+  num_eval_episodes: 10
+  
+  # Disable early stopping for full training
+  early_stopping: false
+  target_reward: -200  # Good performance for pendulum (random gets ~-1000)
+  patience: 2
+
+logging:
+  terminal: true
+  tensorboard: true
+  log_frequency: 1000
+  
+  wandb_enabled: false

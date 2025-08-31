@@ -212,6 +212,162 @@ class CriticMLP(MLP):
         super().__init__(config)
 
 
+@register_network("continuous_actor_mlp")
+class ContinuousActorMLP(BaseNetwork):
+    """
+    MLP specifically designed for continuous action actor networks.
+    
+    Outputs both mean and log_std for continuous action distributions.
+    Supports action bounds through tanh squashing and scaling.
+    """
+    
+    def __init__(self, config: Dict[str, Any]):
+        # Set continuous actor specific defaults
+        config.setdefault('hidden_dims', [64, 64])
+        config.setdefault('activation', 'tanh')
+        config.setdefault('initialization', 'orthogonal')
+        config.setdefault('log_std_init', 0.0)  # Initial log std (std=1.0)
+        config.setdefault('action_bounds', None)  # [[low1,high1], [low2,high2], ...] for each motor
+        config.setdefault('use_tanh_squashing', True)  # Use tanh to bound actions
+        
+        super().__init__(config)
+    
+    def _build_network(self):
+        """Build continuous actor network with mean and log_std outputs"""
+        if self.input_dim is None or self.output_dim is None:
+            raise ValueError("input_dim and output_dim must be specified for ContinuousActorMLP")
+        
+        # Handle input dimensions
+        if isinstance(self.input_dim, (tuple, list)):
+            input_size = int(np.prod(self.input_dim))
+        else:
+            input_size = int(self.input_dim)
+        
+        output_size = int(self.output_dim)
+        hidden_dims = self.config['hidden_dims']
+        
+        # Shared feature layers
+        layers = []
+        prev_dim = input_size
+        
+        for hidden_dim in hidden_dims:
+            layers.append(nn.Linear(prev_dim, hidden_dim))
+            
+            # Activation
+            activation = self.get_activation_function(self.config['activation'])
+            layers.append(activation)
+            
+            prev_dim = hidden_dim
+        
+        self.shared_layers = nn.Sequential(*layers)
+        
+        # Combined output layer: outputs 2 * action_dim (mean + log_std pairs)
+        # For 1D action: [mean, log_std]
+        # For 2D action: [mean1, log_std1, mean2, log_std2]  
+        # For 3D action: [mean1, log_std1, mean2, log_std2, mean3, log_std3]
+        self.output_layer = nn.Linear(prev_dim, 2 * output_size)
+        
+        # Store initial log_std value for initialization
+        self.log_std_init = self.config['log_std_init']
+        
+        # Store action bounds for scaling - convert list of pairs to low/high tensors
+        self.use_tanh_squashing = self.config['use_tanh_squashing']
+        if self.config['action_bounds'] is not None:
+            bounds = self.config['action_bounds']
+            # Convert [[low1,high1], [low2,high2], ...] to separate low/high tensors
+            if len(bounds) != output_size:
+                raise ValueError(f"action_bounds must have {output_size} pairs, got {len(bounds)}")
+            
+            lows = [pair[0] for pair in bounds]
+            highs = [pair[1] for pair in bounds]
+            self.register_buffer('action_low', torch.tensor(lows, dtype=torch.float32))
+            self.register_buffer('action_high', torch.tensor(highs, dtype=torch.float32))
+        else:
+            # Default to [-1, 1] for each dimension
+            self.register_buffer('action_low', torch.full((output_size,), -1.0, dtype=torch.float32))
+            self.register_buffer('action_high', torch.full((output_size,), 1.0, dtype=torch.float32))
+        
+        # Initialize weights
+        self._initialize_weights()
+    
+    def _initialize_weights(self):
+        """Initialize network weights"""
+        for layer in self.shared_layers:
+            if isinstance(layer, nn.Linear):
+                nn.init.orthogonal_(layer.weight, gain=np.sqrt(2))
+                nn.init.zeros_(layer.bias)
+        
+        # Initialize output layer with special care
+        # Split initialization: mean part gets small weights, log_std part gets specific init
+        output_dim = self.output_dim
+        
+        # Initialize mean part (first half of weights) with small weights for better tanh gradients
+        nn.init.orthogonal_(self.output_layer.weight[:output_dim], gain=0.01)
+        nn.init.zeros_(self.output_layer.bias[:output_dim])
+        
+        # Initialize log_std part (second half of weights) with small weights
+        nn.init.orthogonal_(self.output_layer.weight[output_dim:], gain=0.01) 
+        nn.init.constant_(self.output_layer.bias[output_dim:], self.log_std_init)
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass returning both mean and log_std as network outputs.
+        
+        Args:
+            x: Input tensor
+            
+        Returns:
+            Tensor with shape (batch_size, 2 * action_dim) where:
+            First half is means, second half is log_stds (PPO format)
+        """
+        if x.dim() > 2:
+            x = x.view(x.size(0), -1)
+        
+        # Shared features
+        features = self.shared_layers(x)
+        
+        # Network outputs 2*action_dim values
+        network_output = self.output_layer(features)
+        
+        action_dim = self.output_dim
+        
+        # Split network output in half: first half for means, second half for log_stds
+        raw_mean = network_output[:, :action_dim]        # First half
+        raw_log_std = network_output[:, action_dim:]     # Second half
+        
+        # Apply tanh squashing to mean if requested
+        if self.use_tanh_squashing:
+            mean = torch.tanh(raw_mean)
+            # Scale to action bounds using registered buffers
+            mean = self.action_low + 0.5 * (self.action_high - self.action_low) * (mean + 1)
+        else:
+            mean = raw_mean
+        
+        log_std = raw_log_std
+        
+        # Return in PPO expected format: [mean1, mean2, ..., log_std1, log_std2, ...]
+        return torch.cat([mean, log_std], dim=1)
+    
+    def get_action_distribution(self, x: torch.Tensor):
+        """
+        Get action distribution for the given input.
+        
+        Args:
+            x: Input tensor
+            
+        Returns:
+            torch.distributions.Normal distribution
+        """
+        output = self.forward(x)
+        action_dim = self.output_dim
+        
+        mean = output[:, :action_dim]
+        log_std = output[:, action_dim:]
+        std = torch.exp(log_std)
+        
+        return Normal(mean, std)
+
+
 @register_network("dueling_mlp")
 class DuelingMLP(BaseNetwork):
     """

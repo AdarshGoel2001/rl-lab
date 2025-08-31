@@ -1,0 +1,7 @@
+{
+  "step": 10000,
+  "name": "final",
+  "is_best": false,
+  "experiment_dir": "experiments/acrobot_random_baseline_20250829_000931",
+  "compress": true
+}

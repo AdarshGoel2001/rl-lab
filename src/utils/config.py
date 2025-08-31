@@ -25,6 +25,47 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def resolve_device(device: str) -> str:
+    """
+    Resolve device string to actual device, handling 'auto' selection.
+    
+    Auto selection priority:
+    1. MPS (Metal Performance Shaders) on M1/M2 Macs
+    2. CUDA if available
+    3. CPU as fallback
+    
+    Args:
+        device: Device string ('auto', 'cpu', 'cuda', 'mps')
+        
+    Returns:
+        Resolved device string
+    """
+    if device != 'auto':
+        return device
+        
+    try:
+        import torch
+        
+        # Check for MPS (Apple Silicon)
+        if torch.backends.mps.is_available():
+            logger.info("Auto-detected device: MPS (Apple Silicon GPU)")
+            return 'mps'
+            
+        # Check for CUDA
+        elif torch.cuda.is_available():
+            logger.info("Auto-detected device: CUDA")
+            return 'cuda'
+            
+        # Fallback to CPU
+        else:
+            logger.info("Auto-detected device: CPU")
+            return 'cpu'
+            
+    except (ImportError, AttributeError):
+        logger.warning("PyTorch not available for device detection, using CPU")
+        return 'cpu'
+
+
 class ConfigError(Exception):
     """Raised when configuration is invalid"""
     pass
@@ -40,7 +81,7 @@ class ExperimentConfig:
     
     def __post_init__(self):
         # Validate device
-        if self.device not in ['cpu', 'cuda', 'auto']:
+        if self.device not in ['cpu', 'cuda', 'mps', 'auto']:
             logger.warning(f"Unusual device specified: {self.device}")
 
 
@@ -399,11 +440,13 @@ def validate_config_compatibility(config: Config) -> List[str]:
                        f"but trajectory buffer configured")
     
     # Check device availability
-    if config.experiment.device == 'cuda':
+    if config.experiment.device in ['cuda', 'mps']:
         try:
             import torch
-            if not torch.cuda.is_available():
+            if config.experiment.device == 'cuda' and not torch.cuda.is_available():
                 warnings.append("CUDA device requested but not available")
+            elif config.experiment.device == 'mps' and not torch.backends.mps.is_available():
+                warnings.append("MPS device requested but not available")
         except ImportError:
             warnings.append("PyTorch not available for device validation")
     

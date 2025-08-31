@@ -1,0 +1,22 @@
+2025-08-31 00:50:16,082 - src.utils.logger - INFO - W&B logging enabled: https://wandb.ai/adarshgoel-rl-lab/rl-lab-homework/runs/yhah3bmg
+2025-08-31 00:50:16,082 - src.utils.logger - INFO - Experiment logger initialized: experiments/ppo_cartpole_homework_20250831_005013
+2025-08-31 00:50:16,082 - src.utils.checkpoint - INFO - No checkpoint found to load
+2025-08-31 00:50:16,083 - src.core.trainer - INFO - No checkpoint found, starting from scratch
+2025-08-31 00:50:16,083 - src.core.trainer - INFO - Trainer initialized for experiment: ppo_cartpole_homework
+2025-08-31 00:50:16,083 - src.core.trainer - INFO - Experiment directory: experiments/ppo_cartpole_homework_20250831_005013
+2025-08-31 00:50:16,085 - src.utils.config - INFO - Configuration saved to experiments/ppo_cartpole_homework_20250831_005013/configs/config.yaml
+2025-08-31 00:50:16,095 - src.core.trainer - INFO - Experiment config saved to experiments/ppo_cartpole_homework_20250831_005013/configs/config.yaml
+2025-08-31 00:50:16,095 - __main__ - INFO - Experiment directory: experiments/ppo_cartpole_homework_20250831_005013
+2025-08-31 00:50:16,095 - __main__ - INFO - Configuration hash: abbc52dd
+2025-08-31 00:50:16,095 - __main__ - INFO - Starting training loop...
+2025-08-31 00:50:16,095 - src.core.trainer - INFO - Starting training...
+2025-08-31 00:50:16,095 - src.core.trainer - INFO - Target steps: 100
+2025-08-31 00:50:16,095 - src.core.trainer - INFO - Evaluation frequency: 5000
+2025-08-31 00:50:16,095 - src.core.trainer - INFO - Checkpoint frequency: 10000
+2025-08-31 00:50:16,602 - src.core.trainer - INFO - Training completed, running final evaluation...
+2025-08-31 00:50:16,602 - src.core.trainer - INFO - Running evaluation at step 100
+2025-08-31 00:50:16,713 - src.core.trainer - INFO - Evaluation complete - Mean return: 8.80
+2025-08-31 00:50:16,721 - src.utils.checkpoint - INFO - Checkpoint saved: experiments/ppo_cartpole_homework_20250831_005013/checkpoints/final.pt (step 100)
+2025-08-31 00:50:16,722 - src.core.trainer - INFO - Final checkpoint saved: experiments/ppo_cartpole_homework_20250831_005013/checkpoints/final.pt
+2025-08-31 00:50:16,722 - src.core.trainer - INFO - Training completed successfully in 0.6s
+2025-08-31 00:50:16,727 - src.utils.logger - INFO - TensorBoard writer closed

@@ -1,0 +1,7 @@
+{
+  "step": 16384,
+  "name": "interrupted",
+  "is_best": false,
+  "experiment_dir": "experiments/ppo_pendulum_long_training_20250831_005906",
+  "compress": true
+}

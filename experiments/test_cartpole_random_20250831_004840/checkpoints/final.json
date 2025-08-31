@@ -1,0 +1,7 @@
+{
+  "step": 100,
+  "name": "final",
+  "is_best": false,
+  "experiment_dir": "experiments/test_cartpole_random_20250831_004840",
+  "compress": true
+}

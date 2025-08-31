@@ -1,0 +1,134 @@
+_wandb:
+    value:
+        cli_version: 0.21.1
+        e:
+            1kg43487yd8pc4gcakpuvadusr8vouiq:
+                apple:
+                    ecpuCores: 4
+                    gpuCores: 10
+                    memoryGb: 8
+                    name: Apple M2
+                    pcpuCores: 4
+                    ramTotalBytes: "8589934592"
+                    swapTotalBytes: "4294967296"
+                args:
+                    - --config
+                    - configs/experiments/ppo_cartpole.yaml
+                    - --device
+                    - mps
+                    - --total-timesteps
+                    - "100"
+                codePath: scripts/train.py
+                codePathLocal: scripts/train.py
+                cpu_count: 8
+                cpu_count_logical: 8
+                disk:
+                    /:
+                        total: "245107195904"
+                        used: "190656339968"
+                email: adarshgoel@gmail.com
+                executable: /Users/martian/miniconda3/envs/rl-lab/bin/python
+                git:
+                    commit: 49e5c70d2f6775f37d21ece941ccb28fdff16f22
+                    remote: git@github.com:AdarshGoel2001/rl-lab.git
+                host: Adarshs-MacBook-Pro.local
+                memory:
+                    total: "8589934592"
+                os: macOS-15.6.1-arm64-arm-64bit
+                program: /Users/martian/Documents/Code/rl-lab/scripts/train.py
+                python: CPython 3.10.18
+                root: experiments/ppo_cartpole_homework_20250831_004956
+                startedAt: "2025-08-30T19:19:57.931695Z"
+                writerId: 1kg43487yd8pc4gcakpuvadusr8vouiq
+        m: []
+        python_version: 3.10.18
+        t:
+            "1":
+                - 1
+            "2":
+                - 1
+            "3":
+                - 2
+                - 13
+                - 15
+                - 16
+            "4": 3.10.18
+            "5": 0.21.1
+            "12": 0.21.1
+            "13": darwin-arm64
+algorithm.lr:
+    value: "3e-4"
+algorithm.name:
+    value: ppo
+buffer.batch_size:
+    value: 2048
+buffer.capacity:
+    value: 2048
+buffer.type:
+    value: trajectory
+environment.max_episode_steps:
+    value: 500
+environment.name:
+    value: CartPole-v1
+environment.normalize_obs:
+    value: false
+environment.normalize_reward:
+    value: false
+environment.wrapper:
+    value: gym
+experiment.debug:
+    value: true
+experiment.device:
+    value: mps
+experiment.name:
+    value: ppo_cartpole_homework
+experiment.seed:
+    value: 42
+logging.log_frequency:
+    value: 1000
+logging.tensorboard:
+    value: true
+logging.terminal:
+    value: true
+logging.wandb_enabled:
+    value: true
+logging.wandb_project:
+    value: null
+logging.wandb_tags:
+    value: '[]'
+network.actor.activation:
+    value: tanh
+network.actor.hidden_dims:
+    value: '[64, 64]'
+network.actor.initialization:
+    value: xavier_uniform
+network.actor.input_dim:
+    value: null
+network.actor.output_activation:
+    value: linear
+network.actor.output_dim:
+    value: null
+network.actor.type:
+    value: actor_mlp
+network.critic.activation:
+    value: tanh
+network.critic.hidden_dims:
+    value: '[64, 64]'
+network.critic.initialization:
+    value: xavier_uniform
+network.critic.input_dim:
+    value: null
+network.critic.output_activation:
+    value: linear
+network.critic.output_dim:
+    value: null
+network.critic.type:
+    value: critic_mlp
+training.checkpoint_frequency:
+    value: 10000
+training.eval_frequency:
+    value: 5000
+training.num_eval_episodes:
+    value: 10
+training.total_timesteps:
+    value: 100

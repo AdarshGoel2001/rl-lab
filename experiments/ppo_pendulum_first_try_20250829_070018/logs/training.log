@@ -1,0 +1,400 @@
+2025-08-29 07:00:18,974 - src.core.trainer - INFO - Logging setup complete. Log file: experiments/ppo_pendulum_first_try_20250829_070018/logs/training.log
+2025-08-29 07:00:18,976 - src.utils.registry - INFO - Registered algorithm: ppo -> PPOAlgorithm
+2025-08-29 07:00:18,976 - src.utils.registry - INFO - Registered algorithm: random -> RandomAgent
+2025-08-29 07:00:18,977 - src.utils.registry - INFO - Registered network: mlp -> MLP
+2025-08-29 07:00:18,977 - src.utils.registry - INFO - Registered network: actor_mlp -> ActorMLP
+2025-08-29 07:00:18,977 - src.utils.registry - INFO - Registered network: critic_mlp -> CriticMLP
+2025-08-29 07:00:18,977 - src.utils.registry - INFO - Registered network: continuous_actor_mlp -> ContinuousActorMLP
+2025-08-29 07:00:18,977 - src.utils.registry - INFO - Registered network: dueling_mlp -> DuelingMLP
+2025-08-29 07:00:18,978 - src.utils.registry - INFO - Registered environment: gym -> GymWrapper
+2025-08-29 07:00:18,980 - src.utils.registry - INFO - Registered buffer: trajectory -> TrajectoryBuffer
+2025-08-29 07:00:18,980 - src.core.trainer - INFO - Initializing environment...
+2025-08-29 07:00:19,029 - src.environments.gym_wrapper - INFO - Created Gym environment: Pendulum-v1
+2025-08-29 07:00:19,030 - src.core.trainer - INFO - Environment: Pendulum-v1
+2025-08-29 07:00:19,030 - src.core.trainer - INFO - Observation space: (3,)
+2025-08-29 07:00:19,030 - src.core.trainer - INFO - Action space: (1,), discrete: False
+2025-08-29 07:00:19,030 - src.core.trainer - INFO - Initializing networks...
+2025-08-29 07:00:19,067 - src.core.trainer - INFO - Created actor network: continuous_actor_mlp
+2025-08-29 07:00:19,067 - src.core.trainer - INFO - Created critic network: critic_mlp
+2025-08-29 07:00:19,067 - src.core.trainer - INFO - Initializing algorithm...
+2025-08-29 07:00:19,640 - src.core.trainer - INFO - Created algorithm: ppo
+2025-08-29 07:00:19,640 - src.core.trainer - INFO - Initializing buffer...
+2025-08-29 07:00:19,640 - src.core.trainer - INFO - Created buffer: trajectory
+2025-08-29 07:00:19,643 - src.environments.gym_wrapper - INFO - Seed will be applied on next reset: 42
+2025-08-29 07:00:19,643 - src.core.trainer - INFO - Random seeds set to 42
+2025-08-29 07:00:19,643 - src.core.trainer - INFO - All components initialized successfully
+2025-08-29 07:00:19,643 - src.utils.checkpoint - INFO - Checkpoint manager initialized at experiments/ppo_pendulum_first_try_20250829_070018/checkpoints
+2025-08-29 07:00:19,644 - src.utils.logger - INFO - TensorBoard logging enabled: experiments/ppo_pendulum_first_try_20250829_070018/tensorboard
+2025-08-29 07:00:19,644 - src.utils.logger - INFO - Experiment logger initialized: experiments/ppo_pendulum_first_try_20250829_070018
+2025-08-29 07:00:19,644 - src.utils.checkpoint - INFO - No checkpoint found to load
+2025-08-29 07:00:19,644 - src.core.trainer - INFO - No checkpoint found, starting from scratch
+2025-08-29 07:00:19,644 - src.core.trainer - INFO - Trainer initialized for experiment: ppo_pendulum_first_try
+2025-08-29 07:00:19,644 - src.core.trainer - INFO - Experiment directory: experiments/ppo_pendulum_first_try_20250829_070018
+2025-08-29 07:00:19,646 - src.utils.config - INFO - Configuration saved to experiments/ppo_pendulum_first_try_20250829_070018/configs/config.yaml
+2025-08-29 07:00:19,655 - src.core.trainer - INFO - Experiment config saved to experiments/ppo_pendulum_first_try_20250829_070018/configs/config.yaml
+2025-08-29 07:00:19,655 - __main__ - INFO - Experiment directory: experiments/ppo_pendulum_first_try_20250829_070018
+2025-08-29 07:00:19,655 - __main__ - INFO - Configuration hash: f78711c6
+2025-08-29 07:00:19,655 - __main__ - INFO - Starting training loop...
+2025-08-29 07:00:19,655 - src.core.trainer - INFO - Starting training...
+2025-08-29 07:00:19,655 - src.core.trainer - INFO - Target steps: 50000
+2025-08-29 07:00:19,655 - src.core.trainer - INFO - Evaluation frequency: 10000
+2025-08-29 07:00:19,655 - src.core.trainer - INFO - Checkpoint frequency: 25000
+2025-08-29 07:00:25,235 - src.utils.checkpoint - INFO - Checkpoint saved: experiments/ppo_pendulum_first_try_20250829_070018/checkpoints/auto_step_26624.pt (step 26624)
+2025-08-29 07:00:25,236 - src.core.trainer - INFO - Auto-saved checkpoint at step 26624
+2025-08-29 07:00:30,005 - src.core.trainer - INFO - Running evaluation at step 50000
+2025-08-29 07:00:30,158 - src.core.trainer - INFO - Evaluation complete - Mean return: -1597.93
+2025-08-29 07:00:30,159 - src.utils.logger - INFO - Step 50000 | train/policy_loss: 0.3195 | train/value_loss: 241774.6516 | train/entropy_loss: -0.9189 | train/total_loss: 120887.5981 | train/grad_norm: 91.9720 | train/debug/update_mean_avg: 0.4404 | train/debug/update_mean_std: 0.2374 | train/debug/update_mean_min: -0.1013 | train/debug/update_mean_max: 0.8911 | train/debug/update_log_std_avg: 0.8361 | train/debug/update_std_avg: 0.6065 | train/debug/update_std_min: 0.6065 | train/debug/update_std_max: 0.6065 | train/debug/update_action_clipped_pct: 0.0000 | train/debug/update_network_output_shape: 2.0000 | train/debug/returns_mean: -463.8019 | train/debug/returns_std: 176.4897 | train/debug/returns_min: -791.5136 | train/debug/returns_max: -18.0167 | train/debug/advantages_mean: -0.1646 | train/debug/advantages_std: 0.8288 | train/debug/advantages_min: -1.1116 | train/debug/advantages_max: 4.1093 | train/debug/old_values_mean: -16.6089 | train/debug/old_values_std: 1.0142 | train/debug/value_error_mean: 447.1930 | train/time_elapsed: 10.5031 | train/steps_per_second: 4760.4789
+2025-08-29 07:00:30,161 - src.utils.logger - INFO - Step 50000 | eval/eval_step: 50000.0000 | eval/eval_episode_count: 10.0000 | eval/eval_return_mean: -1597.9322 | eval/eval_return_std: 148.8874 | eval/eval_return_min: -1826.9643 | eval/eval_return_max: -1375.9836 | eval/eval_length_mean: 200.0000
+2025-08-29 07:00:30,161 - src.core.trainer - INFO - Training completed, running final evaluation...
+2025-08-29 07:00:30,161 - src.core.trainer - INFO - Running evaluation at step 50000
+2025-08-29 07:00:30,314 - src.core.trainer - INFO - Evaluation complete - Mean return: -1597.93
+2025-08-29 07:00:30,317 - src.utils.checkpoint - INFO - Checkpoint saved: experiments/ppo_pendulum_first_try_20250829_070018/checkpoints/final.pt (step 50000)
+2025-08-29 07:00:30,318 - src.core.trainer - INFO - Final checkpoint saved: experiments/ppo_pendulum_first_try_20250829_070018/checkpoints/final.pt
+2025-08-29 07:00:30,318 - src.core.trainer - INFO - Training completed successfully in 10.7s
+2025-08-29 07:00:30,323 - src.utils.logger - INFO - TensorBoard writer closed
+2025-08-29 07:00:30,323 - __main__ - INFO - Training completed successfully!
+2025-08-29 07:00:30,323 - __main__ - INFO - Final results:
+2025-08-29 07:00:30,323 - __main__ - INFO -   final_step: 50000.0000
+2025-08-29 07:00:30,323 - __main__ - INFO -   training_time: 10.6622
+2025-08-29 07:00:30,323 - __main__ - INFO -   steps_per_second: 4760.4789
+2025-08-29 07:00:30,323 - __main__ - INFO -   policy_loss: 0.3195
+2025-08-29 07:00:30,323 - __main__ - INFO -   value_loss: 241774.6516
+2025-08-29 07:00:30,323 - __main__ - INFO -   entropy_loss: -0.9189
+2025-08-29 07:00:30,323 - __main__ - INFO -   total_loss: 120887.5981
+2025-08-29 07:00:30,323 - __main__ - INFO -   grad_norm: 91.9720
+2025-08-29 07:00:30,323 - __main__ - INFO -   debug/update_mean_avg: 0.4404
+2025-08-29 07:00:30,323 - __main__ - INFO -   debug/update_mean_std: 0.2374
+2025-08-29 07:00:30,323 - __main__ - INFO -   debug/update_mean_min: -0.1013
+2025-08-29 07:00:30,323 - __main__ - INFO -   debug/update_mean_max: 0.8911
+2025-08-29 07:00:30,323 - __main__ - INFO -   debug/update_log_std_avg: 0.8361
+2025-08-29 07:00:30,324 - __main__ - INFO -   debug/update_std_avg: 0.6065
+2025-08-29 07:00:30,324 - __main__ - INFO -   debug/update_std_min: 0.6065
+2025-08-29 07:00:30,324 - __main__ - INFO -   debug/update_std_max: 0.6065
+2025-08-29 07:00:30,324 - __main__ - INFO -   debug/update_action_clipped_pct: 0.0000
+2025-08-29 07:00:30,324 - __main__ - INFO -   debug/update_network_output_shape: 2.0000
+2025-08-29 07:00:30,324 - __main__ - INFO -   debug/returns_mean: -463.8019
+2025-08-29 07:00:30,324 - __main__ - INFO -   debug/returns_std: 176.4897
+2025-08-29 07:00:30,324 - __main__ - INFO -   debug/returns_min: -791.5136
+2025-08-29 07:00:30,324 - __main__ - INFO -   debug/returns_max: -18.0167
+2025-08-29 07:00:30,324 - __main__ - INFO -   debug/advantages_mean: -0.1646
+2025-08-29 07:00:30,324 - __main__ - INFO -   debug/advantages_std: 0.8288
+2025-08-29 07:00:30,324 - __main__ - INFO -   debug/advantages_min: -1.1116
+2025-08-29 07:00:30,324 - __main__ - INFO -   debug/advantages_max: 4.1093
+2025-08-29 07:00:30,324 - __main__ - INFO -   debug/old_values_mean: -16.6089
+2025-08-29 07:00:30,324 - __main__ - INFO -   debug/old_values_std: 1.0142
+2025-08-29 07:00:30,324 - __main__ - INFO -   debug/value_error_mean: 447.1930
+2025-08-29 07:00:30,324 - __main__ - INFO -   eval_step: 50000.0000
+2025-08-29 07:00:30,324 - __main__ - INFO -   eval_episode_count: 10.0000
+2025-08-29 07:00:30,324 - __main__ - INFO -   eval_return_mean: -1597.9322
+2025-08-29 07:00:30,324 - __main__ - INFO -   eval_return_std: 148.8874
+2025-08-29 07:00:30,324 - __main__ - INFO -   eval_return_min: -1826.9643
+2025-08-29 07:00:30,324 - __main__ - INFO -   eval_return_max: -1375.9836
+2025-08-29 07:00:30,324 - __main__ - INFO -   eval_length_mean: 200.0000
+2025-08-29 07:00:30,324 - __main__ - INFO -   time_elapsed: 10.5031
+2025-08-29 07:00:30,324 - src.core.trainer - INFO - Trainer cleanup completed
+2025-08-29 07:01:26,256 - src.core.trainer - INFO - Logging setup complete. Log file: experiments/ppo_pendulum_first_try_20250829_070018/logs/training.log
+2025-08-29 07:01:26,259 - src.utils.registry - INFO - Registered algorithm: ppo -> PPOAlgorithm
+2025-08-29 07:01:26,259 - src.utils.registry - INFO - Registered algorithm: random -> RandomAgent
+2025-08-29 07:01:26,260 - src.utils.registry - INFO - Registered network: mlp -> MLP
+2025-08-29 07:01:26,260 - src.utils.registry - INFO - Registered network: actor_mlp -> ActorMLP
+2025-08-29 07:01:26,260 - src.utils.registry - INFO - Registered network: critic_mlp -> CriticMLP
+2025-08-29 07:01:26,260 - src.utils.registry - INFO - Registered network: continuous_actor_mlp -> ContinuousActorMLP
+2025-08-29 07:01:26,260 - src.utils.registry - INFO - Registered network: dueling_mlp -> DuelingMLP
+2025-08-29 07:01:26,262 - src.utils.registry - INFO - Registered environment: gym -> GymWrapper
+2025-08-29 07:01:26,263 - src.utils.registry - INFO - Registered buffer: trajectory -> TrajectoryBuffer
+2025-08-29 07:01:26,263 - src.core.trainer - INFO - Initializing environment...
+2025-08-29 07:01:26,314 - src.environments.gym_wrapper - INFO - Created Gym environment: Pendulum-v1
+2025-08-29 07:01:26,315 - src.core.trainer - INFO - Environment: Pendulum-v1
+2025-08-29 07:01:26,315 - src.core.trainer - INFO - Observation space: (3,)
+2025-08-29 07:01:26,315 - src.core.trainer - INFO - Action space: (1,), discrete: False
+2025-08-29 07:01:26,315 - src.core.trainer - INFO - Initializing networks...
+2025-08-29 07:01:26,347 - src.core.trainer - INFO - Created actor network: continuous_actor_mlp
+2025-08-29 07:01:26,347 - src.core.trainer - INFO - Created critic network: critic_mlp
+2025-08-29 07:01:26,347 - src.core.trainer - INFO - Initializing algorithm...
+2025-08-29 07:01:26,906 - src.core.trainer - INFO - Created algorithm: ppo
+2025-08-29 07:01:26,906 - src.core.trainer - INFO - Initializing buffer...
+2025-08-29 07:01:26,907 - src.core.trainer - INFO - Created buffer: trajectory
+2025-08-29 07:01:26,909 - src.environments.gym_wrapper - INFO - Seed will be applied on next reset: 42
+2025-08-29 07:01:26,909 - src.core.trainer - INFO - Random seeds set to 42
+2025-08-29 07:01:26,909 - src.core.trainer - INFO - All components initialized successfully
+2025-08-29 07:01:26,909 - src.utils.checkpoint - INFO - Checkpoint manager initialized at experiments/ppo_pendulum_first_try_20250829_070018/checkpoints
+2025-08-29 07:01:26,910 - src.utils.logger - INFO - TensorBoard logging enabled: experiments/ppo_pendulum_first_try_20250829_070018/tensorboard
+2025-08-29 07:01:26,910 - src.utils.logger - INFO - Experiment logger initialized: experiments/ppo_pendulum_first_try_20250829_070018
+2025-08-29 07:01:26,917 - src.utils.checkpoint - INFO - Checkpoint loaded: experiments/ppo_pendulum_first_try_20250829_070018/checkpoints/latest.pt (step 50000)
+2025-08-29 07:01:26,917 - src.core.trainer - INFO - Resuming from checkpoint...
+2025-08-29 07:01:26,917 - src.utils.checkpoint - INFO - Training state restored to step 50000
+2025-08-29 07:01:26,917 - src.core.trainer - INFO - Resumed from step 50000
+2025-08-29 07:01:26,918 - src.core.trainer - INFO - Trainer initialized for experiment: ppo_pendulum_first_try
+2025-08-29 07:01:26,918 - src.core.trainer - INFO - Experiment directory: experiments/ppo_pendulum_first_try_20250829_070018
+2025-08-29 07:01:26,919 - src.utils.config - INFO - Configuration saved to experiments/ppo_pendulum_first_try_20250829_070018/configs/config.yaml
+2025-08-29 07:01:26,928 - src.core.trainer - INFO - Experiment config saved to experiments/ppo_pendulum_first_try_20250829_070018/configs/config.yaml
+2025-08-29 07:01:26,928 - __main__ - INFO - Experiment directory: experiments/ppo_pendulum_first_try_20250829_070018
+2025-08-29 07:01:26,929 - __main__ - INFO - Configuration hash: ea5914d1
+2025-08-29 07:01:26,929 - __main__ - INFO - Starting training loop...
+2025-08-29 07:01:26,929 - src.core.trainer - INFO - Starting training...
+2025-08-29 07:01:26,929 - src.core.trainer - INFO - Target steps: 150000
+2025-08-29 07:01:26,929 - src.core.trainer - INFO - Evaluation frequency: 10000
+2025-08-29 07:01:26,929 - src.core.trainer - INFO - Checkpoint frequency: 25000
+2025-08-29 07:01:27,467 - src.utils.checkpoint - INFO - Checkpoint saved: experiments/ppo_pendulum_first_try_20250829_070018/checkpoints/auto_step_52048.pt (step 52048)
+2025-08-29 07:01:27,468 - src.core.trainer - INFO - Auto-saved checkpoint at step 52048
+2025-08-29 07:01:32,983 - src.utils.checkpoint - INFO - Checkpoint saved: experiments/ppo_pendulum_first_try_20250829_070018/checkpoints/auto_step_78672.pt (step 78672)
+2025-08-29 07:01:32,984 - src.core.trainer - INFO - Auto-saved checkpoint at step 78672
+2025-08-29 07:01:38,503 - src.utils.checkpoint - INFO - Checkpoint saved: experiments/ppo_pendulum_first_try_20250829_070018/checkpoints/auto_step_105296.pt (step 105296)
+2025-08-29 07:01:38,504 - src.core.trainer - INFO - Auto-saved checkpoint at step 105296
+2025-08-29 07:01:44,094 - src.utils.checkpoint - INFO - Checkpoint saved: experiments/ppo_pendulum_first_try_20250829_070018/checkpoints/auto_step_131920.pt (step 131920)
+2025-08-29 07:01:44,095 - src.core.trainer - INFO - Auto-saved checkpoint at step 131920
+2025-08-29 07:01:47,748 - src.core.trainer - INFO - Running evaluation at step 150000
+2025-08-29 07:01:47,907 - src.core.trainer - INFO - Evaluation complete - Mean return: -1397.44
+2025-08-29 07:01:47,907 - src.utils.logger - INFO - Step 150000 | train/policy_loss: 0.3544 | train/value_loss: 109556.1045 | train/entropy_loss: -3.4189 | train/total_loss: 54778.2346 | train/grad_norm: 88.1824 | train/debug/update_mean_avg: 0.4404 | train/debug/update_mean_std: 0.2374 | train/debug/update_mean_min: -0.1013 | train/debug/update_mean_max: 0.8911 | train/debug/update_log_std_avg: 0.8361 | train/debug/update_std_avg: 0.6065 | train/debug/update_std_min: 0.6065 | train/debug/update_std_max: 0.6065 | train/debug/update_action_clipped_pct: 0.0000 | train/debug/update_network_output_shape: 2.0000 | train/debug/returns_mean: -463.8019 | train/debug/returns_std: 176.4897 | train/debug/returns_min: -791.5136 | train/debug/returns_max: -18.0167 | train/debug/advantages_mean: -0.1646 | train/debug/advantages_std: 0.8288 | train/debug/advantages_min: -1.1116 | train/debug/advantages_max: 4.1093 | train/debug/old_values_mean: -16.6089 | train/debug/old_values_std: 1.0142 | train/debug/value_error_mean: 447.1930 | train/time_elapsed: 20.9779 | train/steps_per_second: 7150.3821
+2025-08-29 07:01:47,909 - src.utils.logger - INFO - Step 150000 | eval/eval_step: 150000.0000 | eval/eval_episode_count: 10.0000 | eval/eval_return_mean: -1397.4401 | eval/eval_return_std: 232.2319 | eval/eval_return_min: -1764.1928 | eval/eval_return_max: -969.1355 | eval/eval_length_mean: 200.0000
+2025-08-29 07:01:47,910 - src.core.trainer - INFO - Training completed, running final evaluation...
+2025-08-29 07:01:47,910 - src.core.trainer - INFO - Running evaluation at step 150000
+2025-08-29 07:01:48,064 - src.core.trainer - INFO - Evaluation complete - Mean return: -1397.44
+2025-08-29 07:01:48,068 - src.utils.checkpoint - INFO - Checkpoint saved: experiments/ppo_pendulum_first_try_20250829_070018/checkpoints/final.pt (step 150000)
+2025-08-29 07:01:48,068 - src.core.trainer - INFO - Final checkpoint saved: experiments/ppo_pendulum_first_try_20250829_070018/checkpoints/final.pt
+2025-08-29 07:01:48,068 - src.core.trainer - INFO - Training completed successfully in 21.1s
+2025-08-29 07:01:48,074 - src.utils.logger - INFO - TensorBoard writer closed
+2025-08-29 07:01:48,074 - __main__ - INFO - Training completed successfully!
+2025-08-29 07:01:48,074 - __main__ - INFO - Final results:
+2025-08-29 07:01:48,074 - __main__ - INFO -   final_step: 150000.0000
+2025-08-29 07:01:48,074 - __main__ - INFO -   training_time: 21.1397
+2025-08-29 07:01:48,074 - __main__ - INFO -   steps_per_second: 7150.3821
+2025-08-29 07:01:48,074 - __main__ - INFO -   policy_loss: 0.3544
+2025-08-29 07:01:48,074 - __main__ - INFO -   value_loss: 109556.1045
+2025-08-29 07:01:48,074 - __main__ - INFO -   entropy_loss: -3.4189
+2025-08-29 07:01:48,074 - __main__ - INFO -   total_loss: 54778.2346
+2025-08-29 07:01:48,074 - __main__ - INFO -   grad_norm: 88.1824
+2025-08-29 07:01:48,074 - __main__ - INFO -   debug/update_mean_avg: 0.4404
+2025-08-29 07:01:48,074 - __main__ - INFO -   debug/update_mean_std: 0.2374
+2025-08-29 07:01:48,074 - __main__ - INFO -   debug/update_mean_min: -0.1013
+2025-08-29 07:01:48,074 - __main__ - INFO -   debug/update_mean_max: 0.8911
+2025-08-29 07:01:48,074 - __main__ - INFO -   debug/update_log_std_avg: 0.8361
+2025-08-29 07:01:48,075 - __main__ - INFO -   debug/update_std_avg: 0.6065
+2025-08-29 07:01:48,075 - __main__ - INFO -   debug/update_std_min: 0.6065
+2025-08-29 07:01:48,075 - __main__ - INFO -   debug/update_std_max: 0.6065
+2025-08-29 07:01:48,075 - __main__ - INFO -   debug/update_action_clipped_pct: 0.0000
+2025-08-29 07:01:48,075 - __main__ - INFO -   debug/update_network_output_shape: 2.0000
+2025-08-29 07:01:48,075 - __main__ - INFO -   debug/returns_mean: -463.8019
+2025-08-29 07:01:48,075 - __main__ - INFO -   debug/returns_std: 176.4897
+2025-08-29 07:01:48,075 - __main__ - INFO -   debug/returns_min: -791.5136
+2025-08-29 07:01:48,075 - __main__ - INFO -   debug/returns_max: -18.0167
+2025-08-29 07:01:48,075 - __main__ - INFO -   debug/advantages_mean: -0.1646
+2025-08-29 07:01:48,075 - __main__ - INFO -   debug/advantages_std: 0.8288
+2025-08-29 07:01:48,075 - __main__ - INFO -   debug/advantages_min: -1.1116
+2025-08-29 07:01:48,075 - __main__ - INFO -   debug/advantages_max: 4.1093
+2025-08-29 07:01:48,075 - __main__ - INFO -   debug/old_values_mean: -16.6089
+2025-08-29 07:01:48,075 - __main__ - INFO -   debug/old_values_std: 1.0142
+2025-08-29 07:01:48,075 - __main__ - INFO -   debug/value_error_mean: 447.1930
+2025-08-29 07:01:48,075 - __main__ - INFO -   eval_step: 150000.0000
+2025-08-29 07:01:48,075 - __main__ - INFO -   eval_episode_count: 10.0000
+2025-08-29 07:01:48,075 - __main__ - INFO -   eval_return_mean: -1397.4401
+2025-08-29 07:01:48,075 - __main__ - INFO -   eval_return_std: 232.2319
+2025-08-29 07:01:48,075 - __main__ - INFO -   eval_return_min: -1764.1928
+2025-08-29 07:01:48,075 - __main__ - INFO -   eval_return_max: -969.1355
+2025-08-29 07:01:48,075 - __main__ - INFO -   eval_length_mean: 200.0000
+2025-08-29 07:01:48,075 - __main__ - INFO -   time_elapsed: 20.9779
+2025-08-29 07:01:48,075 - src.core.trainer - INFO - Trainer cleanup completed
+2025-08-29 07:03:35,689 - src.core.trainer - INFO - Logging setup complete. Log file: experiments/ppo_pendulum_first_try_20250829_070018/logs/training.log
+2025-08-29 07:03:35,691 - src.utils.registry - INFO - Registered algorithm: ppo -> PPOAlgorithm
+2025-08-29 07:03:35,691 - src.utils.registry - INFO - Registered algorithm: random -> RandomAgent
+2025-08-29 07:03:35,692 - src.utils.registry - INFO - Registered network: mlp -> MLP
+2025-08-29 07:03:35,692 - src.utils.registry - INFO - Registered network: actor_mlp -> ActorMLP
+2025-08-29 07:03:35,693 - src.utils.registry - INFO - Registered network: critic_mlp -> CriticMLP
+2025-08-29 07:03:35,693 - src.utils.registry - INFO - Registered network: continuous_actor_mlp -> ContinuousActorMLP
+2025-08-29 07:03:35,693 - src.utils.registry - INFO - Registered network: dueling_mlp -> DuelingMLP
+2025-08-29 07:03:35,694 - src.utils.registry - INFO - Registered environment: gym -> GymWrapper
+2025-08-29 07:03:35,695 - src.utils.registry - INFO - Registered buffer: trajectory -> TrajectoryBuffer
+2025-08-29 07:03:35,695 - src.core.trainer - INFO - Initializing environment...
+2025-08-29 07:03:35,745 - src.environments.gym_wrapper - INFO - Created Gym environment: Pendulum-v1
+2025-08-29 07:03:35,746 - src.core.trainer - INFO - Environment: Pendulum-v1
+2025-08-29 07:03:35,746 - src.core.trainer - INFO - Observation space: (3,)
+2025-08-29 07:03:35,746 - src.core.trainer - INFO - Action space: (1,), discrete: False
+2025-08-29 07:03:35,746 - src.core.trainer - INFO - Initializing networks...
+2025-08-29 07:03:35,774 - src.core.trainer - INFO - Created actor network: continuous_actor_mlp
+2025-08-29 07:03:35,775 - src.core.trainer - INFO - Created critic network: critic_mlp
+2025-08-29 07:03:35,775 - src.core.trainer - INFO - Initializing algorithm...
+2025-08-29 07:03:36,330 - src.core.trainer - INFO - Created algorithm: ppo
+2025-08-29 07:03:36,330 - src.core.trainer - INFO - Initializing buffer...
+2025-08-29 07:03:36,330 - src.core.trainer - INFO - Created buffer: trajectory
+2025-08-29 07:03:36,333 - src.environments.gym_wrapper - INFO - Seed will be applied on next reset: 42
+2025-08-29 07:03:36,333 - src.core.trainer - INFO - Random seeds set to 42
+2025-08-29 07:03:36,333 - src.core.trainer - INFO - All components initialized successfully
+2025-08-29 07:03:36,333 - src.utils.checkpoint - INFO - Checkpoint manager initialized at experiments/ppo_pendulum_first_try_20250829_070018/checkpoints
+2025-08-29 07:03:36,334 - src.utils.logger - INFO - TensorBoard logging enabled: experiments/ppo_pendulum_first_try_20250829_070018/tensorboard
+2025-08-29 07:03:36,334 - src.utils.logger - INFO - Experiment logger initialized: experiments/ppo_pendulum_first_try_20250829_070018
+2025-08-29 07:03:36,340 - src.utils.checkpoint - INFO - Checkpoint loaded: experiments/ppo_pendulum_first_try_20250829_070018/checkpoints/latest.pt (step 150000)
+2025-08-29 07:03:36,340 - src.core.trainer - INFO - Resuming from checkpoint...
+2025-08-29 07:03:36,341 - src.utils.checkpoint - INFO - Training state restored to step 150000
+2025-08-29 07:03:36,341 - src.core.trainer - INFO - Resumed from step 150000
+2025-08-29 07:03:36,341 - src.core.trainer - INFO - Trainer initialized for experiment: ppo_pendulum_first_try
+2025-08-29 07:03:36,341 - src.core.trainer - INFO - Experiment directory: experiments/ppo_pendulum_first_try_20250829_070018
+2025-08-29 07:03:36,343 - src.utils.config - INFO - Configuration saved to experiments/ppo_pendulum_first_try_20250829_070018/configs/config.yaml
+2025-08-29 07:03:36,351 - src.core.trainer - INFO - Experiment config saved to experiments/ppo_pendulum_first_try_20250829_070018/configs/config.yaml
+2025-08-29 07:03:36,352 - __main__ - INFO - Experiment directory: experiments/ppo_pendulum_first_try_20250829_070018
+2025-08-29 07:03:36,352 - __main__ - INFO - Configuration hash: 23acdf70
+2025-08-29 07:03:36,352 - __main__ - INFO - Starting training loop...
+2025-08-29 07:03:36,352 - src.core.trainer - INFO - Starting training...
+2025-08-29 07:03:36,352 - src.core.trainer - INFO - Target steps: 250000
+2025-08-29 07:03:36,352 - src.core.trainer - INFO - Evaluation frequency: 10000
+2025-08-29 07:03:36,352 - src.core.trainer - INFO - Checkpoint frequency: 25000
+2025-08-29 07:03:36,845 - src.utils.checkpoint - INFO - Checkpoint saved: experiments/ppo_pendulum_first_try_20250829_070018/checkpoints/auto_step_152048.pt (step 152048)
+2025-08-29 07:03:36,846 - src.core.trainer - INFO - Auto-saved checkpoint at step 152048
+2025-08-29 07:03:42,415 - src.utils.checkpoint - INFO - Checkpoint saved: experiments/ppo_pendulum_first_try_20250829_070018/checkpoints/auto_step_178672.pt (step 178672)
+2025-08-29 07:03:42,416 - src.core.trainer - INFO - Auto-saved checkpoint at step 178672
+2025-08-29 07:03:47,923 - src.utils.checkpoint - INFO - Checkpoint saved: experiments/ppo_pendulum_first_try_20250829_070018/checkpoints/auto_step_205296.pt (step 205296)
+2025-08-29 07:03:47,923 - src.core.trainer - INFO - Auto-saved checkpoint at step 205296
+2025-08-29 07:03:53,506 - src.utils.checkpoint - INFO - Checkpoint saved: experiments/ppo_pendulum_first_try_20250829_070018/checkpoints/auto_step_231920.pt (step 231920)
+2025-08-29 07:03:53,507 - src.core.trainer - INFO - Auto-saved checkpoint at step 231920
+2025-08-29 07:03:57,099 - src.core.trainer - INFO - Running evaluation at step 250000
+2025-08-29 07:03:57,255 - src.core.trainer - INFO - Evaluation complete - Mean return: -1397.44
+2025-08-29 07:03:57,255 - src.utils.logger - INFO - Step 250000 | train/policy_loss: 0.3422 | train/value_loss: 103360.1273 | train/entropy_loss: -3.4189 | train/total_loss: 51680.2341 | train/grad_norm: 89.1097 | train/debug/update_mean_avg: 0.4404 | train/debug/update_mean_std: 0.2374 | train/debug/update_mean_min: -0.1013 | train/debug/update_mean_max: 0.8911 | train/debug/update_log_std_avg: 0.8361 | train/debug/update_std_avg: 0.6065 | train/debug/update_std_min: 0.6065 | train/debug/update_std_max: 0.6065 | train/debug/update_action_clipped_pct: 0.0000 | train/debug/update_network_output_shape: 2.0000 | train/debug/returns_mean: -463.8019 | train/debug/returns_std: 176.4897 | train/debug/returns_min: -791.5136 | train/debug/returns_max: -18.0167 | train/debug/advantages_mean: -0.1646 | train/debug/advantages_std: 0.8288 | train/debug/advantages_min: -1.1116 | train/debug/advantages_max: 4.1093 | train/debug/old_values_mean: -16.6089 | train/debug/old_values_std: 1.0142 | train/debug/value_error_mean: 447.1930 | train/time_elapsed: 20.9033 | train/steps_per_second: 11959.8478
+2025-08-29 07:03:57,258 - src.utils.logger - INFO - Step 250000 | eval/eval_step: 250000.0000 | eval/eval_episode_count: 10.0000 | eval/eval_return_mean: -1397.4401 | eval/eval_return_std: 232.2319 | eval/eval_return_min: -1764.1928 | eval/eval_return_max: -969.1355 | eval/eval_length_mean: 200.0000
+2025-08-29 07:03:57,258 - src.core.trainer - INFO - Training completed, running final evaluation...
+2025-08-29 07:03:57,258 - src.core.trainer - INFO - Running evaluation at step 250000
+2025-08-29 07:03:57,451 - src.core.trainer - INFO - Evaluation complete - Mean return: -1397.44
+2025-08-29 07:03:57,454 - src.utils.checkpoint - INFO - Checkpoint saved: experiments/ppo_pendulum_first_try_20250829_070018/checkpoints/final.pt (step 250000)
+2025-08-29 07:03:57,454 - src.core.trainer - INFO - Final checkpoint saved: experiments/ppo_pendulum_first_try_20250829_070018/checkpoints/final.pt
+2025-08-29 07:03:57,454 - src.core.trainer - INFO - Training completed successfully in 21.1s
+2025-08-29 07:03:57,460 - src.utils.logger - INFO - TensorBoard writer closed
+2025-08-29 07:03:57,460 - __main__ - INFO - Training completed successfully!
+2025-08-29 07:03:57,460 - __main__ - INFO - Final results:
+2025-08-29 07:03:57,460 - __main__ - INFO -   final_step: 250000.0000
+2025-08-29 07:03:57,460 - __main__ - INFO -   training_time: 21.1022
+2025-08-29 07:03:57,460 - __main__ - INFO -   steps_per_second: 11959.8478
+2025-08-29 07:03:57,460 - __main__ - INFO -   policy_loss: 0.3422
+2025-08-29 07:03:57,460 - __main__ - INFO -   value_loss: 103360.1273
+2025-08-29 07:03:57,460 - __main__ - INFO -   entropy_loss: -3.4189
+2025-08-29 07:03:57,460 - __main__ - INFO -   total_loss: 51680.2341
+2025-08-29 07:03:57,460 - __main__ - INFO -   grad_norm: 89.1097
+2025-08-29 07:03:57,460 - __main__ - INFO -   debug/update_mean_avg: 0.4404
+2025-08-29 07:03:57,460 - __main__ - INFO -   debug/update_mean_std: 0.2374
+2025-08-29 07:03:57,460 - __main__ - INFO -   debug/update_mean_min: -0.1013
+2025-08-29 07:03:57,460 - __main__ - INFO -   debug/update_mean_max: 0.8911
+2025-08-29 07:03:57,460 - __main__ - INFO -   debug/update_log_std_avg: 0.8361
+2025-08-29 07:03:57,460 - __main__ - INFO -   debug/update_std_avg: 0.6065
+2025-08-29 07:03:57,460 - __main__ - INFO -   debug/update_std_min: 0.6065
+2025-08-29 07:03:57,460 - __main__ - INFO -   debug/update_std_max: 0.6065
+2025-08-29 07:03:57,460 - __main__ - INFO -   debug/update_action_clipped_pct: 0.0000
+2025-08-29 07:03:57,460 - __main__ - INFO -   debug/update_network_output_shape: 2.0000
+2025-08-29 07:03:57,460 - __main__ - INFO -   debug/returns_mean: -463.8019
+2025-08-29 07:03:57,460 - __main__ - INFO -   debug/returns_std: 176.4897
+2025-08-29 07:03:57,460 - __main__ - INFO -   debug/returns_min: -791.5136
+2025-08-29 07:03:57,460 - __main__ - INFO -   debug/returns_max: -18.0167
+2025-08-29 07:03:57,460 - __main__ - INFO -   debug/advantages_mean: -0.1646
+2025-08-29 07:03:57,460 - __main__ - INFO -   debug/advantages_std: 0.8288
+2025-08-29 07:03:57,460 - __main__ - INFO -   debug/advantages_min: -1.1116
+2025-08-29 07:03:57,460 - __main__ - INFO -   debug/advantages_max: 4.1093
+2025-08-29 07:03:57,460 - __main__ - INFO -   debug/old_values_mean: -16.6089
+2025-08-29 07:03:57,460 - __main__ - INFO -   debug/old_values_std: 1.0142
+2025-08-29 07:03:57,460 - __main__ - INFO -   debug/value_error_mean: 447.1930
+2025-08-29 07:03:57,460 - __main__ - INFO -   eval_step: 250000.0000
+2025-08-29 07:03:57,460 - __main__ - INFO -   eval_episode_count: 10.0000
+2025-08-29 07:03:57,460 - __main__ - INFO -   eval_return_mean: -1397.4401
+2025-08-29 07:03:57,460 - __main__ - INFO -   eval_return_std: 232.2319
+2025-08-29 07:03:57,460 - __main__ - INFO -   eval_return_min: -1764.1928
+2025-08-29 07:03:57,460 - __main__ - INFO -   eval_return_max: -969.1355
+2025-08-29 07:03:57,460 - __main__ - INFO -   eval_length_mean: 200.0000
+2025-08-29 07:03:57,461 - __main__ - INFO -   time_elapsed: 20.9033
+2025-08-29 07:03:57,461 - src.core.trainer - INFO - Trainer cleanup completed
+2025-08-29 07:06:39,897 - src.core.trainer - INFO - Logging setup complete. Log file: experiments/ppo_pendulum_first_try_20250829_070018/logs/training.log
+2025-08-29 07:06:39,898 - src.utils.registry - INFO - Registered algorithm: ppo -> PPOAlgorithm
+2025-08-29 07:06:39,899 - src.utils.registry - INFO - Registered algorithm: random -> RandomAgent
+2025-08-29 07:06:39,900 - src.utils.registry - INFO - Registered network: mlp -> MLP
+2025-08-29 07:06:39,900 - src.utils.registry - INFO - Registered network: actor_mlp -> ActorMLP
+2025-08-29 07:06:39,900 - src.utils.registry - INFO - Registered network: critic_mlp -> CriticMLP
+2025-08-29 07:06:39,900 - src.utils.registry - INFO - Registered network: continuous_actor_mlp -> ContinuousActorMLP
+2025-08-29 07:06:39,900 - src.utils.registry - INFO - Registered network: dueling_mlp -> DuelingMLP
+2025-08-29 07:06:39,901 - src.utils.registry - INFO - Registered environment: gym -> GymWrapper
+2025-08-29 07:06:39,902 - src.utils.registry - INFO - Registered buffer: trajectory -> TrajectoryBuffer
+2025-08-29 07:06:39,902 - src.core.trainer - INFO - Initializing environment...
+2025-08-29 07:06:39,945 - src.environments.gym_wrapper - INFO - Created Gym environment: Pendulum-v1
+2025-08-29 07:06:39,945 - src.core.trainer - INFO - Environment: Pendulum-v1
+2025-08-29 07:06:39,945 - src.core.trainer - INFO - Observation space: (3,)
+2025-08-29 07:06:39,945 - src.core.trainer - INFO - Action space: (1,), discrete: False
+2025-08-29 07:06:39,945 - src.core.trainer - INFO - Initializing networks...
+2025-08-29 07:06:40,038 - src.core.trainer - INFO - Created actor network: continuous_actor_mlp
+2025-08-29 07:06:40,039 - src.core.trainer - INFO - Created critic network: critic_mlp
+2025-08-29 07:06:40,039 - src.core.trainer - INFO - Initializing algorithm...
+2025-08-29 07:06:40,554 - src.core.trainer - INFO - Created algorithm: ppo
+2025-08-29 07:06:40,554 - src.core.trainer - INFO - Initializing buffer...
+2025-08-29 07:06:40,554 - src.core.trainer - INFO - Created buffer: trajectory
+2025-08-29 07:06:40,556 - src.environments.gym_wrapper - INFO - Seed will be applied on next reset: 42
+2025-08-29 07:06:40,556 - src.core.trainer - INFO - Random seeds set to 42
+2025-08-29 07:06:40,556 - src.core.trainer - INFO - All components initialized successfully
+2025-08-29 07:06:40,556 - src.utils.checkpoint - INFO - Checkpoint manager initialized at experiments/ppo_pendulum_first_try_20250829_070018/checkpoints
+2025-08-29 07:06:40,557 - src.utils.logger - INFO - TensorBoard logging enabled: experiments/ppo_pendulum_first_try_20250829_070018/tensorboard
+2025-08-29 07:06:40,557 - src.utils.logger - INFO - Experiment logger initialized: experiments/ppo_pendulum_first_try_20250829_070018
+2025-08-29 07:06:40,563 - src.utils.checkpoint - INFO - Checkpoint loaded: experiments/ppo_pendulum_first_try_20250829_070018/checkpoints/latest.pt (step 250000)
+2025-08-29 07:06:40,563 - src.core.trainer - INFO - Resuming from checkpoint...
+2025-08-29 07:06:40,564 - src.utils.checkpoint - INFO - Training state restored to step 250000
+2025-08-29 07:06:40,564 - src.core.trainer - INFO - Resumed from step 250000
+2025-08-29 07:06:40,564 - src.core.trainer - INFO - Trainer initialized for experiment: ppo_pendulum_first_try
+2025-08-29 07:06:40,564 - src.core.trainer - INFO - Experiment directory: experiments/ppo_pendulum_first_try_20250829_070018
+2025-08-29 07:06:40,566 - src.utils.config - INFO - Configuration saved to experiments/ppo_pendulum_first_try_20250829_070018/configs/config.yaml
+2025-08-29 07:06:40,577 - src.core.trainer - INFO - Experiment config saved to experiments/ppo_pendulum_first_try_20250829_070018/configs/config.yaml
+2025-08-29 07:06:40,577 - __main__ - INFO - Experiment directory: experiments/ppo_pendulum_first_try_20250829_070018
+2025-08-29 07:06:40,577 - __main__ - INFO - Configuration hash: 6e58c4fe
+2025-08-29 07:06:40,577 - __main__ - INFO - Starting training loop...
+2025-08-29 07:06:40,577 - src.core.trainer - INFO - Starting training...
+2025-08-29 07:06:40,577 - src.core.trainer - INFO - Target steps: 350000
+2025-08-29 07:06:40,577 - src.core.trainer - INFO - Evaluation frequency: 10000
+2025-08-29 07:06:40,577 - src.core.trainer - INFO - Checkpoint frequency: 25000
+2025-08-29 07:06:41,077 - src.utils.checkpoint - INFO - Checkpoint saved: experiments/ppo_pendulum_first_try_20250829_070018/checkpoints/auto_step_252048.pt (step 252048)
+2025-08-29 07:06:41,077 - src.core.trainer - INFO - Auto-saved checkpoint at step 252048
+2025-08-29 07:06:46,583 - src.utils.checkpoint - INFO - Checkpoint saved: experiments/ppo_pendulum_first_try_20250829_070018/checkpoints/auto_step_278672.pt (step 278672)
+2025-08-29 07:06:46,584 - src.core.trainer - INFO - Auto-saved checkpoint at step 278672
+2025-08-29 07:06:52,130 - src.utils.checkpoint - INFO - Checkpoint saved: experiments/ppo_pendulum_first_try_20250829_070018/checkpoints/auto_step_305296.pt (step 305296)
+2025-08-29 07:06:52,131 - src.core.trainer - INFO - Auto-saved checkpoint at step 305296
+2025-08-29 07:06:57,717 - src.utils.checkpoint - INFO - Checkpoint saved: experiments/ppo_pendulum_first_try_20250829_070018/checkpoints/auto_step_331920.pt (step 331920)
+2025-08-29 07:06:57,718 - src.core.trainer - INFO - Auto-saved checkpoint at step 331920
+2025-08-29 07:07:01,446 - src.core.trainer - INFO - Running evaluation at step 350000
+2025-08-29 07:07:01,603 - src.core.trainer - INFO - Evaluation complete - Mean return: -1397.44
+2025-08-29 07:07:01,603 - src.utils.logger - INFO - Step 350000 | train/policy_loss: 0.3489 | train/value_loss: 100276.0865 | train/entropy_loss: -3.4189 | train/total_loss: 50138.2203 | train/grad_norm: 77.4331 | train/debug/update_mean_avg: 0.4404 | train/debug/update_mean_std: 0.2374 | train/debug/update_mean_min: -0.1013 | train/debug/update_mean_max: 0.8911 | train/debug/update_log_std_avg: 0.8361 | train/debug/update_std_avg: 0.6065 | train/debug/update_std_min: 0.6065 | train/debug/update_std_max: 0.6065 | train/debug/update_action_clipped_pct: 0.0000 | train/debug/update_network_output_shape: 2.0000 | train/debug/returns_mean: -463.8019 | train/debug/returns_std: 176.4897 | train/debug/returns_min: -791.5136 | train/debug/returns_max: -18.0167 | train/debug/advantages_mean: -0.1646 | train/debug/advantages_std: 0.8288 | train/debug/advantages_min: -1.1116 | train/debug/advantages_max: 4.1093 | train/debug/old_values_mean: -16.6089 | train/debug/old_values_std: 1.0142 | train/debug/value_error_mean: 447.1930 | train/time_elapsed: 21.0257 | train/steps_per_second: 16646.3026
+2025-08-29 07:07:01,606 - src.utils.logger - INFO - Step 350000 | eval/eval_step: 350000.0000 | eval/eval_episode_count: 10.0000 | eval/eval_return_mean: -1397.4401 | eval/eval_return_std: 232.2319 | eval/eval_return_min: -1764.1928 | eval/eval_return_max: -969.1355 | eval/eval_length_mean: 200.0000
+2025-08-29 07:07:01,606 - src.core.trainer - INFO - Training completed, running final evaluation...
+2025-08-29 07:07:01,606 - src.core.trainer - INFO - Running evaluation at step 350000
+2025-08-29 07:07:01,762 - src.core.trainer - INFO - Evaluation complete - Mean return: -1397.44
+2025-08-29 07:07:01,766 - src.utils.checkpoint - INFO - Checkpoint saved: experiments/ppo_pendulum_first_try_20250829_070018/checkpoints/final.pt (step 350000)
+2025-08-29 07:07:01,766 - src.core.trainer - INFO - Final checkpoint saved: experiments/ppo_pendulum_first_try_20250829_070018/checkpoints/final.pt
+2025-08-29 07:07:01,767 - src.core.trainer - INFO - Training completed successfully in 21.2s
+2025-08-29 07:07:01,773 - src.utils.logger - INFO - TensorBoard writer closed
+2025-08-29 07:07:01,773 - __main__ - INFO - Training completed successfully!
+2025-08-29 07:07:01,773 - __main__ - INFO - Final results:
+2025-08-29 07:07:01,773 - __main__ - INFO -   final_step: 350000.0000
+2025-08-29 07:07:01,773 - __main__ - INFO -   training_time: 21.1891
+2025-08-29 07:07:01,773 - __main__ - INFO -   steps_per_second: 16646.3026
+2025-08-29 07:07:01,773 - __main__ - INFO -   policy_loss: 0.3489
+2025-08-29 07:07:01,773 - __main__ - INFO -   value_loss: 100276.0865
+2025-08-29 07:07:01,773 - __main__ - INFO -   entropy_loss: -3.4189
+2025-08-29 07:07:01,773 - __main__ - INFO -   total_loss: 50138.2203
+2025-08-29 07:07:01,773 - __main__ - INFO -   grad_norm: 77.4331
+2025-08-29 07:07:01,773 - __main__ - INFO -   debug/update_mean_avg: 0.4404
+2025-08-29 07:07:01,773 - __main__ - INFO -   debug/update_mean_std: 0.2374
+2025-08-29 07:07:01,773 - __main__ - INFO -   debug/update_mean_min: -0.1013
+2025-08-29 07:07:01,773 - __main__ - INFO -   debug/update_mean_max: 0.8911
+2025-08-29 07:07:01,773 - __main__ - INFO -   debug/update_log_std_avg: 0.8361
+2025-08-29 07:07:01,773 - __main__ - INFO -   debug/update_std_avg: 0.6065
+2025-08-29 07:07:01,773 - __main__ - INFO -   debug/update_std_min: 0.6065
+2025-08-29 07:07:01,773 - __main__ - INFO -   debug/update_std_max: 0.6065
+2025-08-29 07:07:01,773 - __main__ - INFO -   debug/update_action_clipped_pct: 0.0000
+2025-08-29 07:07:01,773 - __main__ - INFO -   debug/update_network_output_shape: 2.0000
+2025-08-29 07:07:01,773 - __main__ - INFO -   debug/returns_mean: -463.8019
+2025-08-29 07:07:01,773 - __main__ - INFO -   debug/returns_std: 176.4897
+2025-08-29 07:07:01,773 - __main__ - INFO -   debug/returns_min: -791.5136
+2025-08-29 07:07:01,773 - __main__ - INFO -   debug/returns_max: -18.0167
+2025-08-29 07:07:01,773 - __main__ - INFO -   debug/advantages_mean: -0.1646
+2025-08-29 07:07:01,773 - __main__ - INFO -   debug/advantages_std: 0.8288
+2025-08-29 07:07:01,773 - __main__ - INFO -   debug/advantages_min: -1.1116
+2025-08-29 07:07:01,773 - __main__ - INFO -   debug/advantages_max: 4.1093
+2025-08-29 07:07:01,773 - __main__ - INFO -   debug/old_values_mean: -16.6089
+2025-08-29 07:07:01,773 - __main__ - INFO -   debug/old_values_std: 1.0142
+2025-08-29 07:07:01,773 - __main__ - INFO -   debug/value_error_mean: 447.1930
+2025-08-29 07:07:01,773 - __main__ - INFO -   eval_step: 350000.0000
+2025-08-29 07:07:01,773 - __main__ - INFO -   eval_episode_count: 10.0000
+2025-08-29 07:07:01,773 - __main__ - INFO -   eval_return_mean: -1397.4401
+2025-08-29 07:07:01,773 - __main__ - INFO -   eval_return_std: 232.2319
+2025-08-29 07:07:01,773 - __main__ - INFO -   eval_return_min: -1764.1928
+2025-08-29 07:07:01,773 - __main__ - INFO -   eval_return_max: -969.1355
+2025-08-29 07:07:01,773 - __main__ - INFO -   eval_length_mean: 200.0000
+2025-08-29 07:07:01,774 - __main__ - INFO -   time_elapsed: 21.0257
+2025-08-29 07:07:01,774 - src.core.trainer - INFO - Trainer cleanup completed

@@ -1,0 +1,7 @@
+{
+  "step": 503808,
+  "name": "auto_step_503808",
+  "is_best": false,
+  "experiment_dir": "experiments/ppo_pendulum_5M_20250831_012126",
+  "compress": true
+}
