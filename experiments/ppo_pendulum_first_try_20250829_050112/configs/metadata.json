@@ -1,7 +1,0 @@
-{
-  "experiment_name": "ppo_pendulum_first_try",
-  "config_hash": "f8775fe0",
-  "created_at": "2025-08-29T05:01:13.160470",
-  "experiment_dir": "experiments/ppo_pendulum_first_try_20250829_050112",
-  "git_hash": "49e5c70d2f6775f37d21ece941ccb28fdff16f22"
-}

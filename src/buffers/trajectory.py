@@ -187,7 +187,6 @@ class TrajectoryBuffer(BaseBuffer):
         if 'old_values' in trajectory:
             values = trajectory['old_values']
             bootstrap_value = trajectory.get('bootstrap_value', 0.0)
-            # print(f"[DEBUG] Processing trajectory: len={len(rewards)}, bootstrap={bootstrap_value}")
             advantages = self._compute_gae_advantages(rewards, values, dones, bootstrap_value)
             trajectory['advantages'] = advantages
         

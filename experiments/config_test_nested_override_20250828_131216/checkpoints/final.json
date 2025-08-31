@@ -1,7 +1,0 @@
-{
-  "step": 1000,
-  "name": "final",
-  "is_best": false,
-  "experiment_dir": "experiments/config_test_nested_override_20250828_131216",
-  "compress": true
-}

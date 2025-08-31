@@ -1,7 +1,0 @@
-{
-  "experiment_name": "ppo_cartpole_homework",
-  "config_hash": "820f520e",
-  "created_at": "2025-08-31T00:49:00.939155",
-  "experiment_dir": "experiments/ppo_cartpole_homework_20250831_004858",
-  "git_hash": "49e5c70d2f6775f37d21ece941ccb28fdff16f22"
-}

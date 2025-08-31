@@ -164,6 +164,26 @@ class PPOAlgorithm(BaseAlgorithm):
         self.optimizers['actor'] = torch.optim.Adam(self.networks['actor'].parameters(), lr=self.actor_lr)
         self.optimizers['critic'] = torch.optim.Adam(self.networks['critic'].parameters(), lr=self.critic_lr)
     
+    def _create_distribution(self, actor_output: torch.Tensor):
+        """
+        Create distribution from actor network output.
+        
+        Args:
+            actor_output: Raw output from actor network
+            
+        Returns:
+            Distribution object (Categorical for discrete, Normal for continuous)
+        """
+        if self.action_space_type == 'discrete':
+            return Categorical(logits=actor_output)
+        else:
+            # Continuous actions - actor outputs mean and log_std
+            action_dim = self.action_dim
+            mean = actor_output[:, :action_dim]
+            log_std = actor_output[:, action_dim:]
+            std = torch.exp(log_std.clamp(self.log_std_min, self.log_std_max))
+            return Normal(mean, std)
+    
     def act(self, observation: torch.Tensor, deterministic: bool = False) -> torch.Tensor:
         """
         Select action given observation using current policy.
@@ -176,20 +196,8 @@ class PPOAlgorithm(BaseAlgorithm):
             Selected action tensor
         """
         with torch.no_grad():
-            if self.action_space_type == 'discrete':
-                # Discrete actions - use standard actor output as logits
-                logits = self.networks['actor'](observation)
-                dist = Categorical(logits=logits)
-            else:
-                # Continuous actions - actor outputs mean and log_std
-                actor_output = self.networks['actor'](observation)
-                action_dim = self.action_dim
-                
-                mean = actor_output[:, :action_dim]
-                log_std = actor_output[:, action_dim:]
-                std = torch.exp(log_std.clamp(self.log_std_min, self.log_std_max))
-                
-                dist = Normal(mean, std)
+            actor_output = self.networks['actor'](observation)
+            dist = self._create_distribution(actor_output)
             
             # Select action (deterministic vs stochastic)
             if deterministic:
@@ -218,15 +226,7 @@ class PPOAlgorithm(BaseAlgorithm):
         value = self.networks['critic'](observation)
         
         # Create distribution and sample action
-        if self.action_space_type == 'discrete':
-            dist = Categorical(logits=actor_output)
-        else:
-            # Continuous actions - actor outputs mean and log_std
-            action_dim = self.action_dim
-            mean = actor_output[:, :action_dim]
-            log_std = actor_output[:, action_dim:]
-            std = torch.exp(log_std.clamp(self.log_std_min, self.log_std_max))
-            dist = Normal(mean, std)
+        dist = self._create_distribution(actor_output)
         
         action = dist.sample()
         log_prob = dist.log_prob(action)
@@ -265,15 +265,7 @@ class PPOAlgorithm(BaseAlgorithm):
         values = self.networks['critic'](observations)
         
         # Create distribution
-        if self.action_space_type == 'discrete':
-            dist = Categorical(logits=actor_output)
-        else:
-            # Continuous actions - actor outputs mean and log_std
-            action_dim = self.action_dim
-            mean = actor_output[:, :action_dim]
-            log_std = actor_output[:, action_dim:]
-            std = torch.exp(log_std.clamp(self.log_std_min, self.log_std_max))
-            dist = Normal(mean, std)
+        dist = self._create_distribution(actor_output)
         
         # Evaluate actions
         log_probs = dist.log_prob(actions)

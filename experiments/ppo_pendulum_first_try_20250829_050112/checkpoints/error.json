@@ -1,7 +1,0 @@
-{
-  "step": 230,
-  "name": "error",
-  "is_best": false,
-  "experiment_dir": "experiments/ppo_pendulum_first_try_20250829_050112",
-  "compress": true
-}

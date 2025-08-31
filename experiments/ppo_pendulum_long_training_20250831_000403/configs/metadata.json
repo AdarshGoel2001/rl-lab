@@ -1,7 +1,0 @@
-{
-  "experiment_name": "ppo_pendulum_long_training",
-  "config_hash": "5eef404d",
-  "created_at": "2025-08-31T00:43:43.736303",
-  "experiment_dir": "experiments/ppo_pendulum_long_training_20250831_000403",
-  "git_hash": "49e5c70d2f6775f37d21ece941ccb28fdff16f22"
-}

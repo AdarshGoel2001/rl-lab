@@ -1,6 +1,7 @@
 name: rl-lab
 channels:
   - pytorch
+  - nvidia         # For CUDA packages (ignored on non-CUDA systems)
   - conda-forge
   - defaults
 
@@ -8,67 +9,62 @@ dependencies:
   # Core Python
   - python=3.10
 
-  # Core ML/Scientific Computing (conda-managed for better compatibility)
+  # PyTorch (conda will auto-select CUDA/CPU based on system)
   - pytorch>=2.0.0
   - torchvision
-  # Note: CUDA removed for macOS/Apple Silicon compatibility
-  # For CUDA support on Linux, use environment-linux-cuda.yml instead
+
+  # Core Scientific Computing
   - numpy>=1.24.0
   - scipy>=1.11.0
-  - scikit-learn>=1.3.0
-
-  # Data handling and visualization (plotting via TensorBoard/WandB)
   - pandas>=2.0.0
-  - seaborn>=0.12.0
-  - pillow>=10.0.0
-  - imageio>=2.31.0
 
-  # Configuration and utilities
-  - pyyaml>=6.0
-  - tqdm>=4.65.0
-
-  # Development tools
+  # Development Tools
   - pytest>=7.3.0
   - black>=23.3.0
-  - flake8>=6.0.0
-  - mypy>=1.4.0
-  - jupyterlab  # for interactive development
-
-  # Git and version control
   - git
 
-  # Pip for packages not available in conda
+  # System utilities
   - pip
 
-  # Packages that must be installed via pip
+  # Packages installed via pip (not available in conda or better from pip)
   - pip:
-    # RL Environments
+    # Core RL Framework
     - gymnasium>=0.28.0
-    - dm-control>=1.0.14
-    
-    # Logging and monitoring
-    - tensorboard>=2.13.0
-    - wandb>=0.15.0
-    
-    # Configuration management  
+    - pyyaml>=6.0
+    - tqdm>=4.65.0
     - hydra-core>=1.3.0
     
-    # Hyperparameter optimization
-    - optuna>=3.2.0
+    # Monitoring
+    - tensorboard>=2.13.0
     
-    # Optional environment dependencies (uncomment as needed)
-    # - atari-py>=0.2.9              # For Atari environments
-    # - mujoco>=2.3.0                # For MuJoCo environments  
-    # - box2d-py>=2.3.5              # For Box2D environments
-    # - pybullet>=3.2.5              # For PyBullet environments
-    
-    # Additional utilities
-    - opencv-python>=4.8.0
-    
-# Notes:
-# 1. Use 'conda env create -f environment.yml' to create environment
-# 2. Use 'conda env update -f environment.yml' to update existing environment  
-# 3. Uncomment optional dependencies as needed for specific environments
-# 4. This version is compatible with macOS/Apple Silicon (no CUDA dependencies)
-# 5. For Linux with CUDA, use environment-linux-cuda.yml instead
-# 6. PyTorch will automatically use MPS acceleration on Apple Silicon if available
+    # Optional: Uncomment as needed
+    # - wandb>=0.15.0           # Experiment tracking
+    # - optuna>=3.2.0           # Hyperparameter tuning
+    # - dm-control>=1.0.14      # DeepMind Control Suite
+    # - opencv-python>=4.8.0    # Computer vision
+    # - pillow>=10.0.0          # Image processing
+    # - imageio>=2.31.0         # Image I/O
+    # - seaborn>=0.12.0         # Statistical plotting
+    # - scikit-learn>=1.3.0     # ML utilities
+
+# Platform-specific notes:
+# 
+# macOS (Intel/Apple Silicon):
+# - PyTorch will use MPS acceleration on Apple Silicon automatically
+# - No CUDA dependencies needed
+# 
+# Linux with NVIDIA GPU:
+# - Conda will automatically install CUDA-enabled PyTorch
+# - Requires NVIDIA drivers to be pre-installed
+# 
+# Linux/Windows CPU-only:
+# - Will install CPU-only PyTorch automatically
+# - Smaller download, no GPU dependencies
+#
+# Installation:
+# 1. Create: conda env create -f environment.yml
+# 2. Update: conda env update -f environment.yml  
+# 3. Activate: conda activate rl-lab
+#
+# For more control, use the setup_env.sh script which can detect
+# your platform and optimize the installation accordingly.

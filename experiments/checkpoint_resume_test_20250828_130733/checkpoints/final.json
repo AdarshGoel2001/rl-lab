@@ -1,7 +1,0 @@
-{
-  "step": 1000,
-  "name": "final",
-  "is_best": false,
-  "experiment_dir": "experiments/checkpoint_resume_test_20250828_130733",
-  "compress": true
-}

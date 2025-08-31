@@ -1,7 +1,0 @@
-{
-  "experiment_name": "ppo_pendulum_mps_test",
-  "config_hash": "4e710f52",
-  "created_at": "2025-08-31T01:05:36.378481",
-  "experiment_dir": "experiments/ppo_pendulum_mps_test_20250831_010535",
-  "git_hash": "49e5c70d2f6775f37d21ece941ccb28fdff16f22"
-}

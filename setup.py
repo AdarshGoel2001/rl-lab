@@ -8,10 +8,16 @@ import modules and run experiments.
 from setuptools import setup, find_packages
 from pathlib import Path
 
-# Read requirements
+# Read requirements (only uncommented lines)
 requirements_path = Path(__file__).parent / "requirements.txt"
-with open(requirements_path) as f:
-    requirements = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+requirements = []
+if requirements_path.exists():
+    with open(requirements_path) as f:
+        for line in f:
+            line = line.strip()
+            # Skip empty lines and comments
+            if line and not line.startswith('#'):
+                requirements.append(line)
 
 # Read description
 readme_path = Path(__file__).parent / "CLAUDE.md"
@@ -32,10 +38,36 @@ setup(
     python_requires=">=3.8",
     install_requires=requirements,
     extras_require={
-        'atari': ['atari-py>=0.2.9'],
-        'mujoco': ['mujoco>=2.3.0'],
-        'box2d': ['box2d-py>=2.3.5'],
-        'pybullet': ['pybullet>=3.2.5'],
+        'all': [
+            'wandb>=0.15.0',
+            'optuna>=3.2.0',
+            'dm-control>=1.0.14',
+            'opencv-python>=4.8.0',
+            'pillow>=10.0.0',
+            'imageio>=2.31.0',
+            'seaborn>=0.12.0',
+            'scikit-learn>=1.3.0',
+            'flake8>=6.0.0',
+            'mypy>=1.4.0',
+        ],
+        'envs': [
+            'dm-control>=1.0.14',
+            'atari-py>=0.2.9',
+            'mujoco>=2.3.0',
+            'box2d-py>=2.3.5', 
+            'pybullet>=3.2.5',
+        ],
+        'dev': [
+            'wandb>=0.15.0',
+            'optuna>=3.2.0',
+            'flake8>=6.0.0',
+            'mypy>=1.4.0',
+        ],
+        'vision': [
+            'opencv-python>=4.8.0',
+            'pillow>=10.0.0',
+            'imageio>=2.31.0',
+        ],
     },
     classifiers=[
         "Development Status :: 3 - Alpha",

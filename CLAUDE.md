@@ -2,10 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-# Modular RL Mono-Repo: Complete Architecture & Implementation Plan
+# RL Lab: Modular Reinforcement Learning Framework
 
 ## Executive Summary
-A highly modular reinforcement learning mono-repo designed for researchers to easily implement algorithms, run experiments, and reproduce results across different environments, function approximators, and dynamics models.
+A highly modular reinforcement learning framework designed for researchers to easily implement algorithms, run experiments, and reproduce results. The framework is currently focused on PPO and classic control environments, with a foundation for extending to more algorithms and environments.
 
 ## Core Design Principles
 1. **Plug-and-Play Components**: Every component (algorithm, environment, network, logger) should be swappable
@@ -323,21 +323,19 @@ class Trainer:
         torch.cuda.set_rng_state_all(checkpoint['rng_states']['cuda'])
 ```
 
-## Daily Workflow Solutions
+## Daily Research Workflow
 
 ### 1. Running Experiments
 ```bash
 # Start new experiment
 python scripts/train.py --config configs/experiments/ppo_cartpole.yaml
 
-# Resume interrupted experiment
-python scripts/train.py --resume experiments/ppo_cartpole_2024/
+# Resume interrupted training
+python scripts/train.py --config configs/experiments/ppo_cartpole.yaml --resume experiments/experiment_folder/
 
-# Run with different seeds
-python scripts/train.py --config configs/experiments/ppo_cartpole.yaml --seed 1,2,3,4,5
-
-# Quick test run
-python scripts/train.py --config configs/experiments/ppo_cartpole.yaml --debug --total_timesteps 1000
+# For different parameters, edit the config file directly - it's cleaner than overrides
+# Then run normally
+python scripts/train.py --config configs/experiments/your_modified_config.yaml
 ```
 
 ### 2. Hyperparameter Sweeps
@@ -508,46 +506,40 @@ class ReproducibilityChecker:
    - Distributed training
    - Auto-tuning
 
-## Quick Start Guide for Beginners
+## Quick Start Guide
 
-### 1. Install Dependencies
+### 1. Environment Setup
 ```bash
+# Automated setup (detects platform and installs dependencies)
+./setup_env.sh
+
+# Or manual setup
 pip install -r requirements.txt
 ```
 
-### 2. Run Your First Experiment
+### 2. Run Your First Training
 ```bash
-# Use pre-made config
-python scripts/train.py --config configs/quickstart/ppo_cartpole.yaml
+# Train PPO on CartPole
+python scripts/train.py --config configs/experiments/ppo_cartpole.yaml
+
+# Other available experiments
+python scripts/train.py --config configs/experiments/ppo_acrobot_optimized.yaml
+python scripts/train.py --config configs/experiments/ppo_pendulum_optimized.yaml
 ```
 
-### 3. Implement Your Own Algorithm
-```python
-# src/algorithms/my_algorithm.py
-from src.algorithms.base import BaseAlgorithm
-
-@register_algorithm("my_algorithm")
-class MyAlgorithm(BaseAlgorithm):
-    def act(self, observation):
-        # Your implementation
-        pass
-        
-    def update(self, batch):
-        # Your implementation
-        pass
-```
-
-### 4. Create Config for Your Algorithm
-```yaml
-# configs/algorithms/my_algorithm.yaml
-algorithm:
-  name: "my_algorithm"
-  # Your hyperparameters
-```
-
-### 5. Train!
+### 3. Monitor Progress
 ```bash
-python scripts/train.py --config configs/experiments/my_experiment.yaml
+# View training in TensorBoard
+tensorboard --logdir experiments/
+
+# Check experiment directory
+ls experiments/  # Shows all your experiments
+```
+
+### 4. Resume Interrupted Training
+```bash
+# Resume from checkpoint
+python scripts/train.py --config configs/experiments/ppo_cartpole.yaml --resume experiments/your_experiment_folder/
 ```
 
 ## Testing Strategy

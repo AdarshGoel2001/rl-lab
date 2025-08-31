@@ -1,7 +1,0 @@
-{
-  "step": 20480,
-  "name": "auto_step_20480",
-  "is_best": false,
-  "experiment_dir": "experiments/ppo_cartpole_homework_20250828_230654",
-  "compress": true
-}

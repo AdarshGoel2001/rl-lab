@@ -1,7 +1,0 @@
-{
-  "step": 2000,
-  "name": "final",
-  "is_best": false,
-  "experiment_dir": "experiments/config_test_learning_rate_override_20250828_130747",
-  "compress": true
-}

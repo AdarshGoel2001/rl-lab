@@ -1,7 +1,0 @@
-{
-  "step": 200704,
-  "name": "auto_step_200704",
-  "is_best": false,
-  "experiment_dir": "experiments/ppo_pendulum_long_training_20250831_005150",
-  "compress": true
-}

@@ -490,9 +490,6 @@ class Trainer(RegistryMixin):
                     if hasattr(self.algorithm, 'networks') and 'critic' in self.algorithm.networks:
                         bootstrap_value = self.algorithm.networks['critic'](obs_tensor).cpu().numpy().item()
                         trajectory['bootstrap_value'] = bootstrap_value
-                        # Debug logging - disabled for now
-                        # if hasattr(self.algorithm, 'debug_network_outputs') and self.algorithm.debug_network_outputs:
-                        #     print(f"[DEBUG] Bootstrap value for truncated episode: {bootstrap_value:.2f}, steps_collected: {steps_collected}, episode_done: {self._episode_done}")
             
             return trajectory
         
