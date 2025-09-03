@@ -1,0 +1,51 @@
+algorithm:
+  lr: 0.0003
+  name: random
+buffer:
+  batch_size: 2048
+  capacity: 2048
+  type: trajectory
+environment:
+  max_episode_steps: null
+  name: Acrobot-v1
+  normalize_obs: false
+  normalize_reward: false
+  wrapper: gym
+experiment:
+  debug: false
+  device: cpu
+  name: acrobot_random_baseline
+  seed: 42
+logging:
+  log_frequency: 1000
+  tensorboard: false
+  terminal: true
+  wandb_enabled: false
+  wandb_project: null
+  wandb_tags: []
+network:
+  actor:
+    activation: tanh
+    hidden_dims:
+    - 64
+    - 64
+    initialization: xavier_uniform
+    input_dim: null
+    output_activation: linear
+    output_dim: null
+    type: actor_mlp
+  critic:
+    activation: tanh
+    hidden_dims:
+    - 64
+    - 64
+    initialization: xavier_uniform
+    input_dim: null
+    output_activation: linear
+    output_dim: null
+    type: critic_mlp
+training:
+  checkpoint_frequency: 10000
+  eval_frequency: 2000
+  num_eval_episodes: 10
+  total_timesteps: 10000

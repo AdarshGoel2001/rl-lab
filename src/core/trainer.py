@@ -246,28 +246,60 @@ class Trainer(RegistryMixin):
         logger.info(f"Random seeds set to {seed}")
     
     def _attempt_resume(self):
-        """Attempt to resume training from latest checkpoint"""
-        checkpoint = self.checkpoint_manager.load_checkpoint()
+        """Attempt to resume training from latest checkpoint or load transfer checkpoint"""
+        # First check if there's a specific checkpoint to load for transfer learning
+        transfer_checkpoint_path = getattr(self.config.training, 'load_checkpoint', None)
+        
+        if transfer_checkpoint_path:
+            logger.info(f"Loading checkpoint for transfer learning: {transfer_checkpoint_path}")
+            checkpoint = self.checkpoint_manager.load_checkpoint(transfer_checkpoint_path, load_latest=False)
+        else:
+            # Default behavior: load latest checkpoint from current experiment
+            checkpoint = self.checkpoint_manager.load_checkpoint()
         
         if checkpoint is not None:
-            logger.info("Resuming from checkpoint...")
+            transfer_checkpoint_path = getattr(self.config.training, 'load_checkpoint', None)
             
-            trainer_state = {
-                'algorithm': self.algorithm,
-                'buffer': self.buffer,
-                'environment': self.environment,
-                'networks': self.networks,
-                'metrics': self.metrics
-            }
-            
-            trainer_state = self.checkpoint_manager.restore_training_state(
-                trainer_state, checkpoint
-            )
-            
-            self.step = trainer_state['step']
-            self.metrics = trainer_state['metrics']
-            
-            logger.info(f"Resumed from step {self.step}")
+            if transfer_checkpoint_path:
+                logger.info("Loading checkpoint for transfer learning...")
+                # For transfer learning: load only network weights, start training fresh
+                trainer_state = {
+                    'algorithm': self.algorithm,
+                    'buffer': self.buffer,
+                    'environment': self.environment,
+                    'networks': self.networks,
+                    'metrics': self.metrics
+                }
+                
+                # Load only algorithm weights, not training progress
+                trainer_state = self.checkpoint_manager.restore_training_state(
+                    trainer_state, checkpoint, transfer_learning=True
+                )
+                
+                # Keep fresh training state for new environment
+                self.step = 0
+                self.metrics = {'episodes': 0, 'total_reward': 0.0}
+                
+                logger.info("Transfer learning initialized - starting fresh training with pretrained weights")
+            else:
+                logger.info("Resuming from checkpoint...")
+                # Normal resume: restore everything including training progress
+                trainer_state = {
+                    'algorithm': self.algorithm,
+                    'buffer': self.buffer,
+                    'environment': self.environment,
+                    'networks': self.networks,
+                    'metrics': self.metrics
+                }
+                
+                trainer_state = self.checkpoint_manager.restore_training_state(
+                    trainer_state, checkpoint
+                )
+                
+                self.step = trainer_state['step']
+                self.metrics = trainer_state['metrics']
+                
+                logger.info(f"Resumed from step {self.step}")
         else:
             logger.info("No checkpoint found, starting from scratch")
     

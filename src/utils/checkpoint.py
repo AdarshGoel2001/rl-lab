@@ -172,56 +172,71 @@ class CheckpointManager:
             return None
         
         try:
-            checkpoint_data = torch.load(checkpoint_path, map_location='cpu')
+            # PyTorch 2.6+ defaults to weights_only=True; our checkpoints include full state.
+            # Prefer explicit weights_only=False when available for compatibility.
+            try:
+                checkpoint_data = torch.load(checkpoint_path, map_location='cpu', weights_only=False)  # type: ignore[arg-type]
+            except TypeError:
+                # Older torch without weights_only argument
+                checkpoint_data = torch.load(checkpoint_path, map_location='cpu')
             logger.info(f"Checkpoint loaded: {checkpoint_path} (step {checkpoint_data.get('step', 'unknown')})")
             return checkpoint_data
-        
         except Exception as e:
             logger.error(f"Failed to load checkpoint {checkpoint_path}: {e}")
             raise
     
     def restore_training_state(self, trainer_state: Dict[str, Any], 
-                             checkpoint_data: Dict[str, Any]) -> Dict[str, Any]:
+                             checkpoint_data: Dict[str, Any],
+                             transfer_learning: bool = False) -> Dict[str, Any]:
         """
         Restore training state from checkpoint data.
         
         Args:
             trainer_state: Current trainer state dictionary
             checkpoint_data: Loaded checkpoint data
+            transfer_learning: If True, only load algorithm weights (not training progress)
             
         Returns:
             Updated trainer state with restored components
         """
         step = checkpoint_data.get('step', 0)
         
-        # Restore algorithm state
+        # Always restore algorithm state (neural network weights)
         if 'algorithm' in trainer_state and 'algorithm_state' in checkpoint_data:
             trainer_state['algorithm'].load_checkpoint(checkpoint_data['algorithm_state'])
             logger.debug("Algorithm state restored")
         
-        # Restore buffer state
-        if 'buffer' in trainer_state and 'buffer_state' in checkpoint_data:
-            trainer_state['buffer'].load_checkpoint(checkpoint_data['buffer_state'])
-            logger.debug("Buffer state restored")
+        if transfer_learning:
+            # For transfer learning: only load networks, skip training progress
+            logger.info("Transfer learning mode: loading only neural network weights")
+            # Don't restore buffer, RNG states, or training metrics
+            # Keep trainer_state['step'] and trainer_state['metrics'] unchanged
+        else:
+            # Normal checkpoint restore: load everything
+            # Restore buffer state
+            if 'buffer' in trainer_state and 'buffer_state' in checkpoint_data:
+                trainer_state['buffer'].load_checkpoint(checkpoint_data['buffer_state'])
+                logger.debug("Buffer state restored")
+            
+            # Restore other component states
+            for key, value in trainer_state.items():
+                state_key = f'{key}_state'
+                if key not in ['algorithm', 'buffer'] and state_key in checkpoint_data:
+                    if hasattr(value, 'load_checkpoint'):
+                        value.load_checkpoint(checkpoint_data[state_key])
+                        logger.debug(f"{key} state restored")
+            
+            # Restore RNG states for reproducibility
+            if 'rng_states' in checkpoint_data:
+                self._restore_rng_states(checkpoint_data['rng_states'])
+                logger.debug("RNG states restored")
+            
+            # Update trainer state with checkpoint training progress
+            trainer_state['step'] = step
+            trainer_state['metrics'] = checkpoint_data.get('metrics', {})
+            
+            logger.info(f"Training state restored to step {step}")
         
-        # Restore other component states
-        for key, value in trainer_state.items():
-            state_key = f'{key}_state'
-            if key not in ['algorithm', 'buffer'] and state_key in checkpoint_data:
-                if hasattr(value, 'load_checkpoint'):
-                    value.load_checkpoint(checkpoint_data[state_key])
-                    logger.debug(f"{key} state restored")
-        
-        # Restore RNG states for reproducibility
-        if 'rng_states' in checkpoint_data:
-            self._restore_rng_states(checkpoint_data['rng_states'])
-            logger.debug("RNG states restored")
-        
-        # Update trainer state
-        trainer_state['step'] = step
-        trainer_state['metrics'] = checkpoint_data.get('metrics', {})
-        
-        logger.info(f"Training state restored to step {step}")
         return trainer_state
     
     def auto_save(self, trainer_state: Dict[str, Any], step: int) -> Optional[Path]:

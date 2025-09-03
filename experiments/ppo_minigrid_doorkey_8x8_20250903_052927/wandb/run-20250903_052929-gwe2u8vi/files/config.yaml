@@ -1,0 +1,113 @@
+_wandb:
+    value:
+        cli_version: 0.21.1
+        e:
+            yl4bd3z6za69ae9ihyqdma3usmkuyq3a:
+                args:
+                    - --config
+                    - configs/experiments/ppo_doorkey_8x8.yaml
+                codePath: scripts/train.py
+                codePathLocal: scripts/train.py
+                email: adarshgoel@gmail.com
+                executable: /Users/martian/miniconda3/envs/rl-lab/bin/python
+                git:
+                    commit: 7429bebacb78ab371d0a72de5db4d3bc604871ca
+                    remote: git@github.com:AdarshGoel2001/rl-lab.git
+                host: Adarshs-MacBook-Pro.local
+                os: macOS-15.6.1-arm64-arm-64bit
+                program: /Users/martian/Documents/Code/rl-lab/scripts/train.py
+                python: CPython 3.10.18
+                root: experiments/ppo_minigrid_doorkey_8x8_20250903_052927
+                startedAt: "2025-09-02T23:59:29.334037Z"
+                writerId: yl4bd3z6za69ae9ihyqdma3usmkuyq3a
+        m: []
+        python_version: 3.10.18
+        t:
+            "1":
+                - 1
+            "2":
+                - 1
+            "3":
+                - 13
+                - 15
+                - 16
+            "4": 3.10.18
+            "5": 0.21.1
+            "12": 0.21.1
+            "13": darwin-arm64
+algorithm.lr:
+    value: "3e-4"
+algorithm.name:
+    value: ppo
+buffer.batch_size:
+    value: 12288
+buffer.capacity:
+    value: 12288
+buffer.type:
+    value: trajectory
+environment.max_episode_steps:
+    value: 100
+environment.name:
+    value: MiniGrid-DoorKey-8x8-v0
+environment.normalize_obs:
+    value: false
+environment.normalize_reward:
+    value: false
+environment.wrapper:
+    value: minigrid
+experiment.debug:
+    value: true
+experiment.device:
+    value: cpu
+experiment.name:
+    value: ppo_minigrid_doorkey_8x8
+experiment.seed:
+    value: 42
+logging.log_frequency:
+    value: 3000
+logging.tensorboard:
+    value: true
+logging.terminal:
+    value: true
+logging.wandb_enabled:
+    value: true
+logging.wandb_project:
+    value: null
+logging.wandb_tags:
+    value: '[]'
+network.actor.activation:
+    value: relu
+network.actor.hidden_dims:
+    value: '[64, 64]'
+network.actor.initialization:
+    value: xavier_uniform
+network.actor.input_dim:
+    value: null
+network.actor.output_activation:
+    value: linear
+network.actor.output_dim:
+    value: null
+network.actor.type:
+    value: minigrid_cnn
+network.critic.activation:
+    value: relu
+network.critic.hidden_dims:
+    value: '[64, 64]'
+network.critic.initialization:
+    value: xavier_uniform
+network.critic.input_dim:
+    value: null
+network.critic.output_activation:
+    value: linear
+network.critic.output_dim:
+    value: null
+network.critic.type:
+    value: minigrid_cnn
+training.checkpoint_frequency:
+    value: 50000
+training.eval_frequency:
+    value: 15000
+training.num_eval_episodes:
+    value: 50
+training.total_timesteps:
+    value: 500000

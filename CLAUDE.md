@@ -2,10 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-# RL Lab: Modular Reinforcement Learning Framework
+# Modular RL Mono-Repo: Complete Architecture & Implementation Plan
 
 ## Executive Summary
-A highly modular reinforcement learning framework designed for researchers to easily implement algorithms, run experiments, and reproduce results. The framework is currently focused on PPO and classic control environments, with a foundation for extending to more algorithms and environments.
+A highly modular reinforcement learning mono-repo designed for researchers to easily implement algorithms, run experiments, and reproduce results across different environments, function approximators, and dynamics models.
 
 ## Core Design Principles
 1. **Plug-and-Play Components**: Every component (algorithm, environment, network, logger) should be swappable
@@ -475,40 +475,10 @@ class ReproducibilityChecker:
 - **Problem**: Config changes breaking old experiments
 - **Solution**: Config versioning and migration system
 
-## Implementation Priority Order
 
-1. **Phase 1: Core Infrastructure** (Week 1)
-   - Base classes for Algorithm, Environment, Network
-   - Config loading system
-   - Basic training loop
+## Quick Start Guide for Beginners
 
-2. **Phase 2: Checkpoint System** (Week 2)
-   - Save/load functionality
-   - Automatic checkpointing
-   - Resume capability
-
-3. **Phase 3: First Algorithm** (Week 3)
-   - Implement PPO as reference
-   - Test on CartPole
-   - Verify reproducibility
-
-4. **Phase 4: Logging & Monitoring** (Week 4)
-   - TensorBoard integration
-   - Metric tracking
-   - Experiment database
-
-5. **Phase 5: Additional Algorithms** (Weeks 5-6)
-   - SAC, DQN, etc.
-   - World models (Dreamer, PlaNet)
-
-6. **Phase 6: Advanced Features** (Weeks 7-8)
-   - Hyperparameter sweeps
-   - Distributed training
-   - Auto-tuning
-
-## Quick Start Guide
-
-### 1. Environment Setup
+### 1. Install Dependencies
 ```bash
 # Automated setup (detects platform and installs dependencies)
 ./setup_env.sh
@@ -519,27 +489,37 @@ pip install -r requirements.txt
 
 ### 2. Run Your First Training
 ```bash
-# Train PPO on CartPole
-python scripts/train.py --config configs/experiments/ppo_cartpole.yaml
-
-# Other available experiments
-python scripts/train.py --config configs/experiments/ppo_acrobot_optimized.yaml
-python scripts/train.py --config configs/experiments/ppo_pendulum_optimized.yaml
+# Use pre-made config
+python scripts/train.py --config configs/quickstart/ppo_cartpole.yaml
 ```
 
-### 3. Monitor Progress
-```bash
-# View training in TensorBoard
-tensorboard --logdir experiments/
+### 3. Implement Your Own Algorithm
+```python
+# src/algorithms/my_algorithm.py
+from src.algorithms.base import BaseAlgorithm
 
-# Check experiment directory
-ls experiments/  # Shows all your experiments
+@register_algorithm("my_algorithm")
+class MyAlgorithm(BaseAlgorithm):
+    def act(self, observation):
+        # Your implementation
+        pass
+        
+    def update(self, batch):
+        # Your implementation
+        pass
 ```
 
-### 4. Resume Interrupted Training
+### 4. Create Config for Your Algorithm
+```yaml
+# configs/algorithms/my_algorithm.yaml
+algorithm:
+  name: "my_algorithm"
+  # Your hyperparameters
+```
+
+### 5. Train!
 ```bash
-# Resume from checkpoint
-python scripts/train.py --config configs/experiments/ppo_cartpole.yaml --resume experiments/your_experiment_folder/
+python scripts/train.py --config configs/experiments/my_experiment.yaml
 ```
 
 ## Testing Strategy
@@ -609,24 +589,6 @@ python -m rlrepo export exp1 --format latex
 python -m rlrepo cleanup --keep-best 10 --keep-recent 30
 ```
 
-## Dependencies (requirements.txt)
-```
-torch>=2.0.0
-numpy>=1.24.0
-gymnasium>=0.28.0
-dm-control>=1.0.0
-tensorboard>=2.13.0
-wandb>=0.15.0
-hydra-core>=1.3.0
-optuna>=3.2.0
-pandas>=2.0.0
-matplotlib>=3.7.0
-seaborn>=0.12.0
-tqdm>=4.65.0
-pytest>=7.3.0
-black>=23.3.0
-pyyaml>=6.0
-```
 
 ## Final Notes for Implementation
 

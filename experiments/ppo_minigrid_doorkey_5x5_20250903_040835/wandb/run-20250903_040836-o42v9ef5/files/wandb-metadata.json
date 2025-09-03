@@ -1,0 +1,41 @@
+{
+  "os":  "macOS-15.6.1-arm64-arm-64bit",
+  "python":  "CPython 3.10.18",
+  "startedAt":  "2025-09-02T22:38:36.705429Z",
+  "args":  [
+    "--config",
+    "configs/experiments/ppo_doorkey_5x5.yaml"
+  ],
+  "program":  "/Users/martian/Documents/Code/rl-lab/scripts/train.py",
+  "codePath":  "scripts/train.py",
+  "codePathLocal":  "scripts/train.py",
+  "git":  {
+    "remote":  "git@github.com:AdarshGoel2001/rl-lab.git",
+    "commit":  "7429bebacb78ab371d0a72de5db4d3bc604871ca"
+  },
+  "email":  "adarshgoel@gmail.com",
+  "root":  "experiments/ppo_minigrid_doorkey_5x5_20250903_040835",
+  "host":  "Adarshs-MacBook-Pro.local",
+  "executable":  "/Users/martian/miniconda3/envs/rl-lab/bin/python",
+  "cpu_count":  8,
+  "cpu_count_logical":  8,
+  "disk":  {
+    "/":  {
+      "total":  "245107195904",
+      "used":  "195407720448"
+    }
+  },
+  "memory":  {
+    "total":  "8589934592"
+  },
+  "apple":  {
+    "name":  "Apple M2",
+    "ecpuCores":  4,
+    "pcpuCores":  4,
+    "gpuCores":  10,
+    "memoryGb":  8,
+    "swapTotalBytes":  "6442450944",
+    "ramTotalBytes":  "8589934592"
+  },
+  "writerId":  "mlkehucpogh9rdf192n2td3ilgs4768v"
+}

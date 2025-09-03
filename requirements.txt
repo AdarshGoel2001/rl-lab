@@ -35,6 +35,7 @@ scipy>=1.11.0
 # optuna>=3.2.0
 
 # Advanced RL Environments
+minigrid>=2.3.1             # MiniGrid gridworld environments
 # dm-control>=1.0.14        # DeepMind Control Suite (requires MuJoCo)
 # atari-py>=0.2.9           # Atari environments
 # mujoco>=2.3.0             # MuJoCo physics simulator

@@ -1,0 +1,7 @@
+{
+  "step": 491520,
+  "name": "auto_step_491520",
+  "is_best": false,
+  "experiment_dir": "experiments/ppo_minigrid_doorkey_8x8_20250903_053030",
+  "compress": true
+}

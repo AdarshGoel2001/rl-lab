@@ -108,28 +108,51 @@ class AlgorithmConfig:
 
 @dataclass
 class EnvironmentConfig:
-    """Environment configuration"""
-    name: str
+    """Environment configuration (flexible)"""
+    name: str = ''
     wrapper: str = 'gym'
     normalize_obs: bool = False
     normalize_reward: bool = False
     max_episode_steps: Optional[int] = None
+    
+    def __init__(self, **kwargs):
+        # Accept arbitrary environment-specific parameters
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+        # Defaults
+        if not hasattr(self, 'wrapper'):
+            self.wrapper = 'gym'
+        if not hasattr(self, 'normalize_obs'):
+            self.normalize_obs = False
+        if not hasattr(self, 'normalize_reward'):
+            self.normalize_reward = False
 
 
 @dataclass
 class NetworkConfig:
-    """Network configuration"""
-    type: str
+    """Network configuration with flexible extras"""
+    # Common fields
+    type: str = ''
     input_dim: Optional[Union[int, tuple]] = None
     output_dim: Optional[int] = None
-    hidden_dims: list = None
+    hidden_dims: Optional[list] = None
     activation: str = 'relu'
     output_activation: str = 'linear'
     initialization: str = 'xavier_uniform'
     
-    def __post_init__(self):
-        if self.hidden_dims is None:
+    def __init__(self, **kwargs):
+        # Accept arbitrary network-specific parameters and set as attributes
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+        # Defaults for common fields
+        if not hasattr(self, 'hidden_dims') or self.hidden_dims is None:
             self.hidden_dims = [64, 64]
+        if not hasattr(self, 'activation'):
+            self.activation = 'relu'
+        if not hasattr(self, 'output_activation'):
+            self.output_activation = 'linear'
+        if not hasattr(self, 'initialization'):
+            self.initialization = 'xavier_uniform'
 
 
 @dataclass
