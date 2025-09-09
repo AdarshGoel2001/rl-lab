@@ -1,0 +1,165 @@
+# PPO Atari Pong Configuration
+#
+# This configuration implements PPO on Atari Pong with all standard preprocessing:
+# - 84x84 grayscale images with 4-frame stacking
+# - Frame skipping (4 frames) with max pooling
+# - Sticky actions (25% probability) for realism
+# - Reward clipping to [-1, 0, 1]
+# - Terminal on life loss (disabled for Pong as it has no lives)
+# - Nature CNN architecture optimized for 84x84x4 inputs
+# - 8 parallel environments for fast training
+#
+# Expected training time: 3-4 hours on modern hardware
+# Target performance: Beat opponent consistently (reward > 15)
+
+experiment:
+  name: "ppo_atari_pong"
+  seed: 42
+  device: "auto"                  # Auto-detect: CUDA > MPS > CPU
+  debug: false                    # Set to true for verbose logging
+
+algorithm:
+  name: "ppo"
+  
+  # PPO hyperparameters optimized for Atari
+  lr: 2.5e-4                     # Standard Atari learning rate
+  lr_schedule: "linear"          # Linear decay to 0
+  clip_ratio: 0.1                # More conservative than default (better for Atari)
+  value_coef: 0.5
+  entropy_coef: 0.01             # Encourage exploration
+  
+  # Training configuration
+  ppo_epochs: 4                  # Standard for Atari
+  minibatch_size: 256            # Batch size for gradient updates
+  max_grad_norm: 0.5             # Gradient clipping for stability
+  
+  # Advantage computation
+  normalize_advantages: true     # Essential for Atari stability
+  clip_value_loss: true         # Clip value function updates
+
+environment:
+  game: "ALE/Pong-v5"           # Modern Atari Pong (ALE namespace)
+  wrapper: "atari"               # Use our comprehensive Atari wrapper
+  
+  # Atari preprocessing configuration
+  frame_skip: 4                  # Skip 4 frames (standard)
+  frame_stack: 4                 # Stack 4 frames (captures motion)
+  sticky_actions: 0.25           # 25% chance to repeat last action
+  noop_max: 30                   # Max 30 no-op actions at reset
+  terminal_on_life_loss: false   # Pong doesn't have lives
+  clip_rewards: true             # Clip rewards to [-1, 0, 1]
+  full_action_space: false       # Use reduced action space (6 actions)
+  
+  # Parallel environment settings (8 environments for speed)
+  num_environments: 8
+  parallel_backend: "process"
+  start_method: "spawn"
+
+# Separate evaluation environment (single env for clean evaluation)
+evaluation:
+  game: "ALE/Pong-v5"           # Same game as training (use 'game' for atari wrapper)
+  wrapper: "atari"              # Use atari wrapper for consistency
+  
+  # Match training preprocessing exactly
+  frame_skip: 4                 # Same as training
+  frame_stack: 4                # Same as training
+  sticky_actions: 0.25          # Same as training
+  noop_max: 30                  # Same as training
+  terminal_on_life_loss: false  # Same as training
+  clip_rewards: true            # Same as training
+  full_action_space: false      # Same as training
+  
+  # Single environment settings (no parallel processing)
+  num_environments: 1           # Single environment for evaluation
+  parallel_backend: null        # No parallel processing
+  start_method: null            # No parallel processing
+
+network:
+  # Actor network (policy) - uses Nature CNN
+  actor:
+    type: "nature_cnn"           # Nature CNN for Atari
+    channels: [32, 64, 64]       # Conv layer filters
+    hidden_dim: 512              # FC layer size
+    activation: "relu"           # ReLU activation
+    
+  # Critic network (value function) - uses Nature CNN  
+  critic:
+    type: "nature_cnn"           # Nature CNN for Atari
+    channels: [32, 64, 64]       # Same architecture as actor
+    hidden_dim: 512              # FC layer size
+    activation: "relu"           # ReLU activation
+
+buffer:
+  type: "trajectory"
+  capacity: 128                  # Single environment: 128 steps per collection
+  batch_size: 128                # Use all collected data
+  
+  # GAE parameters
+  gamma: 0.99                    # Standard discount factor
+  gae_lambda: 0.95               # GAE lambda parameter
+  compute_returns: true
+  normalize_advantages: true
+
+training:
+  total_timesteps: 10000000      # 10M timesteps (standard for Atari)
+  eval_frequency: 100000         # Evaluate every 100k steps
+  checkpoint_frequency: 500000   # Checkpoint every 500k steps
+  num_eval_episodes: 32          # 4 episodes per env * 8 envs
+  
+  # Early stopping (optional - aggressive target)
+  early_stopping: true
+  target_reward: 15.0            # Strong Pong performance
+  patience: 5                    # Wait 5 evaluations
+
+logging:
+  terminal: true
+  tensorboard: true
+  log_frequency: 10000           # Log every 10k steps (less frequent for Atari)
+  
+  # Weights & Biases logging (DISABLED for testing)
+  wandb_enabled: false
+  wandb:
+    project: "rl-lab-atari"
+    tags: ["ppo", "atari", "pong", "parallel", "nature_cnn"]
+    notes: "PPO on Atari Pong with Nature CNN and 8 parallel environments"
+
+# Expected performance metrics
+expected_performance:
+  training_time_hours: 4.0       # ~4 hours on modern GPU
+  data_collection_speedup: 6.0   # ~6x speedup from parallel envs
+  target_reward: 15.0            # Consistently beat opponent
+  convergence_timesteps: 5000000 # Usually converges by 5M steps
+  
+# Atari-specific notes
+atari_configuration:
+  observation_space: "[84, 84, 4]"  # 84x84 grayscale, 4 frame stack
+  action_space: "6"                  # Reduced action space for Pong
+  preprocessing_chain:
+    - "NoOp reset (max 30)"
+    - "Frame skip (4) with max pooling"
+    - "Sticky actions (25%)"  
+    - "Reward clipping [-1, 0, 1]"
+    - "Grayscale conversion"
+    - "84x84 resize"
+    - "4-frame stacking"
+    - "Normalization [0, 1]"
+  
+  network_architecture:
+    - "Conv1: 84x84x4 -> 20x20x32 (8x8, stride=4)"
+    - "Conv2: 20x20x32 -> 9x9x64 (4x4, stride=2)"
+    - "Conv3: 9x9x64 -> 7x7x64 (3x3, stride=1)"
+    - "FC1: 3136 -> 512"
+    - "Actor head: 512 -> 6 (actions)"
+    - "Critic head: 512 -> 1 (value)"
+
+# Hardware requirements
+hardware_requirements:
+  minimum:
+    cpu_cores: 8
+    ram_gb: 8
+    gpu_memory_gb: 4  # Optional but recommended
+  recommended:
+    cpu_cores: 16
+    ram_gb: 16
+    gpu_memory_gb: 8
+  disk_space_gb: 5    # For checkpoints and logs

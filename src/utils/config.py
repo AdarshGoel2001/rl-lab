@@ -251,6 +251,7 @@ class Config:
     buffer: BufferConfig
     training: TrainingConfig
     logging: LoggingConfig
+    evaluation: Optional[EnvironmentConfig] = None
     
     @classmethod
     def from_dict(cls, config_dict: Dict[str, Any]) -> 'Config':
@@ -270,6 +271,10 @@ class Config:
                 # Single network
                 network = NetworkConfig(**network_config)
             
+            # Handle optional evaluation environment config
+            evaluation_config = config_dict.get('evaluation')
+            evaluation = EnvironmentConfig(**evaluation_config) if evaluation_config else None
+            
             return cls(
                 experiment=ExperimentConfig(**config_dict.get('experiment', {})),
                 algorithm=AlgorithmConfig(**config_dict.get('algorithm', {})),
@@ -277,7 +282,8 @@ class Config:
                 network=network,
                 buffer=BufferConfig(**config_dict.get('buffer', {})),
                 training=TrainingConfig(**config_dict.get('training', {})),
-                logging=LoggingConfig(**config_dict.get('logging', {}))
+                logging=LoggingConfig(**config_dict.get('logging', {})),
+                evaluation=evaluation
             )
         except TypeError as e:
             raise ConfigError(f"Invalid configuration: {e}")
@@ -392,6 +398,37 @@ def merge_configs(base_config: Dict[str, Any], override_config: Dict[str, Any]) 
             result[key] = value
     
     return result
+
+
+def apply_config_overrides(config: Config, overrides: Dict[str, Any]) -> Config:
+    """
+    Apply overrides to an existing Config object using dot notation.
+    
+    Args:
+        config: Base configuration object
+        overrides: Dictionary of overrides using dot notation (e.g., 'algorithm.lr': 0.001)
+        
+    Returns:
+        New Config object with overrides applied
+    """
+    config_dict = config.to_dict()
+    
+    # Convert dot notation overrides to nested dictionary
+    nested_overrides = {}
+    for key, value in overrides.items():
+        parts = key.split('.')
+        current = nested_overrides
+        for part in parts[:-1]:
+            if part not in current:
+                current[part] = {}
+            current = current[part]
+        current[parts[-1]] = value
+    
+    # Merge the nested overrides
+    updated_config_dict = merge_configs(config_dict, nested_overrides)
+    
+    # Create new config object
+    return Config.from_dict(updated_config_dict)
 
 
 def load_config(config_path: Union[str, Path], 

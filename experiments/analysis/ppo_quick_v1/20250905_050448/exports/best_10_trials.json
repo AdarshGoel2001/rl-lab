@@ -1,0 +1,142 @@
+[
+  {
+    "rank": 1,
+    "trial_number": 16,
+    "value": 500.0,
+    "params": {
+      "algorithm.lr": 0.0006506676052501415,
+      "algorithm.clip_ratio": 0.12789877213040837,
+      "algorithm.entropy_coef": 0.02
+    },
+    "state": "COMPLETE",
+    "datetime_start": "2025-09-05T05:03:19.405477",
+    "datetime_complete": "2025-09-05T05:03:24.805383",
+    "duration_seconds": 5.399906
+  },
+  {
+    "rank": 2,
+    "trial_number": 17,
+    "value": 500.0,
+    "params": {
+      "algorithm.lr": 0.0008066583652537122,
+      "algorithm.clip_ratio": 0.13993475643167194,
+      "algorithm.entropy_coef": 0.01
+    },
+    "state": "COMPLETE",
+    "datetime_start": "2025-09-05T05:03:24.808929",
+    "datetime_complete": "2025-09-05T05:03:30.229460",
+    "duration_seconds": 5.420531
+  },
+  {
+    "rank": 3,
+    "trial_number": 18,
+    "value": 500.0,
+    "params": {
+      "algorithm.lr": 0.0006467903667112945,
+      "algorithm.clip_ratio": 0.1341048247374583,
+      "algorithm.entropy_coef": 0.02
+    },
+    "state": "COMPLETE",
+    "datetime_start": "2025-09-05T05:03:30.233205",
+    "datetime_complete": "2025-09-05T05:03:35.637291",
+    "duration_seconds": 5.404086
+  },
+  {
+    "rank": 4,
+    "trial_number": 19,
+    "value": 500.0,
+    "params": {
+      "algorithm.lr": 0.000827557613304815,
+      "algorithm.clip_ratio": 0.16092275383467414,
+      "algorithm.entropy_coef": 0.01
+    },
+    "state": "COMPLETE",
+    "datetime_start": "2025-09-05T05:03:35.640589",
+    "datetime_complete": "2025-09-05T05:03:41.071589",
+    "duration_seconds": 5.431
+  },
+  {
+    "rank": 5,
+    "trial_number": 21,
+    "value": 500.0,
+    "params": {
+      "algorithm.lr": 0.0006962700559185838,
+      "algorithm.clip_ratio": 0.1623422152178822,
+      "algorithm.entropy_coef": 0.01
+    },
+    "state": "COMPLETE",
+    "datetime_start": "2025-09-05T05:03:46.443467",
+    "datetime_complete": "2025-09-05T05:03:51.862799",
+    "duration_seconds": 5.419332
+  },
+  {
+    "rank": 6,
+    "trial_number": 15,
+    "value": 496.3333333333333,
+    "params": {
+      "algorithm.lr": 0.00026506405886809044,
+      "algorithm.clip_ratio": 0.16084844859190756,
+      "algorithm.entropy_coef": 0.0
+    },
+    "state": "COMPLETE",
+    "datetime_start": "2025-09-05T05:03:13.943070",
+    "datetime_complete": "2025-09-05T05:03:19.402281",
+    "duration_seconds": 5.459211
+  },
+  {
+    "rank": 7,
+    "trial_number": 13,
+    "value": 367.0,
+    "params": {
+      "algorithm.lr": 0.00024039506830258239,
+      "algorithm.clip_ratio": 0.1116167224336399,
+      "algorithm.entropy_coef": 0.0
+    },
+    "state": "COMPLETE",
+    "datetime_start": "2025-09-05T05:03:02.537196",
+    "datetime_complete": "2025-09-05T05:03:08.303829",
+    "duration_seconds": 5.766633
+  },
+  {
+    "rank": 8,
+    "trial_number": 14,
+    "value": 346.0,
+    "params": {
+      "algorithm.lr": 0.00011852604486622221,
+      "algorithm.clip_ratio": 0.2939819704323989,
+      "algorithm.entropy_coef": 0.0
+    },
+    "state": "COMPLETE",
+    "datetime_start": "2025-09-05T05:03:08.307224",
+    "datetime_complete": "2025-09-05T05:03:13.939765",
+    "duration_seconds": 5.632541
+  },
+  {
+    "rank": 9,
+    "trial_number": 12,
+    "value": 293.0,
+    "params": {
+      "algorithm.lr": 0.00043708610696262625,
+      "algorithm.clip_ratio": 0.29014286128198324,
+      "algorithm.entropy_coef": 0.0
+    },
+    "state": "COMPLETE",
+    "datetime_start": "2025-09-05T05:02:53.625488",
+    "datetime_complete": "2025-09-05T05:03:02.533482",
+    "duration_seconds": 8.907994
+  },
+  {
+    "rank": 10,
+    "trial_number": 2,
+    "value": -Infinity,
+    "params": {
+      "algorithm.lr": 0.00043708610696262625,
+      "algorithm.clip_ratio": 0.29014286128198324,
+      "algorithm.entropy_coef": 0.0
+    },
+    "state": "COMPLETE",
+    "datetime_start": "2025-09-05T05:01:05.686275",
+    "datetime_complete": "2025-09-05T05:01:05.724850",
+    "duration_seconds": 0.038575
+  }
+]

@@ -308,13 +308,22 @@ class PPOAlgorithm(BaseAlgorithm):
         # TODO: Extract data from batch
         observations = batch['observations'] 
         actions = batch['actions']
+        if self.action_space_type == 'discrete':
+            actions = actions.long()
         old_log_probs = batch['old_log_probs']
         advantages = batch['advantages']
         returns = batch['returns']
         
-        # TODO: Normalize advantages if requested
+        # Normalize advantages if requested (robust implementation)
         if self.normalize_advantages:
-           advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+            adv_mean = advantages.mean()
+            adv_std = advantages.std()
+            # Only normalize if there's actual variation in advantages
+            if adv_std > 1e-8:
+                advantages = (advantages - adv_mean) / adv_std
+            else:
+                # If advantages are constant, just center them (zero mean)
+                advantages = advantages - adv_mean
         
         # TODO: Evaluate actions under current policy
         log_probs, values, entropy = self.evaluate_actions(observations, actions)
@@ -426,7 +435,7 @@ class PPOAlgorithm(BaseAlgorithm):
                  metrics['grad_norm'] += grad_norm if isinstance(grad_norm, float) else grad_norm.item()
         
         # TODO: Average metrics and increment step
-        num_updates = self.ppo_epochs * (batch_size // self.minibatch_size)
+        num_updates = self.ppo_epochs * max(1, batch_size // self.minibatch_size)
         for key in metrics:
              metrics[key] /= num_updates
          

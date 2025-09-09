@@ -184,8 +184,9 @@ class NatureCNN(BaseNetwork):
             activation_fn,
             nn.Conv2d(self.channels[1], self.channels[2], kernel_size=3, stride=1),
             activation_fn,
-            nn.Flatten(),
         )
+        
+        self.flatten = nn.Flatten()
         
         # Calculate conv output size
         conv_out_size = self._get_conv_output_size()
@@ -203,12 +204,13 @@ class NatureCNN(BaseNetwork):
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass through Nature CNN"""
-        # Ensure input is in CHW format
+        # Ensure input is in CHW format and contiguous
         if x.dim() == 4 and x.size(-1) == 4:  # BHWC -> BCHW
-            x = x.permute(0, 3, 1, 2)
+            x = x.permute(0, 3, 1, 2).contiguous()
         
         conv_out = self.conv_layers(x)
-        output = self.fc_layers(conv_out)
+        conv_flat = self.flatten(conv_out)
+        output = self.fc_layers(conv_flat)
         return output
 
 

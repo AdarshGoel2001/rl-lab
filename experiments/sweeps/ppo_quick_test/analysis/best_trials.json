@@ -1,0 +1,38 @@
+[
+  {
+    "trial_number": 16,
+    "value": 500.0,
+    "params": {
+      "algorithm.lr": 0.0006506676052501415,
+      "algorithm.clip_ratio": 0.12789877213040837,
+      "algorithm.entropy_coef": 0.02
+    },
+    "state": "COMPLETE",
+    "datetime_start": "2025-09-05T05:03:19.405477",
+    "datetime_complete": "2025-09-05T05:03:24.805383"
+  },
+  {
+    "trial_number": 17,
+    "value": 500.0,
+    "params": {
+      "algorithm.lr": 0.0008066583652537122,
+      "algorithm.clip_ratio": 0.13993475643167194,
+      "algorithm.entropy_coef": 0.01
+    },
+    "state": "COMPLETE",
+    "datetime_start": "2025-09-05T05:03:24.808929",
+    "datetime_complete": "2025-09-05T05:03:30.229460"
+  },
+  {
+    "trial_number": 18,
+    "value": 500.0,
+    "params": {
+      "algorithm.lr": 0.0006467903667112945,
+      "algorithm.clip_ratio": 0.1341048247374583,
+      "algorithm.entropy_coef": 0.02
+    },
+    "state": "COMPLETE",
+    "datetime_start": "2025-09-05T05:03:30.233205",
+    "datetime_complete": "2025-09-05T05:03:35.637291"
+  }
+]

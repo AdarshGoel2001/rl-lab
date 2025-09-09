@@ -1,0 +1,164 @@
+# Vectorized PPO CartPole Experiment Configuration
+#
+# This config demonstrates how to use vectorized environments for faster training!
+# This config uses parallel environments to significantly speed up data collection:
+# - 8 parallel CartPole environments running simultaneously
+# - Automatic selection between sync/async vectorization based on hardware
+# - Batched operations for efficient training
+#
+# USAGE:
+# python scripts/train.py --config configs/experiments/ppo_cartpole_vectorized.yaml
+#
+# Expected benefits:
+# - 3-8x faster training due to parallel environment execution
+# - More stable learning from diverse parallel experiences  
+# - Better sample efficiency from batched training
+
+experiment:
+  name: "ppo_cartpole_vectorized"
+  seed: 42                    # For reproducibility
+  device: "auto"              # Auto-detect best device (CUDA/MPS/CPU)
+  debug: false               # Set to true for verbose logging
+
+algorithm:
+  name: "ppo"                 # Use PPO algorithm
+  
+  # Core PPO hyperparameters (tuned for vectorized training)
+  lr: 3e-4
+  clip_ratio: 0.2
+  value_coef: 0.5
+  entropy_coef: 0.01
+  
+  # Training schedule (adjusted for vectorized environments)
+  ppo_epochs: 4               # Multiple epochs per batch
+  minibatch_size: 256         # Larger batches due to more data
+  max_grad_norm: 0.5          # Gradient clipping
+  
+  # Advantage computation
+  normalize_advantages: true   # Helps training stability
+  clip_value_loss: true       # Clips value function updates
+
+environment:
+  name: "CartPole-v1"         # Classic control problem
+  wrapper: "vectorized_gym"   # Use vectorized Gym wrapper !!!
+  
+  # Vectorization settings
+  num_envs: 8                 # Number of parallel environments
+  vectorization: "auto"       # auto/sync/async - auto-detects best option
+  
+  # Standard environment settings
+  normalize_obs: false        # CartPole observations don't need normalization
+  normalize_reward: false     # CartPole rewards don't need normalization
+  max_episode_steps: 500      # Default CartPole episode length
+
+# Separate evaluation environment (single env for clean evaluation)
+evaluation:
+  name: "CartPole-v1"         # Same environment as training
+  wrapper: "gym"              # Use single environment wrapper
+  normalize_obs: false        # Match training preprocessing
+  normalize_reward: false     # Match training preprocessing  
+  max_episode_steps: 500      # Match training episode length
+
+network:
+  # Actor network (policy) - same as single env but handles batched input
+  actor:
+    type: "actor_mlp"         # Use specialized actor MLP
+    hidden_dims: [64, 64]     # Two hidden layers, 64 neurons each
+    activation: "tanh"        # Tanh activation (common for policies)
+    output_activation: "linear" # Linear output (will apply softmax in algorithm)
+    
+  # Critic network (value function) - same as single env but handles batched input
+  critic:
+    type: "critic_mlp"        # Use specialized critic MLP
+    hidden_dims: [64, 64]     # Same architecture as actor
+    activation: "tanh"        # Tanh activation
+    output_activation: "linear" # Linear output (value can be any real number)
+
+buffer:
+  type: "trajectory"          # On-policy trajectory buffer
+  capacity: 2048              # Collect 2048 steps before training (per env!)
+  batch_size: 2048            # Use all collected data for training
+  
+  # GAE parameters for advantage computation
+  gamma: 0.99                 # Discount factor
+  gae_lambda: 0.95            # GAE lambda parameter
+  compute_returns: true       # Automatically compute returns and advantages
+  normalize_advantages: true   # Normalize advantages in buffer
+
+training:
+  total_timesteps: 100000     # Total training steps (across all environments)
+  eval_frequency: 5000        # Evaluate every 5k steps
+  checkpoint_frequency: 10000 # Save checkpoint every 10k steps
+  num_eval_episodes: 10       # Number of episodes for evaluation
+  
+  # Early stopping (optional)
+  early_stopping: true
+  target_reward: 195          # Stop training if average reward >= 195 
+  patience: 3                 # Number of evaluations to wait
+
+logging:
+  terminal: true              # Print progress to terminal
+  tensorboard: true           # Log to TensorBoard
+  log_frequency: 1000         # Log metrics every 1k steps
+  
+  # Weights & Biases logging (optional)
+  wandb_enabled: false       # Set to true if you want to use W&B
+  wandb:
+    project: "rl-lab-vectorized"
+    tags: ["ppo", "cartpole", "vectorized", "parallel"]
+    notes: "Vectorized PPO implementation on CartPole with 8 parallel environments"
+
+# Vectorized environment specific settings
+vectorization_config:
+  # Hardware thresholds for auto-selection
+  min_ram_gb_for_async: 16    # Minimum RAM for async vectorization
+  min_cpu_cores_for_async: 4  # Minimum CPU cores for async vectorization
+  max_envs_for_async: 16      # Maximum environments for async (avoid overhead)
+  
+  # Performance monitoring
+  log_vectorization_metrics: true  # Log vectorization performance metrics
+  
+  # Resource limits
+  memory_limit_per_env_mb: 256     # Memory limit per environment
+  cpu_affinity: null               # CPU affinity (null = auto)
+
+# Performance expectations for vectorized training
+expected_performance:
+  initial_reward: 20              # Random policy gets ~20 reward
+  learning_threshold: 50          # Should exceed 50 within 5k steps (faster than single env)
+  solved_threshold: 195           # CartPole is "solved" at 195 average reward
+  optimal_performance: 200        # Maximum possible reward is 200
+  
+  training_time:
+    steps_to_learn: 2500          # Should start improving within 2.5k steps (faster!)
+    steps_to_solve: 15000         # Should solve within 15k steps (faster!)
+    total_recommended: 30000      # Recommended total training steps (less needed)
+    
+  # Vectorized training benefits
+  expected_speedup: "3-8x"        # Expected training speedup vs single env
+  sample_efficiency: "10-20%"     # Expected improvement in sample efficiency
+  stability: "improved"           # More stable learning from diverse experiences
+
+# Troubleshooting for vectorized environments
+troubleshooting:
+  slow_performance:
+    - "Check if async vectorization is being used on high-RAM systems"
+    - "Try different num_envs values (4, 8, 16)"
+    - "Monitor CPU/memory usage to detect bottlenecks"
+    
+  memory_issues:
+    - "Reduce num_envs if running out of memory"  
+    - "Use sync vectorization on low-RAM systems"
+    - "Check memory_limit_per_env_mb setting"
+    
+  synchronization_issues:
+    - "Verify all environments are stepping correctly"
+    - "Check for environment-specific errors in logs"
+    - "Try sync vectorization if async causes issues"
+
+# Hyperparameter suggestions for vectorized experiments  
+experimentation:
+  num_envs: [4, 8, 16, 32]         # Try different numbers of parallel environments
+  vectorization_types: ["sync", "async", "auto"]  # Try different vectorization strategies
+  batch_sizes: [1024, 2048, 4096] # Larger batches work better with vectorized envs
+  learning_rates: [1e-4, 3e-4, 1e-3]  # May need adjustment for batched training

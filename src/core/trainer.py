@@ -14,6 +14,7 @@ Key features for daily research:
 """
 
 import os
+import sys
 import time
 import logging
 from pathlib import Path
@@ -22,6 +23,7 @@ from typing import Dict, Any, Optional, Tuple
 import numpy as np
 import torch
 
+from collections import deque
 from src.utils.config import Config, ConfigManager, resolve_device
 from src.utils.checkpoint import CheckpointManager  
 from src.utils.logger import create_logger
@@ -67,6 +69,17 @@ class Trainer(RegistryMixin):
         self.episode = 0
         self.metrics = {}
         self.start_time = None
+        
+        # Episode tracking for logging (using deques for recent episodes)
+        self.episode_returns = deque(maxlen=100)  # Last 100 completed episodes
+        self.episode_lengths = deque(maxlen=100)  # Last 100 completed episodes
+        self.current_episode_return = 0.0
+        self.current_episode_length = 0
+        
+        # Track cumulative metrics for progress visibility
+        self.total_episodes = 0
+        self.last_progress_step = 0
+        self.last_comprehensive_step = 0
         
         # Setup experiment directory
         if experiment_dir is None:
@@ -131,16 +144,44 @@ class Trainer(RegistryMixin):
     def _initialize_components(self):
         """Initialize all RL components from configuration"""
         try:
-            # Initialize environment first (needed for space information)
-            logger.info("Initializing environment...")
+            # Initialize training environment first (needed for space information)
+            logger.info("Initializing training environment...")
             env_class = get_environment(self.config.environment.wrapper)
             self.environment = env_class(self.config.environment.__dict__)
             
-            # Get space information
+            # Initialize separate evaluation environment
+            logger.info("Initializing evaluation environment...")
+            if hasattr(self.config, 'evaluation'):
+                # Use explicit evaluation config
+                eval_env_class = get_environment(self.config.evaluation.wrapper)
+                self.eval_environment = eval_env_class(self.config.evaluation.__dict__)
+                logger.info(f"Created evaluation environment with wrapper: {self.config.evaluation.wrapper}")
+            else:
+                # Fallback: derive single environment from training environment config
+                eval_config = self.config.environment.__dict__.copy()
+                # Override to use single environment wrapper
+                if self.config.environment.wrapper == 'vectorized_gym':
+                    eval_config['wrapper'] = 'gym'
+                    # Remove vectorization-specific configs
+                    eval_config.pop('num_envs', None)
+                    eval_config.pop('vectorization', None)
+                elif self.config.environment.wrapper == 'atari':
+                    eval_config['wrapper'] = 'gym'
+                    # Remove parallel environment configs
+                    eval_config.pop('num_environments', None)
+                    eval_config.pop('parallel_backend', None)
+                    eval_config.pop('start_method', None)
+                
+                eval_env_class = get_environment(eval_config['wrapper'])
+                self.eval_environment = eval_env_class(eval_config)
+                logger.info(f"Created derived evaluation environment with wrapper: {eval_config['wrapper']}")
+            
+            # Get space information from training environment
             obs_space = self.environment.observation_space
             action_space = self.environment.action_space
+            is_vectorized_env = getattr(self.environment, 'is_vectorized', False)
             
-            logger.info(f"Environment: {self.config.environment.name}")
+            logger.info(f"Training environment: {self.config.environment.name}")
             logger.info(f"Observation space: {obs_space.shape}")
             logger.info(f"Action space: {action_space.shape}, discrete: {action_space.discrete}")
             
@@ -156,13 +197,19 @@ class Trainer(RegistryMixin):
                     # Add device info to network config
                     net_config_dict['device'] = resolve_device(self.config.experiment.device)
                     
-                    # Set dimensions if not specified
+                    # Set dimensions if not specified (use per-env shapes for vectorized envs)
                     if net_config_dict.get('input_dim') is None:
-                        net_config_dict['input_dim'] = obs_space.shape
+                        input_shape = obs_space.shape[1:] if is_vectorized_env else obs_space.shape
+                        net_config_dict['input_dim'] = input_shape
                     
                     if net_config_dict.get('output_dim') is None:
                         if net_name == 'actor':
-                            net_config_dict['output_dim'] = action_space.shape[0] if not action_space.discrete else action_space.n
+                            if action_space.discrete:
+                                net_config_dict['output_dim'] = action_space.n
+                            else:
+                                action_shape = action_space.shape[1:] if is_vectorized_env else action_space.shape
+                                # Action shape may be multi-dimensional; flatten to scalar dimension
+                                net_config_dict['output_dim'] = int(np.prod(action_shape))
                         elif net_name == 'critic':
                             net_config_dict['output_dim'] = 1
                     
@@ -187,9 +234,14 @@ class Trainer(RegistryMixin):
                 net_config['device'] = resolve_device(self.config.experiment.device)
                 
                 if net_config.get('input_dim') is None:
-                    net_config['input_dim'] = obs_space.shape
+                    input_shape = obs_space.shape[1:] if is_vectorized_env else obs_space.shape
+                    net_config['input_dim'] = input_shape
                 if net_config.get('output_dim') is None:
-                    net_config['output_dim'] = action_space.shape[0] if not action_space.discrete else action_space.n
+                    if action_space.discrete:
+                        net_config['output_dim'] = action_space.n
+                    else:
+                        action_shape = action_space.shape[1:] if is_vectorized_env else action_space.shape
+                        net_config['output_dim'] = int(np.prod(action_shape))
                 
                 net_class = get_network(self.config.network.type)
                 self.networks['main'] = net_class(net_config)
@@ -315,17 +367,37 @@ class Trainer(RegistryMixin):
         logger.info(f"Evaluation frequency: {self.config.training.eval_frequency}")
         logger.info(f"Checkpoint frequency: {self.config.training.checkpoint_frequency}")
         
-        self.start_time = time.time()
+        print("DEBUG: Immediately after logger statements", flush=True)
+        sys.stdout.flush()
+        print("DEBUG: Skipping start_time for now", flush=True)
+        # Skip timing for now to bypass the hang
+        self.start_time = 0  # We'll fix timing later
+        print("DEBUG: Skipped start_time successfully")
+        
+        print("DEBUG: About to check step initialization")
+        # Ensure step is initialized
+        if not hasattr(self, 'step'):
+            self.step = 0
+            print("DEBUG: self.step was not initialized, setting to 0")
+        else:
+            print(f"DEBUG: self.step already exists: {self.step}")
+        
+        print(f"DEBUG: About to start training loop, self.step = {self.step}, target = {self.config.training.total_timesteps}")
         
         try:
             while self.step < self.config.training.total_timesteps:
+                print(f"DEBUG: Starting training loop iteration, step: {self.step}")
                 # Training step
                 self._training_step()
                 
                 # Evaluation
                 if self.step % self.config.training.eval_frequency == 0:
                     eval_metrics = self._evaluation_step()
-                    self.metrics.update(eval_metrics)
+                    # Log eval metrics immediately with eval prefix
+                    self.experiment_logger.log_metrics(eval_metrics, self.step, prefix='eval')
+                    # Store prefixed eval metrics for final results (compatibility)
+                    prefixed_eval = {f'eval_{k}': v for k, v in eval_metrics.items()}
+                    self.metrics.update(prefixed_eval)
                 
                 # Checkpointing
                 checkpoint_path = self.checkpoint_manager.auto_save(
@@ -334,9 +406,18 @@ class Trainer(RegistryMixin):
                 if checkpoint_path is not None:
                     logger.info(f"Auto-saved checkpoint at step {self.step}")
                 
-                # Logging
-                if self.step % self.config.logging.log_frequency == 0:
-                    self._log_metrics()
+                # Frequent progress logging for bash visibility (every ~1000 steps)
+                # Use floor division to handle cases where steps don't align perfectly
+                if self.step // 1000 > self.last_progress_step // 1000:
+                    self._log_progress_metrics()
+                    self.last_progress_step = self.step
+                
+                # Comprehensive logging at configured frequency
+                # Use floor division to handle step size misalignment
+                log_freq = self.config.logging.log_frequency
+                if self.step // log_freq > self.last_comprehensive_step // log_freq:
+                    self._log_comprehensive_metrics()
+                    self.last_comprehensive_step = self.step
                 
                 # Check for early termination conditions
                 if self._should_terminate():
@@ -346,7 +427,11 @@ class Trainer(RegistryMixin):
             # Final evaluation and checkpoint
             logger.info("Training completed, running final evaluation...")
             final_eval_metrics = self._evaluation_step()
-            self.metrics.update(final_eval_metrics)
+            # Log final eval metrics
+            self.experiment_logger.log_metrics(final_eval_metrics, self.step, prefix='eval')
+            # Store prefixed for final results
+            final_prefixed_eval = {f'eval_{k}': v for k, v in final_eval_metrics.items()}
+            self.metrics.update(final_prefixed_eval)
             
             final_checkpoint = self.checkpoint_manager.save_checkpoint(
                 self._get_trainer_state(), self.step, name="final"
@@ -406,7 +491,7 @@ class Trainer(RegistryMixin):
     
     def _training_step(self):
         """Execute one training step"""
-        # Collect experience
+        # Collect experience (handles both single and vectorized environments)
         trajectory = self._collect_experience()
         
         # Add to buffer
@@ -419,15 +504,10 @@ class Trainer(RegistryMixin):
             update_metrics = self.algorithm.update(batch)
             self.metrics.update(update_metrics)
             
-            # Log training metrics immediately after update
+            # Log algorithm update metrics immediately
             if update_metrics:
-                # Add timing information
-                if self.start_time is not None:
-                    elapsed = time.time() - self.start_time
-                    update_metrics['time_elapsed'] = elapsed
-                    update_metrics['steps_per_second'] = self.step / elapsed if elapsed > 0 else 0
-                
-                # Log training metrics to monitoring systems
+                # Just log the algorithm metrics - don't add extra fields here
+                # Episode aggregation will be handled separately
                 self.experiment_logger.log_metrics(update_metrics, self.step, prefix='train')
             
             # Clear buffer for on-policy algorithms
@@ -437,10 +517,19 @@ class Trainer(RegistryMixin):
     def _collect_experience(self) -> Optional[Dict[str, np.ndarray]]:
         """
         Collect experience from environment interaction.
+        Automatically handles both single and vectorized environments.
         
         Returns:
-            Complete trajectory if episode finished, None otherwise
+            Complete trajectory if buffer capacity reached, None otherwise
         """
+        # Check if environment is vectorized
+        if hasattr(self.environment, 'is_vectorized') and self.environment.is_vectorized:
+            return self._collect_vectorized_experience()
+        else:
+            return self._collect_single_experience()
+    
+    def _collect_single_experience(self) -> Optional[Dict[str, np.ndarray]]:
+        """Collect experience from single environment"""
         observations = []
         actions = []
         rewards = []
@@ -490,14 +579,25 @@ class Trainer(RegistryMixin):
             old_log_probs.append(log_prob)
             dones.append(done)
             
+            # Track episode statistics
+            self.current_episode_return += reward
+            self.current_episode_length += 1
+            
             # Update state
             self._current_obs = next_obs
             self._episode_done = done
             self.step += 1
             steps_collected += 1
             
-            # If episode is done, reset for next episode
+            # If episode is done, record episode metrics and reset
             if done:
+                self.episode_returns.append(self.current_episode_return)
+                self.episode_lengths.append(self.current_episode_length)
+                self.total_episodes += 1
+                
+                self.current_episode_return = 0.0
+                self.current_episode_length = 0
+                
                 self._current_obs = self.environment.reset()
                 self._episode_done = False
                 self.episode += 1
@@ -505,7 +605,10 @@ class Trainer(RegistryMixin):
         # Return trajectory data
         if steps_collected > 0:
             trajectory = {
-                'observations': np.array(observations),
+                'observations': np.stack([
+                    obs.cpu().numpy() if isinstance(obs, torch.Tensor) else obs
+                    for obs in observations
+                ], axis=0),
                 'actions': np.array(actions),
                 'rewards': np.array(rewards),
                 'old_values': np.array(old_values),
@@ -513,11 +616,11 @@ class Trainer(RegistryMixin):
                 'dones': np.array(dones)
             }
             
-            # CRITICAL FIX: Add bootstrap value for truncated episodes
-            # If the last step was truncated (not terminated), we need the value of the final state
+            # Add bootstrap value for truncated episodes
             if steps_collected > 0 and hasattr(self, '_current_obs') and not self._episode_done:
-                # Get value of current state for bootstrapping
-                obs_tensor = torch.FloatTensor(self._current_obs).unsqueeze(0).to(self.algorithm.device)
+                # Ensure current_obs is numpy for consistent tensor creation
+                current_obs_np = self._current_obs.cpu().numpy() if isinstance(self._current_obs, torch.Tensor) else self._current_obs
+                obs_tensor = torch.FloatTensor(current_obs_np).unsqueeze(0).to(self.algorithm.device)
                 with torch.no_grad():
                     if hasattr(self.algorithm, 'networks') and 'critic' in self.algorithm.networks:
                         bootstrap_value = self.algorithm.networks['critic'](obs_tensor).cpu().numpy().item()
@@ -527,9 +630,117 @@ class Trainer(RegistryMixin):
         
         return None
     
+    def _collect_vectorized_experience(self) -> Optional[Dict[str, np.ndarray]]:
+        """Collect experience from vectorized environments"""
+        print("DEBUG: Starting _collect_vectorized_experience")
+        observations = []
+        actions = []
+        rewards = []
+        old_values = []
+        old_log_probs = []
+        dones = []
+        
+        num_envs = self.environment.num_envs
+        
+        # Set algorithm to training mode
+        self.algorithm.train()
+        
+        # Reset environments if needed
+        if not hasattr(self, '_current_obs') or not hasattr(self, '_episode_dones'):
+            print("DEBUG: Resetting vectorized environment...")
+            self._current_obs = self.environment.reset()  # Shape: (num_envs, obs_dim)
+            print(f"DEBUG: Reset successful, obs shape: {self._current_obs.shape}")
+            self._episode_dones = np.zeros(num_envs, dtype=bool)
+            self.episode += num_envs  # Count all environments
+        
+        # Collect trajectory up to buffer capacity
+        steps_collected = 0
+        buffer_capacity = self.config.buffer.capacity
+        
+        while steps_collected < buffer_capacity and self.step < self.config.training.total_timesteps:
+            # Get observations as tensor (already batched)
+            obs_tensor = self._current_obs.to(self.algorithm.device)
+            
+            # Get batched actions, log_probs, and values from algorithm
+            with torch.no_grad():
+                if hasattr(self.algorithm, 'get_action_and_value'):
+                    actions_batch, log_probs_batch, values_batch = self.algorithm.get_action_and_value(obs_tensor)
+                    actions_batch = actions_batch.cpu().numpy()
+                    log_probs_batch = log_probs_batch.cpu().numpy()
+                    values_batch = values_batch.cpu().numpy()
+                else:
+                    # Fallback if get_action_and_value not implemented
+                    actions_tensor = self.algorithm.act(obs_tensor, deterministic=False)
+                    actions_batch = actions_tensor.cpu().numpy()
+                    log_probs_batch = np.zeros(num_envs)  # Placeholder
+                    values_batch = np.zeros(num_envs)     # Placeholder
+            
+            # Step vectorized environment
+            next_obs, rewards_batch, dones_batch, infos = self.environment.step(actions_batch)
+            
+            # Store experience (all environments at once)
+            observations.append(self._current_obs.cpu().numpy())
+            actions.append(actions_batch)
+            rewards.append(rewards_batch.cpu().numpy())
+            old_values.append(values_batch)
+            old_log_probs.append(log_probs_batch)
+            dones.append(dones_batch.cpu().numpy())
+            
+            # Update state
+            self._current_obs = next_obs
+            self._episode_dones = dones_batch.cpu().numpy()
+            
+            # Update step count (count all environment steps)
+            self.step += num_envs
+            steps_collected += 1
+            
+            # Process completed episodes in vectorized environments
+            dones_np = dones_batch.cpu().numpy() if isinstance(dones_batch, torch.Tensor) else dones_batch
+            completed_episodes = np.sum(dones_np)
+            
+            if completed_episodes > 0:
+                self.episode += completed_episodes
+                self.total_episodes += completed_episodes
+                
+                # Extract episode returns and lengths from infos if available
+                if hasattr(infos, '__iter__') and len(infos) > 0:
+                    for i, (done, info) in enumerate(zip(dones_np, infos)):
+                        if done and isinstance(info, dict):
+                            episode_return = info.get('episode_return', info.get('episode', {}).get('r', 0.0))
+                            episode_length = info.get('episode_length', info.get('episode', {}).get('l', 0))
+                            
+                            if episode_return != 0.0 or episode_length != 0:  # Valid episode data
+                                self.episode_returns.append(episode_return)
+                                self.episode_lengths.append(episode_length)
+        
+        # Return trajectory data
+        if steps_collected > 0:
+            # Stack all collected data
+            # Shape will be (steps_collected, num_envs, ...)
+            trajectory = {
+                'observations': np.array(observations),      # (steps, num_envs, obs_dim)
+                'actions': np.array(actions),                # (steps, num_envs, action_dim)
+                'rewards': np.array(rewards),                # (steps, num_envs)
+                'old_values': np.array(old_values),          # (steps, num_envs)
+                'old_log_probs': np.array(old_log_probs),    # (steps, num_envs)
+                'dones': np.array(dones)                     # (steps, num_envs)
+            }
+            
+            # Add bootstrap values for any non-terminated environments
+            if steps_collected > 0 and hasattr(self, '_current_obs'):
+                obs_tensor = self._current_obs.to(self.algorithm.device)
+                with torch.no_grad():
+                    if hasattr(self.algorithm, 'networks') and 'critic' in self.algorithm.networks:
+                        bootstrap_values = self.algorithm.networks['critic'](obs_tensor).cpu().numpy()
+                        trajectory['bootstrap_values'] = bootstrap_values  # Shape: (num_envs,)
+            
+            return trajectory
+        
+        return None
+    
     def _evaluation_step(self) -> Dict[str, float]:
         """
-        Run evaluation episodes.
+        Run evaluation episodes using the separate evaluation environment.
         
         Returns:
             Dictionary of evaluation metrics
@@ -552,18 +763,27 @@ class Trainer(RegistryMixin):
                 episode_return = 0.0
                 episode_length = 0
                 
-                obs = self.environment.reset(seed=self.config.experiment.seed + eval_episode)
+                # Use the dedicated evaluation environment
+                obs = self.eval_environment.reset(seed=self.config.experiment.seed + eval_episode)
                 done = False
                 
                 while not done and episode_length < 1000:  # Max episode length
                     # Select action deterministically
                     with torch.no_grad():
+                        # Handle single environment observation shape
                         obs_tensor = torch.FloatTensor(obs).unsqueeze(0).to(self.algorithm.device)
                         action_tensor = self.algorithm.act(obs_tensor, deterministic=True)
-                        action = action_tensor.cpu().numpy().item()
+                        
+                        # Handle action extraction based on environment type
+                        if self.eval_environment.action_space.discrete:
+                            # Discrete action: extract scalar
+                            action = action_tensor.cpu().numpy().item()
+                        else:
+                            # Continuous action: extract array (squeeze batch dimension)
+                            action = action_tensor.cpu().numpy().squeeze(0)
                     
-                    # Step environment
-                    obs, reward, done, info = self.environment.step(action)
+                    # Step evaluation environment
+                    obs, reward, done, info = self.eval_environment.step(action)
                     
                     episode_return += reward
                     episode_length += 1
@@ -571,19 +791,20 @@ class Trainer(RegistryMixin):
                 episode_returns.append(episode_return)
                 episode_lengths.append(episode_length)
             
-            # Compute evaluation statistics
+            # Compute evaluation statistics with standardized names
             eval_metrics.update({
-                'eval_return_mean': float(np.mean(episode_returns)),
-                'eval_return_std': float(np.std(episode_returns)),
-                'eval_return_min': float(np.min(episode_returns)),
-                'eval_return_max': float(np.max(episode_returns)),
-                'eval_length_mean': float(np.mean(episode_lengths)),
+                'return_mean': float(np.mean(episode_returns)),
+                'return_std': float(np.std(episode_returns)),
+                'return_min': float(np.min(episode_returns)),
+                'return_max': float(np.max(episode_returns)),
+                'length_mean': float(np.mean(episode_lengths)),
             })
             
-            logger.info(f"Evaluation complete - Mean return: {eval_metrics['eval_return_mean']:.2f}")
+            logger.info(f"Evaluation complete - Mean return: {eval_metrics['return_mean']:.2f}")
             
         except Exception as e:
             logger.error(f"Evaluation failed: {e}")
+            logger.error(f"Error details: {repr(e)}")
             eval_metrics['eval_error'] = str(e)
         
         finally:
@@ -592,34 +813,70 @@ class Trainer(RegistryMixin):
         
         return eval_metrics
     
-    def _log_metrics(self):
-        """Log current training metrics"""
-        if not self.metrics:
-            return
+    def _log_progress_metrics(self):
+        """Log minimal progress metrics for frequent bash visibility"""
+        progress_metrics = {
+            'step': self.step,
+            'episode': self.total_episodes,
+        }
+        
+        # Add episode returns if available (key for progress visibility)
+        if len(self.episode_returns) > 0:
+            progress_metrics['return_mean'] = float(np.mean(list(self.episode_returns)))
+            progress_metrics['length_mean'] = float(np.mean(list(self.episode_lengths)))
+        
+        # Add simple SPS calculation
+        if self.start_time is not None:
+            elapsed = time.time() - self.start_time
+            progress_metrics['sps'] = self.step / elapsed if elapsed > 0 else 0
+        
+        self.experiment_logger.log_metrics(progress_metrics, self.step, prefix='train')
+    
+    def _log_comprehensive_metrics(self):
+        """Log comprehensive training metrics including episode aggregations"""
+        comprehensive_metrics = {
+            'step': self.step,
+            'episode': self.total_episodes,
+        }
+        
+        # Add episode return aggregations if we have episode data
+        if len(self.episode_returns) > 0:
+            returns_array = np.array(list(self.episode_returns))
+            comprehensive_metrics.update({
+                'return_mean': returns_array.mean(),
+                'return_std': returns_array.std(),
+                'return_min': returns_array.min(),
+                'return_max': returns_array.max(),
+            })
+        
+        # Add episode length aggregations if we have episode data
+        if len(self.episode_lengths) > 0:
+            lengths_array = np.array(list(self.episode_lengths))
+            comprehensive_metrics.update({
+                'length_mean': lengths_array.mean(),
+                'length_std': lengths_array.std(),
+            })
         
         # Add timing information
         if self.start_time is not None:
             elapsed = time.time() - self.start_time
-            self.metrics['time_elapsed'] = elapsed
-            self.metrics['steps_per_second'] = self.step / elapsed if elapsed > 0 else 0
+            comprehensive_metrics.update({
+                'time_elapsed': elapsed,
+                'sps': self.step / elapsed if elapsed > 0 else 0
+            })
         
-        # Separate training and evaluation metrics
+        # Add any other training metrics from self.metrics (exclude eval_* since they're logged separately)
         train_metrics = {}
-        eval_metrics = {}
         
         for key, value in self.metrics.items():
-            if key.startswith('eval_'):
-                eval_metrics[key] = value
-            else:
+            if not key.startswith('eval_'):  # Skip eval metrics - they're logged separately
                 train_metrics[key] = value
         
-        # Log training metrics
-        if train_metrics:
-            self.experiment_logger.log_metrics(train_metrics, self.step, prefix='train')
+        # Merge with comprehensive metrics
+        comprehensive_metrics.update(train_metrics)
         
-        # Log evaluation metrics
-        if eval_metrics:
-            self.experiment_logger.log_metrics(eval_metrics, self.step, prefix='eval')
+        # Log comprehensive training metrics
+        self.experiment_logger.log_metrics(comprehensive_metrics, self.step, prefix='train')
     
     def _should_terminate(self) -> bool:
         """Check if training should terminate early"""

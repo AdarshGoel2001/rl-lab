@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="2.633" timestamp="2025-09-05T19:13:44.966079+05:30" hostname="Adarshs-MacBook-Pro.local"><testcase classname="tests.test_sweep_functionality" name="test_sweep_orchestrator_runs_minimal_trial" time="0.005"><failure message="AttributeError: &lt;module 'src.core.sweep' from '/Users/martian/Documents/Code/rl-lab/src/core/sweep.py'&gt; has no attribute 'create_trainer_from_config'">tmp_path = PosixPath('/private/var/folders/78/mrx3_4z921g7641rf7q0kmkc0000gn/T/pytest-of-martian/pytest-10/test_sweep_orchestrator_runs_m0')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x1064f9ab0&gt;
+
+    def test_sweep_orchestrator_runs_minimal_trial(tmp_path: Path, monkeypatch):
+        import yaml
+        from src.core import sweep as sweep_mod
+    
+        # Stub trainer that returns deterministic metric
+        class StubTrainer:
+            def __init__(self, *args, **kwargs):
+                self.step = 0
+    
+            def _evaluation_step(self):
+                self.step += 1
+                return {"eval_return_mean": 1.0 + 0.01 * self.step}
+    
+            def train(self):
+                # Quick "training" that returns final metric
+                return {"eval_return_mean": 1.5}
+    
+&gt;       monkeypatch.setattr(sweep_mod, "create_trainer_from_config", lambda *a, **k: StubTrainer())
+E       AttributeError: &lt;module 'src.core.sweep' from '/Users/martian/Documents/Code/rl-lab/src/core/sweep.py'&gt; has no attribute 'create_trainer_from_config'
+
+tests/test_sweep_functionality.py:29: AttributeError</failure></testcase></testsuite></testsuites>

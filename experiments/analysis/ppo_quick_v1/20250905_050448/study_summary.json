@@ -1,0 +1,22 @@
+{
+  "study_name": "ppo_quick_v1",
+  "direction": "MAXIMIZE",
+  "total_trials": 22,
+  "completed_trials": 19,
+  "pruned_trials": 1,
+  "failed_trials": 2,
+  "pruning_rate": 0.045454545454545456,
+  "best_trial_number": 16,
+  "best_value": 500.0,
+  "best_params": {
+    "algorithm.lr": 0.0006506676052501415,
+    "algorithm.clip_ratio": 0.12789877213040837,
+    "algorithm.entropy_coef": 0.02
+  },
+  "best_trial_duration": 5.399906,
+  "mean_performance": -Infinity,
+  "std_performance": NaN,
+  "min_performance": -Infinity,
+  "max_performance": 500.0,
+  "median_performance": -Infinity
+}

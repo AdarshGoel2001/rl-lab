@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="3" tests="58" time="4.504" timestamp="2025-09-05T05:08:21.691315+05:30" hostname="Adarshs-MacBook-Pro.local"><testcase classname="tests.test_algorithm_correctness" name="test_random_agent_discrete_action_shape" time="0.008" /><testcase classname="tests.test_algorithm_correctness" name="test_random_agent_continuous_action_shape" time="0.009" /><testcase classname="tests.test_api_compatibility" name="test_key_api_surfaces_exist" time="0.000" /><testcase classname="tests.test_automation" name="test_test_suite_scripts_exist" time="0.000" /><testcase classname="tests.test_automation" name="test_generate_report_creates_markdown" time="0.004" /><testcase classname="tests.test_call_hierarchy" name="test_call_hierarchy_unused_functions" time="0.158" /><testcase classname="tests.test_code_quality" name="test_code_quality_static_analysis" time="0.089" /><testcase classname="tests.test_component_modularity" name="test_component_swapping_and_registration" time="0.006" /><testcase classname="tests.test_config_edge_cases" name="test_env_var_expansion" time="0.002" /><testcase classname="tests.test_config_edge_cases" name="test_invalid_buffer_capacity_raises" time="0.001" /><testcase classname="tests.test_config_edge_cases" name="test_apply_overrides_dot_notation" time="0.001" /><testcase classname="tests.test_config_migration" name="test_unknown_fields_pass_through_for_flexible_sections" time="0.001" /><testcase classname="tests.test_dependency_analysis" name="test_dependency_graph_cycles_and_unused_modules" time="0.048" /><testcase classname="tests.test_device_handling" name="test_network_device_move_cpu" time="0.004" /><testcase classname="tests.test_device_handling" name="test_network_device_move_cuda_if_available" time="0.000" /><testcase classname="tests.test_dynamic_config_updates" name="test_config_manager_update" time="0.003" /><testcase classname="tests.test_edge_case_handling" name="test_invalid_activation_name_raises" time="0.000" /><testcase classname="tests.test_environment_synchronization" name="test_environment_sync_and_episode_resets" time="1.262" /><testcase classname="tests.test_error_scenarios" name="test_unknown_environment_wrapper_raises" time="0.000" /><testcase classname="tests.test_error_scenarios" name="test_missing_config_file_raises" time="0.000" /><testcase classname="tests.test_experiment_lifecycle" name="test_experiment_dirs_created" time="0.282" /><testcase classname="tests.test_full_pipeline" name="test_random_trainer_end_to_end" time="0.058" /><testcase classname="tests.test_graceful_degradation" name="test_logger_handles_missing_optional_backends" time="0.002" /><testcase classname="tests.test_gradient_flow" name="test_simple_gradient_flow" time="0.725" /><testcase classname="tests.test_infrastructure.TestCheckpointManager" name="test_checkpoint_creation" time="0.001" /><testcase classname="tests.test_infrastructure.TestCheckpointManager" name="test_save_checkpoint_basic" time="0.002" /><testcase classname="tests.test_infrastructure.TestCheckpointManager" name="test_load_checkpoint_basic" time="0.013" /><testcase classname="tests.test_infrastructure.TestCheckpointManager" name="test_auto_save_frequency" time="0.011" /><testcase classname="tests.test_infrastructure.TestCheckpointManager" name="test_checkpoint_cleanup" time="0.012" /><testcase classname="tests.test_infrastructure.TestCheckpointManager" name="test_rng_state_preservation" time="0.005" /><testcase classname="tests.test_infrastructure.TestConfigSystem" name="test_config_loading" time="0.002" /><testcase classname="tests.test_infrastructure.TestConfigSystem" name="test_config_overrides" time="0.002" /><testcase classname="tests.test_infrastructure.TestConfigSystem" name="test_config_validation" time="0.003" /><testcase classname="tests.test_infrastructure.TestConfigSystem" name="test_config_hash_consistency" time="0.008" /><testcase classname="tests.test_infrastructure.TestComponentRegistry" name="test_algorithm_registration" time="0.000" /><testcase classname="tests.test_infrastructure.TestComponentRegistry" name="test_network_registration" time="0.000" /><testcase classname="tests.test_infrastructure.TestComponentRegistry" name="test_environment_registration" time="0.000" /><testcase classname="tests.test_infrastructure.TestExperimentStructure" name="test_experiment_directory_creation" time="0.002" /><testcase classname="tests.test_infrastructure.TestErrorHandling" name="test_checkpoint_corruption_handling" time="0.001" /><testcase classname="tests.test_infrastructure.TestErrorHandling" name="test_missing_config_handling" time="0.000" /><testcase classname="tests.test_infrastructure.TestErrorHandling" name="test_invalid_component_registration" time="0.000" /><testcase classname="tests.test_infrastructure.TestReproducibilityGuarantees" name="test_deterministic_training_setup" time="0.002" /><testcase classname="tests.test_infrastructure" name="test_full_checkpoint_integration" time="0.004" /><testcase classname="tests.test_interface_compliance" name="test_components_follow_base_interfaces" time="0.001" /><testcase classname="tests.test_memory_profiling" name="test_memory_snapshot_leak_check" time="0.002" /><testcase classname="tests.test_multiprocessing_safety" name="test_process_isolation_and_determinism" time="0.018" /><testcase classname="tests.test_numerical_stability" name="test_continuous_actor_output_finite" time="0.021" /><testcase classname="tests.test_optimization_algorithms" name="test_sampler_selection" time="0.000"><skipped type="pytest.skip" message="optuna not available">/Users/martian/Documents/Code/rl-lab/tests/test_optimization_algorithms.py:31: optuna not available</skipped></testcase><testcase classname="tests.test_parallel_environments" name="test_parallel_manager_basic_reset_step_close" time="0.014" /><testcase classname="tests.test_performance_benchmarks" name="test_mlp_forward_speed" time="0.035" /><testcase classname="tests.test_performance_regression" name="test_simple_performance_baseline_logging" time="0.002" /><testcase classname="tests.test_platform_compatibility" name="test_auto_device_resolution" time="0.000" /><testcase classname="tests.test_plugin_system" name="test_dynamic_module_loading_populates_registries" time="0.001" /><testcase classname="tests.test_reproducibility_regression" name="test_config_hash_stability" time="0.002" /><testcase classname="tests.test_resource_usage" name="test_device_presence_logging" time="0.000" /><testcase classname="tests.test_sweep_functionality" name="test_sweep_orchestrator_runs_minimal_trial" time="0.000"><skipped type="pytest.skip" message="optuna not available">/Users/martian/Documents/Code/rl-lab/tests/test_sweep_functionality.py:12: optuna not available</skipped></testcase><testcase classname="tests.test_sweep_resumption" name="test_sweep_resume_and_list" time="0.000"><skipped type="pytest.skip" message="optuna not available">/Users/martian/Documents/Code/rl-lab/tests/test_sweep_resumption.py:8: optuna not available</skipped></testcase><testcase classname="tests.test_system_integration" name="test_buffer_algorithm_integration" time="0.000"><failure message="ValueError: Buffer has 6 experiences but 8 requested">def test_buffer_algorithm_integration():
+        buf = TrajectoryBuffer({"capacity": 128, "batch_size": 8})
+        # Build a tiny trajectory
+        obs = np.zeros(4, dtype=np.float32)
+        for t in range(6):
+            next_obs = np.ones(4, dtype=np.float32) * (t + 1)
+            buf.add(
+                observation=obs,
+                action=0,
+                reward=1.0,
+                next_observation=next_obs,
+                done=(t == 5),
+                value=0.0,
+                log_prob=0.0,
+            )
+            obs = next_obs
+        assert len(buf) &gt; 0
+&gt;       batch = buf.sample()
+                ^^^^^^^^^^^^
+
+tests/test_system_integration.py:26: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;src.buffers.trajectory.TrajectoryBuffer object at 0x1342482d0&gt;
+batch_size = 8
+
+    def sample(self, batch_size: Optional[int] = None) -&gt; Dict[str, torch.Tensor]:
+        """
+        Sample a batch of experiences from all trajectories.
+    
+        Args:
+            batch_size: Number of experiences to sample (uses config default if None)
+    
+        Returns:
+            Dictionary containing batched experience tensors
+        """
+        if batch_size is None:
+            batch_size = self.batch_size
+    
+        if self._size &lt; batch_size:
+&gt;           raise ValueError(f"Buffer has {self._size} experiences but {batch_size} requested")
+E           ValueError: Buffer has 6 experiences but 8 requested
+
+src/buffers/trajectory.py:299: ValueError</failure></testcase></testsuite></testsuites>

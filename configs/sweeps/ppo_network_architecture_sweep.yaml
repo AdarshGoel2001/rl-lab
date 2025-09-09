@@ -1,0 +1,147 @@
+# PPO Network Architecture Sweep
+#
+# Focused sweep for optimizing neural network architectures and activation functions.
+# Keeps algorithm hyperparameters fixed while exploring network design space.
+#
+# Usage:
+# python scripts/sweep.py --config configs/sweeps/ppo_network_architecture_sweep.yaml
+
+base_config: "configs/experiments/ppo_cartpole.yaml"
+
+sweep:
+  name: "ppo_network_architecture"
+  study_name: "ppo_architecture_v1"
+  storage: "sqlite:///experiments/sweeps/ppo_architecture.db"
+  direction: "maximize"
+  
+  sampler:
+    type: "TPE"
+    n_startup_trials: 15
+    
+  pruner:
+    type: "MedianPruner"
+    n_startup_trials: 5
+    n_warmup_steps: 7500
+    interval_steps: 2500
+
+parameters:
+  # Focus only on network architecture
+  network.actor.hidden_dims:
+    type: "categorical"
+    choices: [
+      # Symmetric architectures
+      [32, 32],
+      [64, 64], 
+      [128, 128],
+      [256, 256],
+      [512, 512],
+      
+      # Asymmetric architectures
+      [64, 32],
+      [128, 64],
+      [256, 128],
+      [128, 256],
+      
+      # Deeper networks
+      [32, 64, 32],
+      [64, 128, 64],
+      [128, 256, 128],
+      [64, 64, 64],
+      [128, 128, 128],
+      
+      # Very deep networks
+      [32, 64, 128, 64, 32],
+      [64, 128, 256, 128, 64]
+    ]
+    
+  network.critic.hidden_dims:
+    type: "categorical"
+    choices: [
+      # Symmetric architectures
+      [32, 32],
+      [64, 64],
+      [128, 128], 
+      [256, 256],
+      [512, 512],
+      
+      # Asymmetric architectures
+      [64, 32],
+      [128, 64],
+      [256, 128],
+      [128, 256],
+      
+      # Deeper networks
+      [32, 64, 32],
+      [64, 128, 64],
+      [128, 256, 128],
+      [64, 64, 64],
+      [128, 128, 128],
+      
+      # Very deep networks
+      [32, 64, 128, 64, 32],
+      [64, 128, 256, 128, 64]
+    ]
+  
+  network.actor.activation:
+    type: "categorical"
+    choices: ["tanh", "relu", "gelu", "swish", "elu"]
+    
+  network.critic.activation:
+    type: "categorical" 
+    choices: ["tanh", "relu", "gelu", "swish", "elu"]
+
+overrides:
+  # Keep algorithm hyperparameters fixed at good values
+  algorithm.lr: 3e-4
+  algorithm.clip_ratio: 0.2
+  algorithm.entropy_coef: 0.01
+  algorithm.value_coef: 0.5
+  algorithm.ppo_epochs: 4
+  algorithm.minibatch_size: 64
+  
+  # Training settings
+  training.total_timesteps: 75000
+  training.eval_frequency: 7500
+  training.num_eval_episodes: 8
+  
+  # Disable heavy logging
+  logging.tensorboard: false
+  logging.wandb_enabled: false
+  experiment.seed: 42
+
+execution:
+  n_trials: 50
+  timeout: 3600  # 1 hour
+  trial_timeout: 600  # 10 minutes per trial
+
+objective:
+  metric: "eval_return_mean"
+  
+  constraints:
+    - metric: "eval_return_mean"
+      condition: ">"
+      value: 150  # Must achieve good CartPole performance
+
+analysis:
+  plots: [
+    "optimization_history",
+    "param_importances",
+    "parallel_coordinate"
+  ]
+  export_best_n: 10
+  importance_evaluator: "fanova"
+
+advanced:
+  load_if_exists: true
+  trial_name_template: "arch_{trial_number:03d}"
+  keep_all_trials: false
+
+expected_results:
+  baseline_performance: 180  # Expected with default [64, 64] networks
+  target_performance: 195    # Target with optimized architecture
+  
+  common_insights:
+    - "Deeper networks (3+ layers) often perform worse on CartPole"
+    - "Symmetric actor/critic architectures usually work better"
+    - "ReLU vs Tanh activation can significantly impact learning speed"
+    - "Network size matters less than architecture design"

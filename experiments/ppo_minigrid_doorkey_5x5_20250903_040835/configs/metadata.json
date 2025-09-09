@@ -1,7 +1,0 @@
-{
-  "experiment_name": "ppo_minigrid_doorkey_5x5",
-  "config_hash": "7e7862df",
-  "created_at": "2025-09-03T04:08:37.993221",
-  "experiment_dir": "experiments/ppo_minigrid_doorkey_5x5_20250903_040835",
-  "git_hash": "7429bebacb78ab371d0a72de5db4d3bc604871ca"
-}

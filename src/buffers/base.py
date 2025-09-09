@@ -103,6 +103,11 @@ class BaseBuffer(ABC):
         """Get current number of experiences in buffer"""
         return self._size
     
+    @property
+    def size(self) -> int:
+        """Get current number of experiences in buffer"""
+        return self._size
+    
     def is_empty(self) -> bool:
         """Check if buffer is empty"""
         return self._size == 0

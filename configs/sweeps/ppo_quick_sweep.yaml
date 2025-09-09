@@ -1,0 +1,60 @@
+# Quick PPO Hyperparameter Sweep
+#
+# A minimal sweep configuration for rapid hyperparameter exploration.
+# Perfect for quick experiments and debugging the sweep system.
+#
+# Usage:
+# python scripts/sweep.py --config configs/sweeps/ppo_quick_sweep.yaml
+
+base_config: "configs/experiments/ppo_cartpole.yaml"
+
+sweep:
+  name: "ppo_quick_test"
+  study_name: "ppo_quick_v1"
+  storage: "sqlite:///experiments/sweeps/ppo_quick.db"
+  direction: "maximize"
+  
+  sampler:
+    type: "Random"  # Random search for quick testing
+    
+  pruner:
+    type: "MedianPruner"
+    n_startup_trials: 2
+    n_warmup_steps: 2500
+    interval_steps: 1000
+
+parameters:
+  # Only optimize most critical parameters
+  algorithm.lr:
+    type: "uniform"
+    low: 0.0001
+    high: 0.001
+    
+  algorithm.clip_ratio:
+    type: "uniform"
+    low: 0.1
+    high: 0.3
+    
+  algorithm.entropy_coef:
+    type: "categorical"
+    choices: [0.0, 0.01, 0.02]
+
+overrides:
+  training.total_timesteps: 25000  # Short training for quick results
+  training.eval_frequency: 5000
+  training.num_eval_episodes: 3
+  logging.tensorboard: false
+  logging.wandb_enabled: false
+  experiment.seed: 42
+
+execution:
+  n_trials: 10
+  timeout: 600  # 10 minutes
+  trial_timeout: 120  # 2 minutes per trial
+
+objective:
+  metric: "eval_return_mean"
+
+analysis:
+  plots: ["optimization_history"]
+  export_best_n: 3

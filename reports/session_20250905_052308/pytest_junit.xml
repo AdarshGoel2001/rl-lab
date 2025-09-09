@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="1" failures="0" skipped="0" tests="1" time="1.511" timestamp="2025-09-05T05:23:06.930579+05:30" hostname="Adarshs-MacBook-Pro.local"><testcase classname="" name="tests.test_algorithm_correctness" time="0.000"><error message="collection failure">ImportError while importing test module '/Users/martian/Documents/Code/rl-lab/tests/test_algorithm_correctness.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../../../miniconda3/envs/rl-lab/lib/python3.10/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+tests/test_algorithm_correctness.py:5: in &lt;module&gt;
+    from src.environments.base import SpaceSpec
+src/environments/__init__.py:8: in &lt;module&gt;
+    from . import atari_wrapper
+src/environments/atari_wrapper.py:22: in &lt;module&gt;
+    from gymnasium.wrappers import (
+E   ImportError: cannot import name 'GrayScaleObservation' from 'gymnasium.wrappers' (/Users/martian/miniconda3/envs/rl-lab/lib/python3.10/site-packages/gymnasium/wrappers/__init__.py)</error></testcase></testsuite></testsuites>

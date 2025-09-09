@@ -138,12 +138,22 @@ class TrajectoryBuffer(BaseBuffer):
         
         # Add trajectory to buffer
         self.trajectories.append(trajectory)
-        self._size += len(trajectory['observations'])
+        
+        # Calculate correct size for vectorized trajectories
+        observations = trajectory['observations']
+        if isinstance(observations, np.ndarray) and observations.ndim >= 2:
+            # Vectorized case: (T, B, ...) -> total experiences = T * B
+            trajectory_size = observations.shape[0] * observations.shape[1]
+        else:
+            # Single environment case: (T, ...) -> total experiences = T
+            trajectory_size = len(observations)
+        
+        self._size += trajectory_size
         
         # Remove old trajectories if over capacity
         self._enforce_capacity()
         
-        logger.debug(f"Added trajectory with {len(trajectory['observations'])} steps")
+        logger.debug(f"Added trajectory with {trajectory_size} individual experiences")
     
     def _complete_trajectory(self):
         """Complete the current trajectory and add it to buffer"""
@@ -197,21 +207,40 @@ class TrajectoryBuffer(BaseBuffer):
         Compute discounted returns for a trajectory.
         
         Args:
-            rewards: Array of rewards
-            dones: Array of done flags
+            rewards: Array of rewards - shape (T, B) where T=timesteps, B=batch_size/num_envs
+            dones: Array of done flags - shape (T, B) 
             
         Returns:
-            Array of discounted returns
+            Array of discounted returns with same shape as rewards (T, B)
         """
         returns = np.zeros_like(rewards, dtype=np.float32)
-        running_return = 0.0
         
-        # Compute returns backward through trajectory
-        for t in reversed(range(len(rewards))):
-            if dones[t]:
-                running_return = 0.0
-            running_return = rewards[t] + self.gamma * running_return
-            returns[t] = running_return
+        # Handle vectorized environments case: (T, B) shape
+        if rewards.ndim == 2:
+            num_steps, num_envs = rewards.shape
+            running_returns = np.zeros(num_envs, dtype=np.float32)
+            
+            # Compute returns backward through trajectory for each environment
+            for t in reversed(range(num_steps)):
+                # Reset running return for environments that are done
+                running_returns[dones[t]] = 0.0
+                # Update running returns for all environments
+                running_returns = rewards[t] + self.gamma * running_returns
+                returns[t] = running_returns.copy()
+                
+        # Handle single environment case: (T,) shape (legacy support)
+        elif rewards.ndim == 1:
+            running_return = 0.0
+            
+            # Compute returns backward through trajectory
+            for t in reversed(range(len(rewards))):
+                if dones[t]:
+                    running_return = 0.0
+                running_return = rewards[t] + self.gamma * running_return
+                returns[t] = running_return
+                
+        else:
+            raise ValueError(f"Rewards array must be 1D or 2D, got shape {rewards.shape}")
         
         return returns
     
@@ -221,36 +250,75 @@ class TrajectoryBuffer(BaseBuffer):
         Compute Generalized Advantage Estimation (GAE) advantages.
         
         Args:
-            rewards: Array of rewards
-            values: Array of value estimates
-            dones: Array of done flags
+            rewards: Array of rewards - shape (T, B) or (T,)
+            values: Array of value estimates - shape (T, B) or (T,)
+            dones: Array of done flags - shape (T, B) or (T,)
             bootstrap_value: Value estimate for final state (for truncated episodes)
             
         Returns:
-            Array of GAE advantages
+            Array of GAE advantages with same shape as rewards
         """
         advantages = np.zeros_like(rewards, dtype=np.float32)
-        running_advantage = 0.0
         
-        # Compute advantages backward through trajectory
-        for t in reversed(range(len(rewards))):
-            if t == len(rewards) - 1:
-                # CRITICAL FIX: Use bootstrap value for final step if episode is truncated
-                next_value = bootstrap_value
+        # Handle vectorized environments case: (T, B) shape
+        if rewards.ndim == 2:
+            num_steps, num_envs = rewards.shape
+            running_advantages = np.zeros(num_envs, dtype=np.float32)
+            
+            # Handle bootstrap values for vectorized case
+            if isinstance(bootstrap_value, (int, float)):
+                bootstrap_values = np.full(num_envs, bootstrap_value, dtype=np.float32)
             else:
-                next_value = values[t + 1]
+                bootstrap_values = np.array(bootstrap_value, dtype=np.float32)
+                if bootstrap_values.shape != (num_envs,):
+                    bootstrap_values = np.full(num_envs, 0.0, dtype=np.float32)
             
-            if dones[t]:
-                # Only zero out if actually terminated (not truncated)
-                next_value = 0.0
-                running_advantage = 0.0
+            # Compute advantages backward through trajectory for each environment
+            for t in reversed(range(num_steps)):
+                if t == num_steps - 1:
+                    # Use bootstrap values for final step if episodes are truncated
+                    next_values = bootstrap_values
+                else:
+                    next_values = values[t + 1]
+                
+                # Reset next value and running advantage for terminated environments
+                next_values = next_values.copy()
+                next_values[dones[t]] = 0.0
+                running_advantages[dones[t]] = 0.0
+                
+                # TD error for all environments
+                deltas = rewards[t] + self.gamma * next_values - values[t]
+                
+                # GAE advantage for all environments  
+                running_advantages = deltas + self.gamma * self.gae_lambda * running_advantages
+                advantages[t] = running_advantages.copy()
+                
+        # Handle single environment case: (T,) shape (legacy support)
+        elif rewards.ndim == 1:
+            running_advantage = 0.0
             
-            # TD error
-            delta = rewards[t] + self.gamma * next_value - values[t]
-            
-            # GAE advantage
-            running_advantage = delta + self.gamma * self.gae_lambda * running_advantage
-            advantages[t] = running_advantage
+            # Compute advantages backward through trajectory
+            for t in reversed(range(len(rewards))):
+                if t == len(rewards) - 1:
+                    # CRITICAL FIX: Use bootstrap value for final step if episode is truncated
+                    next_value = bootstrap_value
+                else:
+                    next_value = values[t + 1]
+                
+                if dones[t]:
+                    # Only zero out if actually terminated (not truncated)
+                    next_value = 0.0
+                    running_advantage = 0.0
+                
+                # TD error
+                delta = rewards[t] + self.gamma * next_value - values[t]
+                
+                # GAE advantage
+                running_advantage = delta + self.gamma * self.gae_lambda * running_advantage
+                advantages[t] = running_advantage
+                
+        else:
+            raise ValueError(f"Rewards array must be 1D or 2D, got shape {rewards.shape}")
         
         return advantages
     
@@ -258,7 +326,17 @@ class TrajectoryBuffer(BaseBuffer):
         """Remove old trajectories to stay within capacity"""
         while self._size > self.capacity and len(self.trajectories) > 0:
             removed_trajectory = self.trajectories.pop(0)
-            self._size -= len(removed_trajectory['observations'])
+            
+            # Calculate correct size for removed trajectory
+            observations = removed_trajectory['observations']
+            if isinstance(observations, np.ndarray) and observations.ndim >= 2:
+                # Vectorized case: (T, B, ...) -> total experiences = T * B
+                removed_size = observations.shape[0] * observations.shape[1]
+            else:
+                # Single environment case: (T, ...) -> total experiences = T
+                removed_size = len(observations)
+            
+            self._size -= removed_size
     
     def add(self, **kwargs):
         """Add experience(s) to buffer - supports both step and trajectory addition"""
@@ -307,21 +385,63 @@ class TrajectoryBuffer(BaseBuffer):
                 if key == 'bootstrap_value':
                     continue
                     
-                if isinstance(values, np.ndarray) and values.ndim > 0:
-                    all_data[key].extend(values.tolist())
+                if isinstance(values, np.ndarray):
+                    # Handle vectorized data properly
+                    if values.ndim >= 2:
+                        # Vectorized data with shape (T, B, ...) where T=time steps, B=batch/num_envs
+                        # We need to iterate through time and batch dimensions to get individual experiences
+                        T, B = values.shape[0], values.shape[1]
+                        for t in range(T):
+                            for b in range(B):
+                                # values[t, b] gives us one complete experience
+                                # For observations: shape (84, 84, 4)
+                                # For actions: scalar
+                                # For rewards: scalar
+                                all_data[key].append(values[t, b])
+                    elif values.ndim == 1:
+                        # Single environment case (T,) or special cases
+                        if key == 'bootstrap_values':
+                            # Skip bootstrap values - they're trajectory-level metadata
+                            continue
+                        else:
+                            # Single env case: (T,) -> extend as list
+                            all_data[key].extend(values.tolist())
+                    else:
+                        # Scalar or other cases
+                        all_data[key].append(values)
                 else:
                     all_data[key].append(values)
         
         # Sample random indices
-        total_steps = len(all_data['observations'])
+        total_steps = len(all_data['observations']) if 'observations' in all_data else 0
+        if total_steps == 0:
+            raise ValueError("No observations found in buffer")
+        
         indices = np.random.choice(total_steps, size=min(batch_size, total_steps), replace=False)
         
         # Create batch dictionary
         batch = {}
         for key, values in all_data.items():
             if len(values) > 0:
+                # Check if all keys have same length
+                if len(values) != total_steps:
+                    # Skip keys with wrong length to avoid crashes
+                    # (This is expected for keys like bootstrap_values which are trajectory-level)
+                    continue
                 sampled_values = [values[i] for i in indices]
-                batch[key] = self.to_tensor(np.array(sampled_values))
+                
+                # Convert to numpy array with proper handling for different data shapes
+                if len(sampled_values) > 0:
+                    first_item = sampled_values[0]
+                    if isinstance(first_item, np.ndarray) and first_item.ndim > 0:
+                        # For multi-dimensional data (like observations), stack along new batch dimension
+                        batch[key] = self.to_tensor(np.stack(sampled_values, axis=0))
+                    else:
+                        # For scalar data (like actions, rewards), convert to array normally
+                        batch[key] = self.to_tensor(np.array(sampled_values))
+                else:
+                    # Empty case - should not happen but handle gracefully
+                    batch[key] = self.to_tensor(np.array(sampled_values))
         
         # Normalize advantages if present and requested
         if 'advantages' in batch and self.normalize_advantages:
@@ -403,6 +523,23 @@ class TrajectoryBuffer(BaseBuffer):
         self.current_trajectory = defaultdict(list, state.get('current_trajectory', {}))
         self._trajectory_complete = state.get('trajectory_complete', True)
         
-        # Recalculate size
-        self._size = sum(len(traj.get('observations', [])) for traj in self.trajectories)
-        self._size += len(self.current_trajectory.get('observations', []))
+        # Recalculate size using correct vectorized logic
+        self._size = 0
+        for traj in self.trajectories:
+            observations = traj.get('observations', [])
+            if isinstance(observations, np.ndarray) and observations.ndim >= 2:
+                # Vectorized case: (T, B, ...) -> total experiences = T * B
+                self._size += observations.shape[0] * observations.shape[1]
+            else:
+                # Single environment case: (T, ...) -> total experiences = T
+                self._size += len(observations)
+        
+        # Add current trajectory size
+        current_obs = self.current_trajectory.get('observations', [])
+        if len(current_obs) > 0:
+            if isinstance(current_obs, list):
+                self._size += len(current_obs)
+            elif isinstance(current_obs, np.ndarray) and current_obs.ndim >= 2:
+                self._size += current_obs.shape[0] * current_obs.shape[1]
+            else:
+                self._size += len(current_obs)

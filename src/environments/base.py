@@ -12,10 +12,13 @@ Key benefits:
 """
 
 from abc import ABC, abstractmethod
-from typing import Tuple, Dict, Any, Optional, Union
+from typing import Tuple, Dict, Any, Optional, Union, List
 import numpy as np
 import torch
+import logging
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -53,6 +56,7 @@ class BaseEnvironment(ABC):
                 - normalize_obs: Whether to normalize observations
                 - normalize_reward: Whether to normalize rewards
                 - max_episode_steps: Maximum steps per episode
+                - observation_transforms: List of transform configurations
                 - Any environment-specific parameters
         """
         self.config = config
@@ -60,6 +64,10 @@ class BaseEnvironment(ABC):
         self.normalize_obs = config.get('normalize_obs', False)
         self.normalize_reward = config.get('normalize_reward', False)
         self.max_episode_steps = config.get('max_episode_steps', None)
+        
+        # Environment type flags
+        self.is_vectorized = getattr(self, 'is_vectorized', False)
+        self.num_envs = getattr(self, 'num_envs', 1)
         
         self._current_step = 0
         self._episode_return = 0.0
@@ -71,6 +79,10 @@ class BaseEnvironment(ABC):
         self._reward_mean = 0.0
         self._reward_var = 1.0
         
+        # Initialize transform pipeline
+        self.transform_pipeline = None
+        self._setup_transform_pipeline()
+        
         # Initialize environment-specific components
         self._setup_environment()
         
@@ -78,6 +90,59 @@ class BaseEnvironment(ABC):
         self._observation_space = self._get_observation_space()
         self._action_space = self._get_action_space()
     
+    def _setup_transform_pipeline(self):
+        """Setup the observation transform pipeline"""
+        try:
+            from src.environments.transforms import create_transform_pipeline, expand_preset_configs
+            
+            # Get transform configurations
+            transform_configs = self.config.get('observation_transforms', [])
+            
+            if transform_configs:
+                # Expand any preset configurations
+                expanded_configs = expand_preset_configs(transform_configs)
+                
+                # Create transform pipeline
+                self.transform_pipeline = create_transform_pipeline(expanded_configs)
+                
+                if self.transform_pipeline:
+                    logger.debug(f"Created transform pipeline with {len(self.transform_pipeline)} transforms: {self.transform_pipeline}")
+                else:
+                    logger.debug("No transform pipeline created (empty configuration)")
+            else:
+                logger.debug("No observation transforms specified")
+                
+        except ImportError as e:
+            logger.warning(f"Could not import transforms module: {e}")
+            self.transform_pipeline = None
+        except Exception as e:
+            logger.error(f"Failed to setup transform pipeline: {e}")
+            self.transform_pipeline = None
+    
+    def _apply_transforms(self, obs: np.ndarray) -> np.ndarray:
+        """
+        Apply transform pipeline to observation.
+        
+        Args:
+            obs: Raw observation from environment
+            
+        Returns:
+            Transformed observation
+        """
+        if self.transform_pipeline is not None:
+            try:
+                return self.transform_pipeline.apply(obs)
+            except Exception as e:
+                logger.error(f"Transform pipeline failed: {e}")
+                # Return original observation if transforms fail
+                return obs
+        return obs
+    
+    def _reset_transform_states(self):
+        """Reset state of all stateful transforms"""
+        if self.transform_pipeline is not None:
+            self.transform_pipeline.reset_states()
+
     @abstractmethod
     def _setup_environment(self):
         """
@@ -147,8 +212,14 @@ class BaseEnvironment(ABC):
         self._current_step = 0
         self._episode_return = 0.0
         
+        # Reset transform states before resetting environment
+        self._reset_transform_states()
+        
         # Reset underlying environment
         obs = self._reset_environment(seed)
+        
+        # Apply transforms first, then normalization
+        obs = self._apply_transforms(obs)
         
         # Apply normalization if enabled
         if self.normalize_obs:
@@ -178,6 +249,9 @@ class BaseEnvironment(ABC):
         
         # Step underlying environment
         obs, reward, done, info = self._step_environment(action)
+        
+        # Apply transforms first, then normalization
+        obs = self._apply_transforms(obs)
         
         # Apply observation normalization
         if self.normalize_obs:

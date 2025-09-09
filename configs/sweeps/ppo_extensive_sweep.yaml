@@ -1,0 +1,145 @@
+# Extensive PPO Hyperparameter Sweep
+#
+# A comprehensive sweep configuration that optimizes a large number of
+# hyperparameters using advanced optimization algorithms. Suitable for
+# thorough hyperparameter exploration when you have significant compute time.
+#
+# Usage:
+# python scripts/sweep.py --config configs/sweeps/ppo_extensive_sweep.yaml
+
+base_config: "configs/experiments/ppo_cartpole.yaml"
+
+sweep:
+  name: "ppo_extensive_cartpole"
+  study_name: "ppo_extensive_v1"
+  storage: "sqlite:///experiments/sweeps/ppo_extensive.db"
+  direction: "maximize"
+  
+  sampler:
+    type: "TPE"  # Tree-structured Parzen Estimator
+    n_startup_trials: 20  # More random trials before TPE
+    n_ei_candidates: 32   # More candidates for better optimization
+    
+  pruner:
+    type: "HyperbandPruner"  # Aggressive pruning for efficiency
+
+parameters:
+  # Algorithm hyperparameters
+  algorithm.lr:
+    type: "log_uniform"
+    low: 5e-6
+    high: 5e-3
+    
+  algorithm.clip_ratio:
+    type: "uniform"
+    low: 0.05
+    high: 0.5
+    
+  algorithm.entropy_coef:
+    type: "log_uniform"
+    low: 1e-5
+    high: 1e-1
+    
+  algorithm.value_coef:
+    type: "uniform"
+    low: 0.1
+    high: 2.0
+    
+  algorithm.ppo_epochs:
+    type: "int"
+    low: 1
+    high: 15
+    
+  algorithm.minibatch_size:
+    type: "categorical"
+    choices: [16, 32, 64, 128, 256, 512]
+    
+  algorithm.max_grad_norm:
+    type: "uniform"
+    low: 0.1
+    high: 2.0
+    
+  # Buffer configuration
+  buffer.capacity:
+    type: "categorical"
+    choices: [512, 1024, 2048, 4096, 8192]
+    
+  buffer.gamma:
+    type: "uniform"
+    low: 0.95
+    high: 0.999
+    
+  buffer.gae_lambda:
+    type: "uniform"
+    low: 0.85
+    high: 0.99
+    
+  # Network architecture optimization
+  network.actor.hidden_dims:
+    type: "categorical"
+    choices: [
+      [32, 32], 
+      [64, 64], 
+      [128, 128], 
+      [256, 256],
+      [32, 64, 32], 
+      [64, 128, 64],
+      [128, 256, 128]
+    ]
+    
+  network.critic.hidden_dims:
+    type: "categorical"
+    choices: [
+      [32, 32], 
+      [64, 64], 
+      [128, 128], 
+      [256, 256],
+      [32, 64, 32], 
+      [64, 128, 64],
+      [128, 256, 128]
+    ]
+  
+  network.actor.activation:
+    type: "categorical"
+    choices: ["tanh", "relu", "gelu"]
+    
+  network.critic.activation:
+    type: "categorical"
+    choices: ["tanh", "relu", "gelu"]
+
+overrides:
+  training.total_timesteps: 100000  # Full training
+  training.eval_frequency: 10000
+  training.num_eval_episodes: 10
+  logging.tensorboard: false
+  logging.wandb_enabled: false
+  experiment.seed: 42
+
+execution:
+  n_trials: 200
+  timeout: 14400  # 4 hours
+  trial_timeout: 1800  # 30 minutes per trial
+
+objective:
+  metric: "eval_return_mean"
+  
+  constraints:
+    - metric: "eval_return_mean"
+      condition: ">"
+      value: 100  # Must achieve decent performance
+
+analysis:
+  plots: [
+    "optimization_history",
+    "param_importances",
+    "parallel_coordinate", 
+    "slice_plot"
+  ]
+  export_best_n: 20
+  importance_evaluator: "fanova"
+
+advanced:
+  load_if_exists: true
+  max_trial_failures: 5
+  keep_all_trials: false
+  trial_name_template: "extensive_{trial_number:03d}"

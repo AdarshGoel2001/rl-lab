@@ -1,0 +1,51 @@
+# Minimal Test Sweep Configuration
+# 
+# This is a very quick test to verify Optuna sweep functionality
+# Uses minimal trials and short training time for rapid validation
+
+base_config: "configs/experiments/ppo_cartpole.yaml"
+
+sweep:
+  name: "optuna_test"
+  study_name: "test_study"
+  storage: "sqlite:///experiments/sweeps/test.db"
+  direction: "maximize"
+  
+  sampler:
+    type: "Random"  # Simple random search for testing
+    
+  pruner:
+    type: "MedianPruner"
+    n_startup_trials: 1
+    n_warmup_steps: 1000
+    interval_steps: 500
+
+parameters:
+  # Test just 2 critical parameters
+  algorithm.lr:
+    type: "uniform"
+    low: 0.0005
+    high: 0.005
+    
+  algorithm.clip_ratio:
+    type: "categorical"
+    choices: [0.1, 0.2, 0.3]
+
+overrides:
+  training.total_timesteps: 5000  # Very short for quick test
+  training.eval_frequency: 2500
+  training.num_eval_episodes: 2
+  logging.tensorboard: false
+  logging.wandb_enabled: false
+
+execution:
+  n_trials: 3  # Just 3 trials for quick test
+  timeout: 300  # 5 minutes max
+  n_jobs: 1     # Single process for debugging
+
+objective:
+  metric: "eval_return_mean"
+
+analysis:
+  plots: ["optimization_history"]
+  export_best_n: 2

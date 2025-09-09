@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="2.626" timestamp="2025-09-05T19:15:57.559109+05:30" hostname="Adarshs-MacBook-Pro.local"><testcase classname="tests.test_sweep_functionality" name="test_sweep_orchestrator_runs_minimal_trial" time="0.003"><failure message="AttributeError: 'module' object at src.core.sweep has no attribute 'Trainer'">obj = &lt;module 'src.core.sweep' from '/Users/martian/Documents/Code/rl-lab/src/core/sweep.py'&gt;
+name = 'Trainer', ann = 'src.core.sweep'
+
+    def annotated_getattr(obj: object, name: str, ann: str) -&gt; object:
+        try:
+&gt;           obj = getattr(obj, name)
+E           AttributeError: module 'src.core.sweep' has no attribute 'Trainer'
+
+../../../miniconda3/envs/rl-lab/lib/python3.10/site-packages/_pytest/monkeypatch.py:90: AttributeError
+
+The above exception was the direct cause of the following exception:
+
+tmp_path = PosixPath('/private/var/folders/78/mrx3_4z921g7641rf7q0kmkc0000gn/T/pytest-of-martian/pytest-11/test_sweep_orchestrator_runs_m0')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x158cc0df0&gt;
+
+    def test_sweep_orchestrator_runs_minimal_trial(tmp_path: Path, monkeypatch):
+        import yaml
+        from src.core import sweep as sweep_mod
+    
+        # Stub trainer that returns deterministic metric
+        class StubTrainer:
+            def __init__(self, *args, **kwargs):
+                self.step = 0
+    
+            def _evaluation_step(self):
+                self.step += 1
+                return {"eval_return_mean": 1.0 + 0.01 * self.step}
+    
+            def train(self):
+                # Quick "training" that returns final metric
+                return {"eval_return_mean": 1.5}
+    
+        # Mock Trainer class creation within sweep module
+        def mock_trainer_import():
+            return StubTrainer
+    
+&gt;       monkeypatch.setattr("src.core.sweep.Trainer", StubTrainer)
+
+tests/test_sweep_functionality.py:33: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../../../miniconda3/envs/rl-lab/lib/python3.10/site-packages/_pytest/monkeypatch.py:104: in derive_importpath
+    annotated_getattr(target, attr, ann=module)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+obj = &lt;module 'src.core.sweep' from '/Users/martian/Documents/Code/rl-lab/src/core/sweep.py'&gt;
+name = 'Trainer', ann = 'src.core.sweep'
+
+    def annotated_getattr(obj: object, name: str, ann: str) -&gt; object:
+        try:
+            obj = getattr(obj, name)
+        except AttributeError as e:
+&gt;           raise AttributeError(
+                f"{type(obj).__name__!r} object at {ann} has no attribute {name!r}"
+            ) from e
+E           AttributeError: 'module' object at src.core.sweep has no attribute 'Trainer'
+
+../../../miniconda3/envs/rl-lab/lib/python3.10/site-packages/_pytest/monkeypatch.py:92: AttributeError</failure></testcase></testsuite></testsuites>

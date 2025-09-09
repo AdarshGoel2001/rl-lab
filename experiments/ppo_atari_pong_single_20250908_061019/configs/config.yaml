@@ -1,0 +1,51 @@
+algorithm:
+  lr: 0.00025
+  name: ppo
+buffer:
+  batch_size: 512
+  capacity: 512
+  type: trajectory
+environment:
+  max_episode_steps: null
+  name: ''
+  normalize_obs: false
+  normalize_reward: false
+  wrapper: atari
+experiment:
+  debug: false
+  device: auto
+  name: ppo_atari_pong_single
+  seed: 42
+logging:
+  log_frequency: 5000
+  tensorboard: true
+  terminal: true
+  wandb_enabled: false
+  wandb_project: null
+  wandb_tags: []
+network:
+  actor:
+    activation: relu
+    hidden_dims:
+    - 64
+    - 64
+    initialization: xavier_uniform
+    input_dim: null
+    output_activation: linear
+    output_dim: null
+    type: nature_cnn
+  critic:
+    activation: relu
+    hidden_dims:
+    - 64
+    - 64
+    initialization: xavier_uniform
+    input_dim: null
+    output_activation: linear
+    output_dim: null
+    type: nature_cnn
+training:
+  checkpoint_frequency: 100000
+  eval_frequency: 50000
+  num_eval_episodes: 10
+  total_timesteps: 1000000

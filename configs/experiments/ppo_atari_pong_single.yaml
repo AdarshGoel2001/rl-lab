@@ -1,0 +1,96 @@
+# PPO Atari Pong Configuration - Single Environment Test
+#
+# This configuration tests PPO on Atari Pong with a single environment
+# to isolate issues with parallel environment managers
+
+experiment:
+  name: "ppo_atari_pong_single"
+  seed: 42
+  device: "auto"                  # Auto-detect: CUDA > MPS > CPU
+  debug: false                    # Set to true for verbose logging
+
+algorithm:
+  name: "ppo"
+  
+  # PPO hyperparameters optimized for Atari
+  lr: 2.5e-4                     # Standard Atari learning rate
+  lr_schedule: "linear"          # Linear decay to 0
+  clip_ratio: 0.1                # More conservative than default (better for Atari)
+  value_coef: 0.5
+  entropy_coef: 0.01             # Encourage exploration
+  
+  # Training configuration
+  ppo_epochs: 4                  # Standard for Atari
+  minibatch_size: 256            # Batch size for gradient updates
+  max_grad_norm: 0.5             # Gradient clipping for stability
+  
+  # Advantage computation
+  normalize_advantages: true     # Essential for Atari stability
+  clip_value_loss: true         # Clip value function updates
+
+environment:
+  game: "ALE/Pong-v5"           # Modern Atari Pong (ALE namespace)
+  wrapper: "atari"               # Use our comprehensive Atari wrapper
+  
+  # Atari preprocessing configuration
+  frame_skip: 4                  # Skip 4 frames (standard)
+  frame_stack: 4                 # Stack 4 frames (captures motion)
+  sticky_actions: 0.25           # 25% chance to repeat last action
+  noop_max: 30                   # Max 30 no-op actions at reset
+  terminal_on_life_loss: false   # Pong doesn't have lives
+  clip_rewards: true             # Clip rewards to [-1, 0, 1]
+  full_action_space: false       # Use reduced action space (6 actions)
+  
+  # SINGLE environment settings (NO PARALLEL)
+  num_environments: 1
+  parallel_backend: null
+  start_method: null
+
+network:
+  # Actor network (policy) - uses Nature CNN
+  actor:
+    type: "nature_cnn"           # Nature CNN for Atari
+    channels: [32, 64, 64]       # Conv layer filters
+    hidden_dim: 512              # FC layer size
+    activation: "relu"           # ReLU activation
+    
+  # Critic network (value function) - uses Nature CNN  
+  critic:
+    type: "nature_cnn"           # Nature CNN for Atari
+    channels: [32, 64, 64]       # Same architecture as actor
+    hidden_dim: 512              # FC layer size
+    activation: "relu"           # ReLU activation
+
+buffer:
+  type: "trajectory"
+  capacity: 512                 # 512 steps for single environment
+  batch_size: 512               # Use all collected data
+  
+  # GAE parameters
+  gamma: 0.99                    # Standard discount factor
+  gae_lambda: 0.95               # GAE lambda parameter
+  compute_returns: true
+  normalize_advantages: true
+
+training:
+  total_timesteps: 1000000      # 1M timesteps for testing
+  eval_frequency: 50000         # Evaluate every 50k steps
+  checkpoint_frequency: 100000  # Checkpoint every 100k steps
+  num_eval_episodes: 10         # 10 episodes for evaluation
+  
+  # Early stopping (optional - aggressive target)
+  early_stopping: true
+  target_reward: 15.0            # Strong Pong performance
+  patience: 5                    # Wait 5 evaluations
+
+logging:
+  terminal: true
+  tensorboard: true
+  log_frequency: 5000           # Log every 5k steps (more frequent for testing)
+  
+  # Weights & Biases logging (DISABLED for debugging)
+  wandb_enabled: false
+  wandb:
+    project: "rl-lab-atari"
+    tags: ["ppo", "atari", "pong", "single", "nature_cnn", "debug"]
+    notes: "PPO on Atari Pong with single environment for debugging parallel issues"

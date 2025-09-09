@@ -1,0 +1,7 @@
+{
+  "step": 10240,
+  "name": "auto_step_10240",
+  "is_best": false,
+  "experiment_dir": "experiments/sweeps/ppo_quick_test/trial_014",
+  "compress": true
+}
