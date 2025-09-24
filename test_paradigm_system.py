@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Test Paradigm System
+Test PPO Paradigm System
 
-This script tests the new paradigm architecture by creating and running
-simple configurations for both model-free and world model paradigms.
+Tests the new architecture where PPO paradigm inherits from ModelFreeParadigm
+and is registered as an algorithm for trainer compatibility.
 """
 
 import sys
@@ -14,8 +14,7 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from src.utils.registry import auto_import_modules, list_registered_components
-from src.paradigms.factory import ComponentFactory
+from src.utils.registry import auto_import_modules, get_algorithm
 
 
 def test_registry_system():
