@@ -323,8 +323,16 @@ class TrajectoryBuffer(BaseBuffer):
         return advantages
     
     def _enforce_capacity(self):
-        """Remove old trajectories to stay within capacity"""
-        while self._size > self.capacity and len(self.trajectories) > 0:
+        """Remove old trajectories to stay within capacity
+        
+        For trajectory buffers, we need to ensure at least one full rollout
+        (batch_size experiences) is retained to enable training.
+        """
+        # Use the larger of capacity or batch_size as the actual limit
+        # This prevents evicting a just-collected rollout needed for training
+        effective_capacity = max(self.capacity, self.batch_size)
+        
+        while self._size > effective_capacity and len(self.trajectories) > 0:
             removed_trajectory = self.trajectories.pop(0)
             
             # Calculate correct size for removed trajectory
@@ -337,6 +345,7 @@ class TrajectoryBuffer(BaseBuffer):
                 removed_size = len(observations)
             
             self._size -= removed_size
+            logger.debug(f"DEBUGGING: Removed trajectory of size {removed_size}, buffer size now {self._size}")
     
     def add(self, **kwargs):
         """Add experience(s) to buffer - supports both step and trajectory addition"""
@@ -543,3 +552,29 @@ class TrajectoryBuffer(BaseBuffer):
                 self._size += current_obs.shape[0] * current_obs.shape[1]
             else:
                 self._size += len(current_obs)
+    
+    def ready(self) -> bool:
+        """
+        Check if buffer has enough experiences for PPO training.
+        
+        For PPO, we want to train when we've collected a full rollout.
+        With vectorized environments, this means capacity steps per environment.
+        
+        Returns:
+            True if buffer has collected enough experiences for training
+        """
+        # For vectorized environments: capacity is per-env, so total = capacity * num_envs
+        # But we use batch_size which should equal capacity * num_envs
+        is_ready = self._size >= self.batch_size
+        
+        # DEBUGGING: Log buffer state to diagnose ready() issue - REMOVE LATER
+        logger.debug(f"DEBUGGING: Buffer ready check: size={self._size}, batch_size={self.batch_size}, ready={is_ready}")
+        logger.debug(f"DEBUGGING: Buffer trajectories: {len(self.trajectories)}, current_trajectory_complete: {self._trajectory_complete}")
+        if len(self.trajectories) > 0:
+            traj_shapes = []
+            for i, traj in enumerate(self.trajectories):
+                obs_shape = traj['observations'].shape if isinstance(traj['observations'], np.ndarray) else len(traj['observations'])
+                traj_shapes.append(f"traj_{i}: {obs_shape}")
+            logger.debug(f"DEBUGGING: Trajectory shapes: {', '.join(traj_shapes)}")
+        
+        return is_ready

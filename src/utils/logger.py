@@ -349,6 +349,7 @@ class UniversalLogger:
             prefix: Optional prefix for metric names (e.g., 'train/', 'eval/')
             commit: Whether to commit/flush the metrics immediately
         """
+        print(f"LOGGER DEBUG: Received metrics with prefix '{prefix}': {metrics}", flush=True)
         if not metrics:
             return
         
@@ -360,6 +361,7 @@ class UniversalLogger:
             
             # Step 2: Standardize names (synonyms + prefixes)
             standardized = self.standardize_names(sanitized, prefix)
+            print(f"LOGGER DEBUG: After standardization: {standardized}", flush=True)
             
             # Step 3: Always write to bash file (no frequency gating here)
             bash_output = self.format_bash_output(standardized, step)
@@ -373,12 +375,15 @@ class UniversalLogger:
             # Step 4: TensorBoard logging
             if self.tensorboard_writer is not None:
                 try:
+                    print(f"LOGGER DEBUG: Writing to TensorBoard: {list(standardized.keys())}", flush=True)
                     for name, value in standardized.items():
+                        print(f"LOGGER DEBUG: TensorBoard add_scalar({name}, {value}, {step})", flush=True)
                         self.tensorboard_writer.add_scalar(name, value, step)
                     if commit:
                         self.tensorboard_writer.flush()
                 except Exception as e:
                     logger.warning(f"TensorBoard logging failed: {e}")
+                    print(f"LOGGER DEBUG: TensorBoard error: {e}", flush=True)
             
             # Step 5: W&B logging
             if self.wandb_run is not None:

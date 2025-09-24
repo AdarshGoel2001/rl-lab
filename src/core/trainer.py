@@ -369,9 +369,7 @@ class Trainer(RegistryMixin):
         
         print("DEBUG: Immediately after logger statements", flush=True)
         sys.stdout.flush()
-        print("DEBUG: Skipping start_time for now", flush=True)
-        # Skip timing for now to bypass the hang
-        self.start_time = 0  # We'll fix timing later
+        self.start_time = time.time()
         print("DEBUG: Skipped start_time successfully")
         
         print("DEBUG: About to check step initialization")
@@ -497,11 +495,18 @@ class Trainer(RegistryMixin):
         # Add to buffer
         if trajectory is not None:
             self.buffer.add(trajectory=trajectory)
+            # Print buffer state after adding trajectory
+            print(f"DEBUGGING: Buffer state: size={self.buffer.size}, batch_size={self.buffer.batch_size}, capacity={self.buffer.capacity}, ready={self.buffer.ready()}")
+        else:
+            print("DEBUGGING: Trajectory is None, nothing added to buffer")
         
         # Update algorithm if buffer is ready
         if self.buffer.ready():
+            print("DEBUGGING: Buffer ready, calling algorithm.update()", flush=True)
             batch = self.buffer.sample()
             update_metrics = self.algorithm.update(batch)
+            print(f"DEBUGGING: Update metrics received: {update_metrics}", flush=True)
+            print(f"DEBUGGING: Metrics keys: {list(update_metrics.keys()) if update_metrics else 'None'}", flush=True)
             self.metrics.update(update_metrics)
             
             # Log algorithm update metrics immediately
@@ -641,25 +646,32 @@ class Trainer(RegistryMixin):
         dones = []
         
         num_envs = self.environment.num_envs
+        print(f"DEBUG: num_envs = {num_envs}")
         
         # Set algorithm to training mode
         self.algorithm.train()
+        print("DEBUG: Algorithm set to train mode")
         
         # Reset environments if needed
         if not hasattr(self, '_current_obs') or not hasattr(self, '_episode_dones'):
             print("DEBUG: Resetting vectorized environment...")
             self._current_obs = self.environment.reset()  # Shape: (num_envs, obs_dim)
             print(f"DEBUG: Reset successful, obs shape: {self._current_obs.shape}")
+            print(f"DEBUG: Reset obs type: {type(self._current_obs)}")
             self._episode_dones = np.zeros(num_envs, dtype=bool)
             self.episode += num_envs  # Count all environments
+            print("DEBUG: Environment reset complete")
         
         # Collect trajectory up to buffer capacity
         steps_collected = 0
         buffer_capacity = self.config.buffer.capacity
         
         while steps_collected < buffer_capacity and self.step < self.config.training.total_timesteps:
+            print(f"DEBUG: Starting collection step {steps_collected}, current step {self.step}")
             # Get observations as tensor (already batched)
+            print(f"DEBUG: About to convert obs to tensor, type: {type(self._current_obs)}")
             obs_tensor = self._current_obs.to(self.algorithm.device)
+            print("DEBUG: Successfully converted obs to tensor")
             
             # Get batched actions, log_probs, and values from algorithm
             with torch.no_grad():
@@ -699,19 +711,26 @@ class Trainer(RegistryMixin):
             completed_episodes = np.sum(dones_np)
             
             if completed_episodes > 0:
+                print(f"DEBUG: {completed_episodes} episodes completed")
                 self.episode += completed_episodes
                 self.total_episodes += completed_episodes
                 
                 # Extract episode returns and lengths from infos if available
                 if hasattr(infos, '__iter__') and len(infos) > 0:
+                    print(f"DEBUG: Processing {len(infos)} infos for episode data")
                     for i, (done, info) in enumerate(zip(dones_np, infos)):
                         if done and isinstance(info, dict):
+                            print(f"DEBUG: Info for completed episode {i}: {info}")
                             episode_return = info.get('episode_return', info.get('episode', {}).get('r', 0.0))
                             episode_length = info.get('episode_length', info.get('episode', {}).get('l', 0))
+                            print(f"DEBUG: Extracted return={episode_return}, length={episode_length}")
                             
                             if episode_return != 0.0 or episode_length != 0:  # Valid episode data
                                 self.episode_returns.append(episode_return)
                                 self.episode_lengths.append(episode_length)
+                                print(f"DEBUG: Added episode stats. Total episodes tracked: {len(self.episode_returns)}")
+                else:
+                    print("DEBUG: No infos available for episode tracking")
         
         # Return trajectory data
         if steps_collected > 0:
