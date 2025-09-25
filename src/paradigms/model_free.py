@@ -218,11 +218,7 @@ class ModelFreeParadigm(BaseParadigm):
         """
         pass
 
-    # Compatibility methods for trainer
-    @property
-    def device(self) -> torch.device:
-        """Get device for compatibility with trainer."""
-        return self._device if hasattr(self, '_device') else torch.device('cpu')
+    # No need to override to(), train(), eval() - BaseParadigm handles all components automatically
 
     def _save_additional_components(self) -> Dict[str, Any]:
         """Save value function state."""

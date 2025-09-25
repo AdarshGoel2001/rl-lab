@@ -17,7 +17,7 @@ from ..components.representation_learners.base import BaseRepresentationLearner
 from ..components.policy_heads.base import BasePolicyHead
 
 
-class BaseParadigm(nn.Module, ABC):
+class BaseParadigm(ABC):
     """
     Abstract base class for all paradigms.
 
@@ -44,7 +44,6 @@ class BaseParadigm(nn.Module, ABC):
             policy_head: Policy head for action generation
             config: Optional configuration dictionary
         """
-        super().__init__()
         self.config = config or {}
         self.device = torch.device(self.config.get('device', 'cpu'))
 
@@ -201,3 +200,39 @@ class BaseParadigm(nn.Module, ABC):
             'policy_info': self.policy_head.get_policy_info(),
             'device': str(self.device)
         }
+
+    def to(self, device: Union[str, torch.device]):
+        """Move all components to specified device. Handles any optional components automatically."""
+        self.device = torch.device(device)
+
+        # All possible component types - handles modularity automatically
+        component_attrs = ['encoder', 'representation_learner', 'policy_head', 'value_function',
+                          'dynamics_model', 'reward_model', 'world_model']
+
+        for attr_name in component_attrs:
+            if hasattr(self, attr_name):
+                component = getattr(self, attr_name)
+                if component is not None:
+                    component.to(self.device)
+
+    def train(self):
+        """Set all components to training mode. Handles any optional components automatically."""
+        component_attrs = ['encoder', 'representation_learner', 'policy_head', 'value_function',
+                          'dynamics_model', 'reward_model', 'world_model']
+
+        for attr_name in component_attrs:
+            if hasattr(self, attr_name):
+                component = getattr(self, attr_name)
+                if component is not None:
+                    component.train()
+
+    def eval(self):
+        """Set all components to evaluation mode. Handles any optional components automatically."""
+        component_attrs = ['encoder', 'representation_learner', 'policy_head', 'value_function',
+                          'dynamics_model', 'reward_model', 'world_model']
+
+        for attr_name in component_attrs:
+            if hasattr(self, attr_name):
+                component = getattr(self, attr_name)
+                if component is not None:
+                    component.eval()
