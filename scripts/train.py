@@ -20,8 +20,24 @@ from typing import Dict, Any, Optional
 # Add src to Python path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.core.trainer import create_trainer_from_config
-from src.utils.config import ConfigError
+from src.utils.config import ConfigError, load_config
+
+
+def get_trainer_for_paradigm(paradigm: str):
+    """Dynamically import the correct trainer based on paradigm"""
+    if paradigm == "model_free":
+        from src.paradigms.model_free.trainer import create_trainer_from_config
+        return create_trainer_from_config
+    elif paradigm == "world_model":
+        from src.paradigms.world_model.trainer import create_trainer_from_config
+        return create_trainer_from_config
+    elif paradigm == "vla":
+        from src.paradigms.vla.trainer import create_trainer_from_config
+        return create_trainer_from_config
+    else:
+        # Default to core trainer
+        from src.core.trainer import create_trainer_from_config
+        return create_trainer_from_config
 
 
 def setup_logging(level: str = 'INFO'):
@@ -178,7 +194,16 @@ def main():
         config_overrides = build_config_overrides(args)
         if config_overrides:
             logger.info(f"Configuration overrides: {config_overrides}")
-        
+
+        # Load config to determine paradigm
+        logger.info("Loading configuration to determine paradigm...")
+        config = load_config(str(config_path), config_overrides)
+        paradigm = getattr(config.experiment, 'paradigm', 'core')
+        logger.info(f"Using paradigm: {paradigm}")
+
+        # Get the appropriate trainer function
+        create_trainer_from_config = get_trainer_for_paradigm(paradigm)
+
         # Create trainer
         logger.info("Creating trainer...")
         trainer = create_trainer_from_config(

@@ -516,22 +516,46 @@ class TrajectoryBuffer(BaseBuffer):
                 returns.append(float(np.sum(traj['rewards'])))
         return returns
     
-    def _save_buffer_state(self) -> Dict[str, Any]:
-        """Save trajectory buffer specific state"""
+    def get_state(self) -> Dict[str, Any]:
+        """
+        Get complete buffer state for checkpointing.
+
+        Returns:
+            Dictionary containing all buffer state including trajectories
+            and configuration parameters.
+        """
         return {
             'trajectories': self.trajectories,
             'current_trajectory': dict(self.current_trajectory),  # Convert defaultdict to dict
             'trajectory_complete': self._trajectory_complete,
+            'size': self._size,
+            'position': self._position,
+            'capacity': self.capacity,
+            'batch_size': self.batch_size,
             'gamma': self.gamma,
-            'gae_lambda': self.gae_lambda
+            'gae_lambda': self.gae_lambda,
+            'normalize_advantages': self.normalize_advantages,
+            'compute_returns': self.compute_returns,
         }
-    
-    def _load_buffer_state(self, state: Dict[str, Any]):
-        """Load trajectory buffer specific state"""
+
+    def set_state(self, state: Dict[str, Any]):
+        """
+        Restore buffer state from checkpoint.
+
+        Args:
+            state: Dictionary containing buffer state from get_state()
+        """
         self.trajectories = state.get('trajectories', [])
         self.current_trajectory = defaultdict(list, state.get('current_trajectory', {}))
         self._trajectory_complete = state.get('trajectory_complete', True)
-        
+        self._position = state.get('position', 0)
+
+        # Restore configuration if present
+        if 'gamma' in state:
+            self.gamma = state['gamma']
+        if 'gae_lambda' in state:
+            self.gae_lambda = state['gae_lambda']
+
         # Recalculate size using correct vectorized logic
         self._size = 0
         for traj in self.trajectories:
@@ -542,7 +566,7 @@ class TrajectoryBuffer(BaseBuffer):
             else:
                 # Single environment case: (T, ...) -> total experiences = T
                 self._size += len(observations)
-        
+
         # Add current trajectory size
         current_obs = self.current_trajectory.get('observations', [])
         if len(current_obs) > 0:
@@ -552,6 +576,15 @@ class TrajectoryBuffer(BaseBuffer):
                 self._size += current_obs.shape[0] * current_obs.shape[1]
             else:
                 self._size += len(current_obs)
+
+    # Legacy methods for backwards compatibility
+    def save_checkpoint(self) -> Dict[str, Any]:
+        """Legacy method - use get_state() instead"""
+        return self.get_state()
+
+    def load_checkpoint(self, state: Dict[str, Any]):
+        """Legacy method - use set_state() instead"""
+        self.set_state(state)
     
     def ready(self) -> bool:
         """

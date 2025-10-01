@@ -66,38 +66,38 @@ class CheckpointManager:
         
         logger.info(f"Checkpoint manager initialized at {self.checkpoint_dir}")
     
-    def save_checkpoint(self, trainer_state: Dict[str, Any], 
-                       step: int, 
+    def save_checkpoint(self, trainer_state: Dict[str, Any],
+                       step: int,
                        name: Optional[str] = None,
                        is_best: bool = False) -> Path:
         """
         Save complete training state to checkpoint.
-        
+
         Args:
             trainer_state: Dictionary containing all training state including:
-                - algorithm: Algorithm instance with save_checkpoint() method
-                - buffer: Buffer instance with save_checkpoint() method  
+                - algorithm: Algorithm instance with get_state() method
+                - buffer: Buffer instance with get_state() method
                 - environment: Environment instance
                 - metrics: Current training metrics
                 - Any other state to preserve
             step: Current training step
             name: Optional name for checkpoint (auto-generated if None)
             is_best: Whether this is the best checkpoint so far
-            
+
         Returns:
             Path to saved checkpoint file
         """
         if name is None:
             name = f"checkpoint_step_{step}"
-        
+
         checkpoint_path = self.checkpoint_dir / f"{name}.pt"
-        
-        # Collect all state to save
+
+        # Collect all state to save using generic get_state() interface
         checkpoint_data = {
             'step': step,
             'timestamp': datetime.now().isoformat(),
-            'algorithm_state': trainer_state['algorithm'].save_checkpoint() if 'algorithm' in trainer_state else {},
-            'buffer_state': trainer_state['buffer'].save_checkpoint() if 'buffer' in trainer_state else {},
+            'algorithm_state': trainer_state['algorithm'].get_state() if 'algorithm' in trainer_state else {},
+            'buffer_state': trainer_state['buffer'].get_state() if 'buffer' in trainer_state else {},
             'metrics': trainer_state.get('metrics', {}),
             'rng_states': self._get_rng_states(),
             'metadata': {
@@ -108,11 +108,11 @@ class CheckpointManager:
                 'compress': self.compress
             }
         }
-        
-        # Add any additional state from trainer
+
+        # Add any additional state from trainer (using generic interface)
         for key, value in trainer_state.items():
-            if key not in ['algorithm', 'buffer'] and hasattr(value, 'save_checkpoint'):
-                checkpoint_data[f'{key}_state'] = value.save_checkpoint()
+            if key not in ['algorithm', 'buffer'] and hasattr(value, 'get_state'):
+                checkpoint_data[f'{key}_state'] = value.get_state()
         
         # Save checkpoint
         try:
@@ -185,27 +185,27 @@ class CheckpointManager:
             logger.error(f"Failed to load checkpoint {checkpoint_path}: {e}")
             raise
     
-    def restore_training_state(self, trainer_state: Dict[str, Any], 
+    def restore_training_state(self, trainer_state: Dict[str, Any],
                              checkpoint_data: Dict[str, Any],
                              transfer_learning: bool = False) -> Dict[str, Any]:
         """
         Restore training state from checkpoint data.
-        
+
         Args:
             trainer_state: Current trainer state dictionary
             checkpoint_data: Loaded checkpoint data
             transfer_learning: If True, only load algorithm weights (not training progress)
-            
+
         Returns:
             Updated trainer state with restored components
         """
         step = checkpoint_data.get('step', 0)
-        
-        # Always restore algorithm state (neural network weights)
+
+        # Always restore algorithm state (neural network weights) using generic interface
         if 'algorithm' in trainer_state and 'algorithm_state' in checkpoint_data:
-            trainer_state['algorithm'].load_checkpoint(checkpoint_data['algorithm_state'])
+            trainer_state['algorithm'].set_state(checkpoint_data['algorithm_state'])
             logger.debug("Algorithm state restored")
-        
+
         if transfer_learning:
             # For transfer learning: only load networks, skip training progress
             logger.info("Transfer learning mode: loading only neural network weights")
@@ -213,30 +213,30 @@ class CheckpointManager:
             # Keep trainer_state['step'] and trainer_state['metrics'] unchanged
         else:
             # Normal checkpoint restore: load everything
-            # Restore buffer state
+            # Restore buffer state using generic interface
             if 'buffer' in trainer_state and 'buffer_state' in checkpoint_data:
-                trainer_state['buffer'].load_checkpoint(checkpoint_data['buffer_state'])
+                trainer_state['buffer'].set_state(checkpoint_data['buffer_state'])
                 logger.debug("Buffer state restored")
-            
-            # Restore other component states
+
+            # Restore other component states using generic interface
             for key, value in trainer_state.items():
                 state_key = f'{key}_state'
                 if key not in ['algorithm', 'buffer'] and state_key in checkpoint_data:
-                    if hasattr(value, 'load_checkpoint'):
-                        value.load_checkpoint(checkpoint_data[state_key])
+                    if hasattr(value, 'set_state'):
+                        value.set_state(checkpoint_data[state_key])
                         logger.debug(f"{key} state restored")
-            
+
             # Restore RNG states for reproducibility
             if 'rng_states' in checkpoint_data:
                 self._restore_rng_states(checkpoint_data['rng_states'])
                 logger.debug("RNG states restored")
-            
+
             # Update trainer state with checkpoint training progress
             trainer_state['step'] = step
             trainer_state['metrics'] = checkpoint_data.get('metrics', {})
-            
+
             logger.info(f"Training state restored to step {step}")
-        
+
         return trainer_state
     
     def auto_save(self, trainer_state: Dict[str, Any], step: int) -> Optional[Path]:

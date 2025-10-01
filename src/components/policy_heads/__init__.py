@@ -6,5 +6,6 @@ They handle the final stage of action generation in modular agents.
 """
 
 from .base import BasePolicyHead
+from .categorical_mlp import CategoricalMLPPolicyHead
 
-__all__ = ['BasePolicyHead']
+__all__ = ['BasePolicyHead', 'CategoricalMLPPolicyHead']

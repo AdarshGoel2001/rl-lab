@@ -20,9 +20,10 @@ experiment:
   seed: 42                    # For reproducibility
   device: "cpu"               # Use CPU (fine for CartPole)
   debug: true                # Set to true for verbose logging
+  paradigm: "model_free"     # Use model-free paradigm trainer
 
 algorithm:
-  name: "ppo"                 # Use your PPO implementation
+  name: "paradigm_ppo"        # Use paradigm-based PPO implementation
   
   # Core PPO hyperparameters (tuned for CartPole)
   lr: 3e-4
