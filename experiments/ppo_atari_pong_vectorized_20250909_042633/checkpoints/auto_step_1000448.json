@@ -1,7 +1,0 @@
-{
-  "step": 1000448,
-  "name": "auto_step_1000448",
-  "is_best": false,
-  "experiment_dir": "experiments/ppo_atari_pong_vectorized_20250909_042633",
-  "compress": true
-}

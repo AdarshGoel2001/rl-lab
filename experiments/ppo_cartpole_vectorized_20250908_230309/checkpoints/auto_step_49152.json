@@ -1,7 +1,0 @@
-{
-  "step": 49152,
-  "name": "auto_step_49152",
-  "is_best": false,
-  "experiment_dir": "experiments/ppo_cartpole_vectorized_20250908_230309",
-  "compress": true
-}

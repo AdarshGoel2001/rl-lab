@@ -1,7 +1,0 @@
-{
-  "experiment_name": "ppo_atari_pong",
-  "config_hash": "78956394",
-  "created_at": "2025-09-09T04:27:55.711415",
-  "experiment_dir": "experiments/ppo_atari_pong_20250909_042754",
-  "git_hash": "a3f7805932110f3d79758d9b1de28269818cfca8"
-}

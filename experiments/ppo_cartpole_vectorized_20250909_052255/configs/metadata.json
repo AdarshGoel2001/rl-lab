@@ -1,7 +1,0 @@
-{
-  "experiment_name": "ppo_cartpole_vectorized",
-  "config_hash": "4b295c18",
-  "created_at": "2025-09-09T05:22:56.695804",
-  "experiment_dir": "experiments/ppo_cartpole_vectorized_20250909_052255",
-  "git_hash": "a3f7805932110f3d79758d9b1de28269818cfca8"
-}

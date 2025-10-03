@@ -1,7 +1,0 @@
-{
-  "experiment_name": "test_cartpole_random",
-  "config_hash": "a0d8bd48",
-  "created_at": "2025-08-31T00:48:40.105337",
-  "experiment_dir": "experiments/test_cartpole_random_20250831_004840",
-  "git_hash": "49e5c70d2f6775f37d21ece941ccb28fdff16f22"
-}

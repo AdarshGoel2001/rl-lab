@@ -1,7 +1,0 @@
-{
-  "sweep_name": "optuna_test",
-  "study_name": "test_study",
-  "created_at": "2025-09-06T01:44:35.990427",
-  "config_path": "configs/sweeps/test_sweep.yaml",
-  "experiment_dir": "experiments/sweeps/optuna_test"
-}

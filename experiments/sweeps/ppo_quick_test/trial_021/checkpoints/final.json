@@ -1,7 +1,0 @@
-{
-  "step": 25000,
-  "name": "final",
-  "is_best": false,
-  "experiment_dir": "experiments/sweeps/ppo_quick_test/trial_021",
-  "compress": true
-}

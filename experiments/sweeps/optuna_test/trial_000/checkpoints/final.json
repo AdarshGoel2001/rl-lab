@@ -1,7 +1,0 @@
-{
-  "step": 5000,
-  "name": "final",
-  "is_best": false,
-  "experiment_dir": "experiments/sweeps/optuna_test/trial_000",
-  "compress": true
-}

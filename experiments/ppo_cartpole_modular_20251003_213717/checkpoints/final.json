@@ -1,7 +1,0 @@
-{
-  "step": 4096,
-  "name": "final",
-  "is_best": false,
-  "experiment_dir": "experiments/ppo_cartpole_modular_20251003_213717",
-  "compress": true
-}

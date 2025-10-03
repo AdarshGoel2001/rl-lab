@@ -1,7 +1,0 @@
-{
-  "step": 150000,
-  "name": "final",
-  "is_best": false,
-  "experiment_dir": "experiments/ppo_acrobot_first_try_20250829_045439",
-  "compress": true
-}
