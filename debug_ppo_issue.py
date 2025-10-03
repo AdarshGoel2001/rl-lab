@@ -11,7 +11,7 @@ from pathlib import Path
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from src.algorithms.ppo import PPOAlgorithm
+from src.algorithms.ppo_legacy import PPOAlgorithm
 from src.utils.registry import auto_import_modules
 
 # Import modules to register components

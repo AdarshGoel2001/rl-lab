@@ -128,7 +128,7 @@ def test_buffer_integration():
     
     try:
         from src.environments.vectorized_gym_wrapper import VectorizedGymWrapper
-        from src.algorithms.ppo import PPO
+        from src.algorithms.ppo_legacy import PPO
         from src.buffers.trajectory import TrajectoryBuffer
         from src.networks.mlp import MLP
         import torch.nn as nn

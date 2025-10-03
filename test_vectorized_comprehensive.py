@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from src.environments.vectorized_gym_wrapper import VectorizedGymWrapper
 from src.buffers.trajectory import TrajectoryBuffer  
-from src.algorithms.ppo import PPOAlgorithm
+from src.algorithms.ppo_legacy import PPOAlgorithm
 from src.utils.registry import auto_import_modules
 
 # Import modules to register components

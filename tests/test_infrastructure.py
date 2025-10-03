@@ -32,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.utils.checkpoint import CheckpointManager
 from src.utils.config import load_config, Config
 from src.utils.registry import ALGORITHM_REGISTRY, NETWORK_REGISTRY, ENVIRONMENT_REGISTRY
-from src.algorithms.ppo import PPOAlgorithm
+from src.algorithms.ppo_legacy import PPOAlgorithm
 from src.networks.mlp import ActorMLP, CriticMLP
 from src.environments.gym_wrapper import GymWrapper
 from src.buffers.trajectory import TrajectoryBuffer

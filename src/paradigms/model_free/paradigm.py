@@ -11,11 +11,11 @@ from typing import Dict, Any, Optional, Union, Tuple
 import torch
 from torch.distributions import Distribution
 
-from .base import BaseParadigm
-from ..components.encoders.base import BaseEncoder
-from ..components.representation_learners.base import BaseRepresentationLearner
-from ..components.policy_heads.base import BasePolicyHead
-from ..components.value_functions.base import BaseValueFunction
+from ..base import BaseParadigm
+from ...components.encoders.base import BaseEncoder
+from ...components.representation_learners.base import BaseRepresentationLearner
+from ...components.policy_heads.base import BasePolicyHead
+from ...components.value_functions.base import BaseValueFunction
 
 
 class ModelFreeParadigm(BaseParadigm):

@@ -28,9 +28,10 @@ from src.utils.config import Config, ConfigManager, resolve_device
 from src.utils.checkpoint import CheckpointManager  
 from src.utils.logger import create_logger
 from src.utils.registry import (
-    get_algorithm, get_environment, get_network, get_buffer,
+    get_algorithm, get_environment, get_buffer,
     auto_import_modules, RegistryMixin
 )
+from src.paradigms.factory import ComponentFactory
 
 logger = logging.getLogger(__name__)
 
@@ -154,7 +155,7 @@ class Trainer(RegistryMixin):
             
             # Initialize separate evaluation environment
             logger.info("Initializing evaluation environment...")
-            if hasattr(self.config, 'evaluation'):
+            if getattr(self.config, 'evaluation', None):
                 # Use explicit evaluation config
                 eval_env_class = get_environment(self.config.evaluation.wrapper)
                 self.eval_environment = eval_env_class(self.config.evaluation.__dict__)
@@ -188,84 +189,99 @@ class Trainer(RegistryMixin):
             logger.info(f"Observation space: {obs_space.shape}")
             logger.info(f"Action space: {action_space.shape}, discrete: {action_space.discrete}")
 
-            # Create modular components for paradigm-based architecture
-            logger.info("Creating modular components for paradigm-based architecture...")
-            from src.utils.registry import get_encoder, get_policy_head, get_value_function
-            import torch.nn as nn
+            # Create modular components for paradigm-based architecture via ComponentFactory
+            logger.info("Creating modular components via ComponentFactory...")
 
             device = resolve_device(self.config.experiment.device)
 
-            # Get dimensions for components
-            if isinstance(obs_space.shape, tuple) and len(obs_space.shape) > 1:
-                obs_dim = int(np.prod(obs_space.shape))
+            component_config = dict(self.config.components or {})
+            if not component_config:
+                raise ValueError("Configuration must define a 'components' section for modular paradigm usage")
+
+            def _prepare_config(raw_config: Dict[str, Any]) -> Dict[str, Any]:
+                config_copy = dict(raw_config.get('config', {}))
+                if 'device' not in config_copy:
+                    config_copy['device'] = device
+                return config_copy
+
+            # Encoder
+            encoder_entry = component_config.get('encoder')
+            if not encoder_entry:
+                raise ValueError("Components config missing required 'encoder' entry")
+            if 'type' not in encoder_entry:
+                raise ValueError("Encoder component entry requires 'type'")
+            encoder_cfg = _prepare_config(encoder_entry)
+            encoder_cfg.setdefault('input_dim', obs_space.shape)
+            encoder = ComponentFactory.create_component('encoder', encoder_entry['type'], encoder_cfg)
+            if hasattr(encoder, 'to'):
+                encoder.to(device)
+            encoder_output_dim = getattr(encoder, 'output_dim', None)
+            if encoder_output_dim is None:
+                raise ValueError("Encoder must expose 'output_dim' attribute for downstream components")
+            logger.info(f"Created encoder component: {encoder_entry['type']}")
+
+            # Representation learner (optional, default to identity)
+            repr_entry = component_config.get('representation_learner')
+            if repr_entry:
+                if 'type' not in repr_entry:
+                    raise ValueError("Representation learner component entry requires 'type'")
+                repr_cfg = _prepare_config(repr_entry)
+                repr_cfg.setdefault('representation_dim', encoder_output_dim)
+                representation_learner = ComponentFactory.create_component('representation_learner', repr_entry['type'], repr_cfg)
             else:
-                obs_dim = obs_space.shape[0]
+                logger.info("No representation learner provided - defaulting to identity")
+                from src.components.representation_learners.identity import IdentityRepresentationLearner
+                representation_learner = IdentityRepresentationLearner({'device': device, 'representation_dim': encoder_output_dim})
+            if hasattr(representation_learner, 'to'):
+                representation_learner.to(device)
 
-            action_dim = action_space.n if action_space.discrete else action_space.shape[0]
+            # Policy head
+            policy_entry = component_config.get('policy_head')
+            if not policy_entry:
+                raise ValueError("Components config missing required 'policy_head' entry")
+            if 'type' not in policy_entry:
+                raise ValueError("Policy head component entry requires 'type'")
+            policy_cfg = _prepare_config(policy_entry)
+            policy_cfg.setdefault('representation_dim', encoder_output_dim)
+            policy_cfg.setdefault('action_dim', action_space.n if action_space.discrete else int(np.prod(action_space.shape)))
+            policy_cfg.setdefault('discrete_actions', action_space.discrete)
+            policy_head = ComponentFactory.create_component('policy_head', policy_entry['type'], policy_cfg)
+            if hasattr(policy_head, 'to'):
+                policy_head.to(device)
+            logger.info(f"Created policy head component: {policy_entry['type']}")
 
-            # Create encoder (shared feature extractor)
-            encoder_config = {
-                'input_dim': obs_space.shape,
-                'hidden_dims': [64, 64],  # From config network settings
-                'activation': 'tanh',
-                'device': device
+            # Value function
+            value_entry = component_config.get('value_function')
+            if not value_entry:
+                raise ValueError("Components config missing required 'value_function' entry")
+            if 'type' not in value_entry:
+                raise ValueError("Value function component entry requires 'type'")
+            value_cfg = _prepare_config(value_entry)
+            value_cfg.setdefault('representation_dim', encoder_output_dim)
+            value_function = ComponentFactory.create_component('value_function', value_entry['type'], value_cfg)
+            if hasattr(value_function, 'to'):
+                value_function.to(device)
+            logger.info(f"Created value function component: {value_entry['type']}")
+
+            components = {
+                'encoder': encoder,
+                'representation_learner': representation_learner,
+                'policy_head': policy_head,
+                'value_function': value_function,
             }
-            encoder = get_encoder("mlp")(encoder_config)
-            encoder.to(device)
-            logger.info(f"Created encoder with output dim: {encoder.output_dim}")
 
-            # Create policy head based on action space type
-            if action_space.discrete:
-                # For discrete actions, use categorical policy head
-                policy_config = {
-                    'representation_dim': encoder.output_dim,
-                    'action_dim': action_dim,
-                    'hidden_dims': [64],
-                    'activation': 'tanh',
-                    'device': device
-                }
-                policy_head = get_policy_head("categorical_mlp")(policy_config)
-                logger.info("Created categorical policy head for discrete actions")
-            else:
-                # For continuous actions
-                policy_config = {
-                    'representation_dim': encoder.output_dim,
-                    'action_dim': action_dim,
-                    'hidden_dims': [64, 64],
-                    'activation': 'tanh',
-                    'device': device
-                }
-                policy_head = get_policy_head("continuous_actor")(policy_config)
-                logger.info("Created continuous actor policy head")
-
-            policy_head.to(device)
-
-            # Create value function
-            value_config = {
-                'representation_dim': encoder.output_dim,
-                'hidden_dims': [64, 64],
-                'activation': 'tanh',
-                'device': device
-            }
-            value_function = get_value_function("critic_mlp")(value_config)
-            value_function.to(device)
-            logger.info("Created value function")
-
-            # Initialize algorithm with spaces and device (no networks yet)
-            logger.info("Initializing algorithm...")
+            # Initialize algorithm / paradigm with provided components
+            logger.info("Initializing algorithm/paradigm with modular components...")
             algorithm_config = self.config.algorithm.__dict__.copy()
             algorithm_config['observation_space'] = obs_space
             algorithm_config['action_space'] = action_space
             algorithm_config['device'] = device
+            algorithm_config['components'] = components
 
             algorithm_class = get_algorithm(self.config.algorithm.name)
             self.algorithm = algorithm_class(algorithm_config)
-            logger.info(f"Created algorithm: {self.config.algorithm.name}")
-
-            # Inject modular components into algorithm
-            logger.info("Injecting modular components into algorithm...")
-            self.algorithm.set_components(encoder, policy_head, value_function)
-            logger.info("Component injection complete - algorithm now has modular architecture")
+            self.algorithm.to(device)
+            logger.info(f"Created algorithm/paradigm: {self.config.algorithm.name}")
             
             # Initialize buffer
             logger.info("Initializing buffer...")
@@ -377,25 +393,11 @@ class Trainer(RegistryMixin):
         logger.info(f"Target steps: {self.config.training.total_timesteps}")
         logger.info(f"Evaluation frequency: {self.config.training.eval_frequency}")
         logger.info(f"Checkpoint frequency: {self.config.training.checkpoint_frequency}")
-        
-        print("DEBUG: Immediately after logger statements", flush=True)
-        sys.stdout.flush()
+
         self.start_time = time.time()
-        print("DEBUG: Skipped start_time successfully")
-        
-        print("DEBUG: About to check step initialization")
-        # Ensure step is initialized
-        if not hasattr(self, 'step'):
-            self.step = 0
-            print("DEBUG: self.step was not initialized, setting to 0")
-        else:
-            print(f"DEBUG: self.step already exists: {self.step}")
-        
-        print(f"DEBUG: About to start training loop, self.step = {self.step}, target = {self.config.training.total_timesteps}")
-        
+
         try:
             while self.step < self.config.training.total_timesteps:
-                print(f"DEBUG: Starting training loop iteration, step: {self.step}")
                 # Training step
                 self._training_step()
 
@@ -503,18 +505,11 @@ class Trainer(RegistryMixin):
         # Add to buffer
         if trajectory is not None:
             self.buffer.add(trajectory=trajectory)
-            # Print buffer state after adding trajectory
-            print(f"DEBUGGING: Buffer state: size={self.buffer.size}, batch_size={self.buffer.batch_size}, capacity={self.buffer.capacity}, ready={self.buffer.ready()}")
-        else:
-            print("DEBUGGING: Trajectory is None, nothing added to buffer")
-        
+
         # Update algorithm if buffer is ready
         if self.buffer.ready():
-            print("DEBUGGING: Buffer ready, calling algorithm.update()", flush=True)
             batch = self.buffer.sample()
             update_metrics = self.algorithm.update(batch)
-            print(f"DEBUGGING: Update metrics received: {update_metrics}", flush=True)
-            print(f"DEBUGGING: Metrics keys: {list(update_metrics.keys()) if update_metrics else 'None'}", flush=True)
             self.metrics.update(update_metrics)
             
             # Log algorithm update metrics immediately
@@ -571,13 +566,22 @@ class Trainer(RegistryMixin):
             with torch.no_grad():
                 if hasattr(self.algorithm, 'get_action_and_value'):
                     action, log_prob, value = self.algorithm.get_action_and_value(obs_tensor)
-                    action = action.cpu().numpy().item()
+                    # Handle both discrete (scalar) and continuous (vector) actions
+                    action_np = action.cpu().numpy().squeeze(0)  # Remove batch dimension
+                    if action_np.shape == ():  # Scalar case (discrete action)
+                        action = action_np.item()
+                    else:  # Vector case (continuous action)
+                        action = action_np
                     log_prob = log_prob.cpu().numpy().item()
                     value = value.cpu().numpy().item()
                 else:
                     # Fallback if get_action_and_value not implemented
                     action_tensor = self.algorithm.act(obs_tensor, deterministic=False)
-                    action = action_tensor.cpu().numpy().item()
+                    action_np = action_tensor.cpu().numpy().squeeze(0)
+                    if action_np.shape == ():  # Scalar case
+                        action = action_np.item()
+                    else:  # Vector case
+                        action = action_np
                     log_prob = 0.0  # Placeholder
                     value = 0.0     # Placeholder
             
@@ -645,41 +649,31 @@ class Trainer(RegistryMixin):
     
     def _collect_vectorized_experience(self) -> Optional[Dict[str, np.ndarray]]:
         """Collect experience from vectorized environments"""
-        print("DEBUG: Starting _collect_vectorized_experience")
         observations = []
         actions = []
         rewards = []
         old_values = []
         old_log_probs = []
         dones = []
-        
+
         num_envs = self.environment.num_envs
-        print(f"DEBUG: num_envs = {num_envs}")
-        
+
         # Set algorithm to training mode
         self.algorithm.train()
-        print("DEBUG: Algorithm set to train mode")
-        
+
         # Reset environments if needed
         if not hasattr(self, '_current_obs') or not hasattr(self, '_episode_dones'):
-            print("DEBUG: Resetting vectorized environment...")
             self._current_obs = self.environment.reset()  # Shape: (num_envs, obs_dim)
-            print(f"DEBUG: Reset successful, obs shape: {self._current_obs.shape}")
-            print(f"DEBUG: Reset obs type: {type(self._current_obs)}")
             self._episode_dones = np.zeros(num_envs, dtype=bool)
             self.episode += num_envs  # Count all environments
-            print("DEBUG: Environment reset complete")
         
         # Collect trajectory up to buffer capacity
         steps_collected = 0
         buffer_capacity = self.config.buffer.capacity
         
         while steps_collected < buffer_capacity and self.step < self.config.training.total_timesteps:
-            print(f"DEBUG: Starting collection step {steps_collected}, current step {self.step}")
             # Get observations as tensor (already batched)
-            print(f"DEBUG: About to convert obs to tensor, type: {type(self._current_obs)}")
             obs_tensor = self._current_obs.to(self.algorithm.device)
-            print("DEBUG: Successfully converted obs to tensor")
             
             # Get batched actions, log_probs, and values from algorithm
             with torch.no_grad():
@@ -717,28 +711,21 @@ class Trainer(RegistryMixin):
             # Process completed episodes in vectorized environments
             dones_np = dones_batch.cpu().numpy() if isinstance(dones_batch, torch.Tensor) else dones_batch
             completed_episodes = np.sum(dones_np)
-            
+
             if completed_episodes > 0:
-                print(f"DEBUG: {completed_episodes} episodes completed")
                 self.episode += completed_episodes
                 self.total_episodes += completed_episodes
-                
+
                 # Extract episode returns and lengths from infos if available
                 if hasattr(infos, '__iter__') and len(infos) > 0:
-                    print(f"DEBUG: Processing {len(infos)} infos for episode data")
                     for i, (done, info) in enumerate(zip(dones_np, infos)):
                         if done and isinstance(info, dict):
-                            print(f"DEBUG: Info for completed episode {i}: {info}")
                             episode_return = info.get('episode_return', info.get('episode', {}).get('r', 0.0))
                             episode_length = info.get('episode_length', info.get('episode', {}).get('l', 0))
-                            print(f"DEBUG: Extracted return={episode_return}, length={episode_length}")
-                            
+
                             if episode_return != 0.0 or episode_length != 0:  # Valid episode data
                                 self.episode_returns.append(episode_return)
                                 self.episode_lengths.append(episode_length)
-                                print(f"DEBUG: Added episode stats. Total episodes tracked: {len(self.episode_returns)}")
-                else:
-                    print("DEBUG: No infos available for episode tracking")
         
         # Return trajectory data
         if steps_collected > 0:

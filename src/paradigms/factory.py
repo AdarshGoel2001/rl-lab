@@ -132,7 +132,7 @@ class ComponentFactory(RegistryMixin):
             )
 
             # Import here to avoid circular imports
-            from .model_free import ModelFreeParadigm
+            from .model_free.paradigm import ModelFreeParadigm
             return ModelFreeParadigm(
                 encoder=components['encoder'],
                 representation_learner=components['representation_learner'],

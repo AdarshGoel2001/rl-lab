@@ -19,7 +19,7 @@ import hashlib
 import json
 from pathlib import Path
 from typing import Dict, Any, Optional, Union, List
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 import logging
 
 logger = logging.getLogger(__name__)
@@ -78,11 +78,15 @@ class ExperimentConfig:
     seed: int = 42
     device: str = 'cpu'
     debug: bool = False
-    
+    paradigm: str = 'model_free'
+
     def __post_init__(self):
         # Validate device
         if self.device not in ['cpu', 'cuda', 'mps', 'auto']:
             logger.warning(f"Unusual device specified: {self.device}")
+        # Default paradigm to model_free if unspecified
+        if not self.paradigm:
+            self.paradigm = 'model_free'
 
 
 @dataclass 
@@ -251,6 +255,7 @@ class Config:
     buffer: BufferConfig
     training: TrainingConfig
     logging: LoggingConfig
+    components: Dict[str, Any] = field(default_factory=dict)
     evaluation: Optional[EnvironmentConfig] = None
     
     @classmethod
@@ -283,6 +288,7 @@ class Config:
                 buffer=BufferConfig(**config_dict.get('buffer', {})),
                 training=TrainingConfig(**config_dict.get('training', {})),
                 logging=LoggingConfig(**config_dict.get('logging', {})),
+                components=config_dict.get('components', {}),
                 evaluation=evaluation
             )
         except TypeError as e:

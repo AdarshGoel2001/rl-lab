@@ -67,7 +67,7 @@ def test_training_components():
     
     # 4. Test algorithm creation
     print("\n4. Testing Algorithm Creation...")
-    from src.algorithms.ppo import PPOAlgorithm
+    from src.algorithms.ppo_legacy import PPOAlgorithm
     
     algo_config = config['algorithm'].copy()
     algo_config['device'] = device

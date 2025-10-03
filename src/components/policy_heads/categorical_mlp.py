@@ -59,7 +59,7 @@ class CategoricalMLPPolicyHead(BasePolicyHead):
                 nn.init.orthogonal_(module.weight)
                 nn.init.constant_(module.bias, 0.0)
 
-    def forward(self, representation: torch.Tensor, context: Optional[Dict[str, Any]] = None) -> torch.Tensor:
+    def forward(self, representation: torch.Tensor, context: Optional[Dict[str, Any]] = None) -> Categorical:
         """
         Forward pass through policy head.
 
@@ -68,9 +68,10 @@ class CategoricalMLPPolicyHead(BasePolicyHead):
             context: Optional context (unused for basic categorical policy)
 
         Returns:
-            Raw logits for categorical distribution, shape (batch_size, action_dim)
+            Categorical distribution over actions
         """
-        return self.network(representation)
+        logits = self.network(representation)
+        return Categorical(logits=logits)
 
     @property
     def supports_context(self) -> bool:

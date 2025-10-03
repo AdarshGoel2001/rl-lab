@@ -538,6 +538,10 @@ class TrajectoryBuffer(BaseBuffer):
             'compute_returns': self.compute_returns,
         }
 
+    def _save_buffer_state(self) -> Dict[str, Any]:
+        """Adapter for BaseBuffer checkpointing."""
+        return self.get_state()
+
     def set_state(self, state: Dict[str, Any]):
         """
         Restore buffer state from checkpoint.
@@ -576,6 +580,10 @@ class TrajectoryBuffer(BaseBuffer):
                 self._size += current_obs.shape[0] * current_obs.shape[1]
             else:
                 self._size += len(current_obs)
+
+    def _load_buffer_state(self, state: Dict[str, Any]):
+        """Adapter for BaseBuffer checkpointing."""
+        self.set_state(state)
 
     # Legacy methods for backwards compatibility
     def save_checkpoint(self) -> Dict[str, Any]:

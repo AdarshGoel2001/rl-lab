@@ -52,6 +52,13 @@ class BaseParadigm(ABC):
         self.representation_learner = representation_learner
         self.policy_head = policy_head
 
+        # Standard optimizer registry - subclasses should populate this
+        # Example: self.optimizers = {'actor': adam_opt, 'critic': adam_opt2}
+        self.optimizers = {}
+
+        # Training step counter
+        self.step = 0
+
         # Move all components to device
         self.to(self.device)
 
@@ -137,8 +144,15 @@ class BaseParadigm(ABC):
             'representation_learner': self.representation_learner.state_dict(),
             'policy_head': self.policy_head.state_dict(),
             'config': self.config,
-            'paradigm_type': self.__class__.__name__
+            'paradigm_type': self.__class__.__name__,
+            'step': self.step,
         }
+
+        # Save all optimizers centrally
+        if self.optimizers:
+            checkpoint['optimizers'] = {
+                name: opt.state_dict() for name, opt in self.optimizers.items()
+            }
 
         # Add additional component states (subclasses can override this method)
         checkpoint.update(self._save_additional_components())
@@ -155,6 +169,16 @@ class BaseParadigm(ABC):
         self.encoder.load_state_dict(checkpoint['encoder'])
         self.representation_learner.load_state_dict(checkpoint['representation_learner'])
         self.policy_head.load_state_dict(checkpoint['policy_head'])
+
+        # Restore step counter
+        if 'step' in checkpoint:
+            self.step = checkpoint['step']
+
+        # Restore all optimizers centrally
+        if 'optimizers' in checkpoint and self.optimizers:
+            for name, opt_state in checkpoint['optimizers'].items():
+                if name in self.optimizers:
+                    self.optimizers[name].load_state_dict(opt_state)
 
         # Load additional component states (subclasses can override this method)
         self._load_additional_components(checkpoint)
@@ -180,6 +204,24 @@ class BaseParadigm(ABC):
             checkpoint: Full checkpoint dictionary
         """
         pass
+
+    def get_state(self) -> Dict[str, Any]:
+        """
+        Alias for save_checkpoint() to support CheckpointManager interface.
+
+        Returns:
+            Dictionary containing all state needed for resuming
+        """
+        return self.save_checkpoint()
+
+    def set_state(self, state: Dict[str, Any]):
+        """
+        Alias for load_checkpoint() to support CheckpointManager interface.
+
+        Args:
+            state: State dictionary from get_state()
+        """
+        self.load_checkpoint(state)
 
     @property
     def paradigm_type(self) -> str:
