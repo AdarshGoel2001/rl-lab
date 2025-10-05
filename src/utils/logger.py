@@ -16,6 +16,7 @@ import os
 import time
 import logging
 from pathlib import Path
+from datetime import datetime
 from typing import Dict, Any, Optional, Union, List
 from dataclasses import dataclass
 from collections import deque
@@ -125,9 +126,51 @@ class UniversalLogger:
         
         # Create directories
         self.log_dir = self.experiment_dir / "logs"
-        self.tensorboard_dir = self.experiment_dir / "tensorboard"
         self.log_dir.mkdir(exist_ok=True)
-        self.tensorboard_dir.mkdir(exist_ok=True)
+
+        # Place TensorBoard runs under a flat 'runs/<experiment>/<timestamp>' hierarchy.
+        # When resuming an experiment we reuse the existing directory so TensorBoard shows
+        # a single continuous run instead of one directory per resume.
+        runs_root = Path("runs")
+        runs_root.mkdir(parents=True, exist_ok=True)
+
+        run_name = self.experiment_dir.name
+        legacy_tb_dir = self.experiment_dir / "tensorboard"
+        existing_tb_dir: Optional[Path] = None
+
+        # Detect an existing symlink from earlier sessions and reuse its target.
+        if legacy_tb_dir.exists() or legacy_tb_dir.is_symlink():
+            try:
+                resolved = legacy_tb_dir.resolve(strict=True)
+                if resolved.exists():
+                    existing_tb_dir = resolved
+            except FileNotFoundError:
+                # Stale symlink or missing directory – clean it up so we can recreate later.
+                try:
+                    legacy_tb_dir.unlink()
+                except Exception as exc:
+                    logger.debug("Failed to remove stale tensorboard link: %s", exc)
+
+        if existing_tb_dir is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.tensorboard_dir = runs_root / run_name / timestamp
+            self.tensorboard_dir.mkdir(parents=True, exist_ok=True)
+
+            # Refresh the convenience symlink inside the experiment directory.
+            if legacy_tb_dir.exists() or legacy_tb_dir.is_symlink():
+                try:
+                    legacy_tb_dir.unlink()
+                except Exception as exc:
+                    logger.debug("Failed to update tensorboard symlink: %s", exc)
+            try:
+                legacy_tb_dir.symlink_to(self.tensorboard_dir.resolve())
+            except Exception as exc:
+                logger.debug("Failed to create tensorboard symlink: %s", exc)
+
+            self._tensorboard_init_message = f"TensorBoard logging enabled: {self.tensorboard_dir}"
+        else:
+            self.tensorboard_dir = existing_tb_dir
+            self._tensorboard_init_message = f"Reusing existing TensorBoard directory: {self.tensorboard_dir}"
         
         # Initialize backends
         self.tensorboard_writer = None
@@ -152,7 +195,7 @@ class UniversalLogger:
                     log_dir=str(self.tensorboard_dir),
                     comment=self.experiment_config.get('experiment', {}).get('name', 'experiment')
                 )
-                logger.info(f"TensorBoard logging enabled: {self.tensorboard_dir}")
+                logger.info(self._tensorboard_init_message)
             except Exception as e:
                 logger.warning(f"Failed to initialize TensorBoard: {e}")
                 self.tensorboard_writer = None

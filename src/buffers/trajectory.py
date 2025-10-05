@@ -115,6 +115,67 @@ class TrajectoryBuffer(BaseBuffer):
         if done:
             self._complete_trajectory()
     
+    def _get_trajectory_shape(self, trajectory: Dict[str, np.ndarray]) -> Tuple[int, int]:
+        """Infer (steps, num_envs) for a stored trajectory based on rewards."""
+        rewards = trajectory.get('rewards')
+        if rewards is None:
+            raise ValueError("Trajectory missing required 'rewards' key")
+
+        rewards_array = np.asarray(rewards)
+        if rewards_array.ndim == 0:
+            steps = 1
+            num_envs = 1
+        else:
+            steps = rewards_array.shape[0]
+            num_envs = rewards_array.shape[1] if rewards_array.ndim > 1 else 1
+
+        # Store back the normalized rewards array so downstream code works with numpy
+        trajectory['rewards'] = rewards_array
+        return steps, num_envs
+
+    def _flatten_key(self,
+                     values: Any,
+                     steps: int,
+                     num_envs: int) -> List[np.ndarray]:
+        """Flatten a trajectory field into per-experience entries."""
+        arr = np.asarray(values)
+        if arr.shape[0] != steps:
+            raise ValueError(
+                f"Trajectory field has mismatched leading dimension."
+                f" Expected {steps}, found {arr.shape[0]}"
+            )
+
+        flattened: List[np.ndarray] = []
+
+        if num_envs == 1:
+            for t in range(steps):
+                flattened.append(np.asarray(arr[t]))
+            return flattened
+
+        # Identify the axis that corresponds to environments (size == num_envs)
+        env_axis = None
+        for axis in range(1, arr.ndim):
+            if arr.shape[axis] == num_envs:
+                env_axis = axis
+                break
+
+        if env_axis is not None and env_axis != 1:
+            arr = np.moveaxis(arr, env_axis, 1)
+
+        if arr.ndim >= 2 and arr.shape[1] == num_envs:
+            for t in range(steps):
+                for b in range(num_envs):
+                    flattened.append(np.asarray(arr[t, b]))
+            return flattened
+
+        # Fallback: replicate per-step value across environments (e.g., broadcasted stats)
+        for t in range(steps):
+            step_value = np.asarray(arr[t])
+            for _ in range(num_envs):
+                flattened.append(step_value.copy())
+
+        return flattened
+
     def add_trajectory(self, trajectory: Dict[str, List]):
         """
         Add a complete trajectory to the buffer.
@@ -138,16 +199,10 @@ class TrajectoryBuffer(BaseBuffer):
         
         # Add trajectory to buffer
         self.trajectories.append(trajectory)
-        
-        # Calculate correct size for vectorized trajectories
-        observations = trajectory['observations']
-        if isinstance(observations, np.ndarray) and observations.ndim >= 2:
-            # Vectorized case: (T, B, ...) -> total experiences = T * B
-            trajectory_size = observations.shape[0] * observations.shape[1]
-        else:
-            # Single environment case: (T, ...) -> total experiences = T
-            trajectory_size = len(observations)
-        
+
+        steps, num_envs = self._get_trajectory_shape(trajectory)
+        trajectory_size = steps * num_envs
+
         self._size += trajectory_size
         
         # Remove old trajectories if over capacity
@@ -336,12 +391,12 @@ class TrajectoryBuffer(BaseBuffer):
             removed_trajectory = self.trajectories.pop(0)
             
             # Calculate correct size for removed trajectory
-            observations = removed_trajectory['observations']
-            if isinstance(observations, np.ndarray) and observations.ndim >= 2:
-                # Vectorized case: (T, B, ...) -> total experiences = T * B
-                removed_size = observations.shape[0] * observations.shape[1]
-            else:
-                # Single environment case: (T, ...) -> total experiences = T
+            try:
+                steps, num_envs = self._get_trajectory_shape(removed_trajectory)
+                removed_size = steps * num_envs
+            except ValueError:
+                # Fallback to observations length if rewards missing (should not happen)
+                observations = removed_trajectory.get('observations', [])
                 removed_size = len(observations)
             
             self._size -= removed_size
@@ -387,47 +442,27 @@ class TrajectoryBuffer(BaseBuffer):
         
         # Flatten all trajectories into individual steps
         all_data = defaultdict(list)
-        
+
         for trajectory in self.trajectories:
+            try:
+                steps, num_envs = self._get_trajectory_shape(trajectory)
+            except ValueError as exc:
+                logger.warning(f"Skipping trajectory during sampling: {exc}")
+                continue
+
             for key, values in trajectory.items():
-                # Skip bootstrap_value as it's trajectory-level metadata, not step data
                 if key == 'bootstrap_value':
                     continue
-                    
-                if isinstance(values, np.ndarray):
-                    # Handle vectorized data properly
-                    if values.ndim >= 2:
-                        # Vectorized data with shape (T, B, ...) where T=time steps, B=batch/num_envs
-                        # We need to iterate through time and batch dimensions to get individual experiences
-                        T, B = values.shape[0], values.shape[1]
-                        for t in range(T):
-                            for b in range(B):
-                                # values[t, b] gives us one complete experience
-                                # For observations: shape (84, 84, 4)
-                                # For actions: scalar
-                                # For rewards: scalar
-                                all_data[key].append(values[t, b])
-                    elif values.ndim == 1:
-                        # Single environment case (T,) or special cases
-                        if key == 'bootstrap_values':
-                            # Skip bootstrap values - they're trajectory-level metadata
-                            continue
-                        else:
-                            # Single env case: (T,) -> extend as list
-                            all_data[key].extend(values.tolist())
-                    else:
-                        # Scalar or other cases
-                        all_data[key].append(values)
-                else:
-                    all_data[key].append(values)
-        
+                flattened_values = self._flatten_key(values, steps, num_envs)
+                all_data[key].extend(flattened_values)
+
         # Sample random indices
-        total_steps = len(all_data['observations']) if 'observations' in all_data else 0
+        total_steps = len(all_data['rewards']) if 'rewards' in all_data else 0
         if total_steps == 0:
             raise ValueError("No observations found in buffer")
-        
+
         indices = np.random.choice(total_steps, size=min(batch_size, total_steps), replace=False)
-        
+
         # Create batch dictionary
         batch = {}
         for key, values in all_data.items():

@@ -69,6 +69,7 @@ class Trainer(RegistryMixin):
         self.step = 0
         self.episode = 0
         self.metrics = {}
+        self._algorithm_metric_keys = set()
         self.start_time = None
 
         # Episode tracking for logging (using deques for recent episodes)
@@ -170,9 +171,9 @@ class Trainer(RegistryMixin):
                     eval_config.pop('num_envs', None)
                     eval_config.pop('vectorization', None)
                 elif self.config.environment.wrapper == 'atari':
-                    eval_config['wrapper'] = 'gym'
-                    # Remove parallel environment configs
-                    eval_config.pop('num_environments', None)
+                    # Reuse Atari wrapper configuration but ensure evaluation is single-env
+                    eval_config['wrapper'] = self.config.environment.wrapper
+                    eval_config['num_environments'] = 1
                     eval_config.pop('parallel_backend', None)
                     eval_config.pop('start_method', None)
                 
@@ -410,6 +411,16 @@ class Trainer(RegistryMixin):
                     # Store prefixed eval metrics for final results (compatibility)
                     prefixed_eval = {f'eval_{k}': v for k, v in eval_metrics.items()}
                     self.metrics.update(prefixed_eval)
+
+                    stochastic_eval_metrics = self._evaluation_step_stochastic()
+                    self.experiment_logger.log_metrics(
+                        stochastic_eval_metrics, self.step, prefix='eval_stochastic'
+                    )
+                    prefixed_stochastic = {
+                        f'eval_stochastic_{k}': v for k, v in stochastic_eval_metrics.items()
+                    }
+                    self.metrics.update(prefixed_stochastic)
+
                     self.last_eval_step = self.step
 
                 # Checkpointing (robust frequency check for vectorized envs)
@@ -440,6 +451,15 @@ class Trainer(RegistryMixin):
             # Store prefixed for final results
             final_prefixed_eval = {f'eval_{k}': v for k, v in final_eval_metrics.items()}
             self.metrics.update(final_prefixed_eval)
+
+            final_stochastic_eval_metrics = self._evaluation_step_stochastic()
+            self.experiment_logger.log_metrics(
+                final_stochastic_eval_metrics, self.step, prefix='eval_stochastic'
+            )
+            final_prefixed_stochastic = {
+                f'eval_stochastic_{k}': v for k, v in final_stochastic_eval_metrics.items()
+            }
+            self.metrics.update(final_prefixed_stochastic)
             
             final_checkpoint = self.checkpoint_manager.save_checkpoint(
                 self._get_trainer_state(), self.step, name="final"
@@ -508,9 +528,15 @@ class Trainer(RegistryMixin):
 
         # Update algorithm if buffer is ready
         if self.buffer.ready():
+            if hasattr(self.algorithm, 'update_schedules'):
+                total_steps = max(1, int(getattr(self.config.training, 'total_timesteps', 0)) or 1)
+                progress = min(1.0, max(0.0, self.step / total_steps))
+                self.algorithm.update_schedules(progress)
             batch = self.buffer.sample()
             update_metrics = self.algorithm.update(batch)
             self.metrics.update(update_metrics)
+            if update_metrics:
+                self._algorithm_metric_keys = set(update_metrics.keys())
             
             # Log algorithm update metrics immediately
             if update_metrics:
@@ -695,21 +721,28 @@ class Trainer(RegistryMixin):
             # Store experience (all environments at once)
             observations.append(self._current_obs.cpu().numpy())
             actions.append(actions_batch)
-            rewards.append(rewards_batch.cpu().numpy())
+            if isinstance(rewards_batch, torch.Tensor):
+                rewards.append(rewards_batch.cpu().numpy())
+            else:
+                rewards.append(np.asarray(rewards_batch))
             old_values.append(values_batch)
             old_log_probs.append(log_probs_batch)
-            dones.append(dones_batch.cpu().numpy())
+            if isinstance(dones_batch, torch.Tensor):
+                dones_array = dones_batch.cpu().numpy()
+            else:
+                dones_array = np.asarray(dones_batch)
+            dones.append(dones_array)
             
             # Update state
             self._current_obs = next_obs
-            self._episode_dones = dones_batch.cpu().numpy()
+            self._episode_dones = dones_array
             
             # Update step count (count all environment steps)
             self.step += num_envs
             steps_collected += 1
             
             # Process completed episodes in vectorized environments
-            dones_np = dones_batch.cpu().numpy() if isinstance(dones_batch, torch.Tensor) else dones_batch
+            dones_np = dones_array
             completed_episodes = np.sum(dones_np)
 
             if completed_episodes > 0:
@@ -746,66 +779,54 @@ class Trainer(RegistryMixin):
                 with torch.no_grad():
                     if hasattr(self.algorithm, 'networks') and 'critic' in self.algorithm.networks:
                         bootstrap_values = self.algorithm.networks['critic'](obs_tensor).cpu().numpy()
-                        trajectory['bootstrap_values'] = bootstrap_values  # Shape: (num_envs,)
+                        # Use singular key for compatibility with trajectory buffer logic
+                        trajectory['bootstrap_value'] = bootstrap_values  # Shape: (num_envs,)
             
             return trajectory
         
         return None
     
-    def _evaluation_step(self) -> Dict[str, float]:
-        """
-        Run evaluation episodes using the separate evaluation environment.
-        
-        Returns:
-            Dictionary of evaluation metrics
-        """
-        logger.info(f"Running evaluation at step {self.step}")
-        
+    def _run_evaluation(self, deterministic: bool) -> Dict[str, float]:
+        """Run evaluation episodes with configurable action selection."""
+        mode = 'deterministic' if deterministic else 'stochastic'
+        logger.info(f"Running {mode} evaluation at step {self.step}")
+
         eval_metrics = {
             'eval_step': float(self.step),
             'eval_episode_count': float(self.config.training.num_eval_episodes)
         }
-        
+
         episode_returns = []
         episode_lengths = []
-        
-        # Set algorithm to evaluation mode
+
         self.algorithm.eval()
-        
+
         try:
             for eval_episode in range(self.config.training.num_eval_episodes):
                 episode_return = 0.0
                 episode_length = 0
-                
-                # Use the dedicated evaluation environment
+
                 obs = self.eval_environment.reset(seed=self.config.experiment.seed + eval_episode)
                 done = False
-                
-                while not done and episode_length < 1000:  # Max episode length
-                    # Select action deterministically
+
+                while not done:
                     with torch.no_grad():
-                        # Handle single environment observation shape
-                        obs_tensor = torch.FloatTensor(obs).unsqueeze(0).to(self.algorithm.device)
-                        action_tensor = self.algorithm.act(obs_tensor, deterministic=True)
-                        
-                        # Handle action extraction based on environment type
+                        obs_tensor = torch.as_tensor(obs, dtype=torch.float32, device=self.algorithm.device).unsqueeze(0)
+                        action_tensor = self.algorithm.act(obs_tensor, deterministic=deterministic)
+
                         if self.eval_environment.action_space.discrete:
-                            # Discrete action: extract scalar
                             action = action_tensor.cpu().numpy().item()
                         else:
-                            # Continuous action: extract array (squeeze batch dimension)
                             action = action_tensor.cpu().numpy().squeeze(0)
-                    
-                    # Step evaluation environment
+
                     obs, reward, done, info = self.eval_environment.step(action)
-                    
+
                     episode_return += reward
                     episode_length += 1
-                
+
                 episode_returns.append(episode_return)
                 episode_lengths.append(episode_length)
-            
-            # Compute evaluation statistics with standardized names
+
             eval_metrics.update({
                 'return_mean': float(np.mean(episode_returns)),
                 'return_std': float(np.std(episode_returns)),
@@ -813,19 +834,28 @@ class Trainer(RegistryMixin):
                 'return_max': float(np.max(episode_returns)),
                 'length_mean': float(np.mean(episode_lengths)),
             })
-            
-            logger.info(f"Evaluation complete - Mean return: {eval_metrics['return_mean']:.2f}")
-            
+
+            logger.info(
+                f"{mode.capitalize()} evaluation complete - Mean return: {eval_metrics['return_mean']:.2f}"
+            )
+
         except Exception as e:
-            logger.error(f"Evaluation failed: {e}")
+            logger.error(f"{mode.capitalize()} evaluation failed: {e}")
             logger.error(f"Error details: {repr(e)}")
             eval_metrics['eval_error'] = str(e)
-        
+
         finally:
-            # Return algorithm to training mode
             self.algorithm.train()
-        
+
         return eval_metrics
+
+    def _evaluation_step(self) -> Dict[str, float]:
+        """Run deterministic evaluation episodes."""
+        return self._run_evaluation(deterministic=True)
+
+    def _evaluation_step_stochastic(self) -> Dict[str, float]:
+        """Run stochastic evaluation episodes."""
+        return self._run_evaluation(deterministic=False)
     
     def _log_training_metrics(self):
         """
@@ -865,8 +895,12 @@ class Trainer(RegistryMixin):
 
         # Add algorithm-specific metrics from self.metrics (exclude eval_* since they're logged separately)
         for key, value in self.metrics.items():
-            if not key.startswith('eval_'):  # Skip eval metrics - they're logged separately
-                training_metrics[key] = value
+            if key.startswith('eval_'):
+                continue
+            if key in self._algorithm_metric_keys:
+                # Algorithm metrics are logged immediately during updates; skip duplicates here
+                continue
+            training_metrics[key] = value
 
         # Log to all backends (logger writes immediately, no frequency gating in logger)
         self.experiment_logger.log_metrics(training_metrics, self.step, prefix='train')

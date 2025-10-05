@@ -1,11 +1,10 @@
 experiment:
-  name: "ppo_cartpole_modular"
+  name: ppo_cartpole_modular
   seed: 42
-  device: "cpu"
-  paradigm: "model_free"
-
+  device: cpu
+  paradigm: model_free
 algorithm:
-  name: "ppo"
+  name: ppo
   lr: 3e-4
   clip_ratio: 0.2
   value_coef: 0.5
@@ -15,51 +14,51 @@ algorithm:
   max_grad_norm: 0.5
   normalize_advantages: true
   clip_value_loss: true
-
 environment:
-  name: "CartPole-v1"
-  wrapper: "gym"
+  name: CartPole-v1
+  wrapper: gym
   normalize_obs: false
   normalize_reward: false
   max_episode_steps: 500
-
 components:
   encoder:
-    type: "mlp"
+    type: mlp
     config:
-      hidden_dims: [64, 64]
-      activation: "tanh"
+      hidden_dims:
+      - 64
+      - 64
+      activation: tanh
   representation_learner:
-    type: "identity"
+    type: identity
     config: {}
   policy_head:
-    type: "categorical_mlp"
+    type: categorical_mlp
     config:
-      hidden_dims: [64]
-      activation: "tanh"
+      hidden_dims:
+      - 64
+      activation: tanh
   value_function:
-    type: "critic_mlp"
+    type: critic_mlp
     config:
-      hidden_dims: [64, 64]
-      activation: "tanh"
-
+      hidden_dims:
+      - 64
+      - 64
+      activation: tanh
 buffer:
-  type: "trajectory"
+  type: trajectory
   capacity: 2048
   batch_size: 2048
   gamma: 0.99
   gae_lambda: 0.95
   compute_returns: true
   normalize_advantages: true
-
 training:
   total_timesteps: 20000
   eval_frequency: 5000
   checkpoint_frequency: 10000
   num_eval_episodes: 5
-
 logging:
   terminal: true
-  tensorboard: false
+  tensorboard: true
   wandb_enabled: false
   log_frequency: 1000

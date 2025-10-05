@@ -48,7 +48,11 @@ class PPOParadigm(ModelFreeParadigm):
         self.critic_lr = float(cfg.get('critic_lr', cfg.get('lr', 3e-4)))
         self.clip_ratio = float(cfg.get('clip_ratio', 0.2))
         self.value_coef = float(cfg.get('value_coef', 0.5))
-        self.entropy_coef = float(cfg.get('entropy_coef', 0.01))
+        self.entropy_coef_initial = float(cfg.get('entropy_coef', 0.01))
+        self.entropy_coef_final = float(cfg.get('entropy_coef_final', self.entropy_coef_initial))
+        self.entropy_coef_schedule = cfg.get('entropy_coef_schedule', None)
+        self.entropy_schedule_fraction = float(cfg.get('entropy_schedule_fraction', 1.0))
+        self.entropy_coef = self.entropy_coef_initial
         self.max_grad_norm = float(cfg.get('max_grad_norm', 0.5))
         self.ppo_epochs = int(cfg.get('ppo_epochs', 4))
         self.minibatch_size = int(cfg.get('minibatch_size', 64))
@@ -138,6 +142,61 @@ class PPOParadigm(ModelFreeParadigm):
     def update(self, batch: Dict[str, torch.Tensor]) -> Dict[str, float]:
         batch = {k: v.to(self.device) for k, v in batch.items()}
         batch_size = batch['observations'].shape[0]
+
+        diagnostics: Dict[str, float] = {}
+
+        with torch.no_grad():
+            advantages = batch.get('advantages')
+            if advantages is not None:
+                adv_mean = advantages.mean().item()
+                adv_std = advantages.std(unbiased=False).item() if advantages.numel() > 1 else 0.0
+                diagnostics['advantages_mean'] = adv_mean
+                diagnostics['advantages_std'] = adv_std
+
+            returns = batch.get('returns')
+            if returns is not None:
+                returns_flat = returns.view(-1)
+                diagnostics['critic_target_mean'] = returns_flat.mean().item()
+                diagnostics['critic_target_std'] = (
+                    returns_flat.std(unbiased=False).item() if returns_flat.numel() > 1 else 0.0
+                )
+
+            observations = batch['observations']
+            if not torch.is_floating_point(observations):
+                observations = observations.float()
+
+            values_pred = self.critic_network(observations)
+            values_pred = values_pred.view(-1)
+            diagnostics['critic_pred_mean'] = values_pred.mean().item()
+            diagnostics['critic_pred_std'] = (
+                values_pred.std(unbiased=False).item() if values_pred.numel() > 1 else 0.0
+            )
+
+            if returns is not None:
+                value_delta = values_pred - returns_flat
+                diagnostics['critic_delta_mean'] = value_delta.mean().item()
+                diagnostics['critic_delta_abs_mean'] = value_delta.abs().mean().item()
+
+            dist = self.actor_network(observations)
+            if hasattr(dist, 'logits'):
+                logits = dist.logits
+                probs = dist.probs
+                if logits.dim() >= 2:
+                    mean_logits = logits.mean(dim=0)
+                    for idx in range(mean_logits.shape[-1]):
+                        diagnostics[f'action_logit_mean_{idx}'] = mean_logits[idx].item()
+                if probs.dim() >= 2:
+                    mean_probs = probs.mean(dim=0)
+                    for idx in range(mean_probs.shape[-1]):
+                        diagnostics[f'action_prob_mean_{idx}'] = mean_probs[idx].item()
+            elif hasattr(dist, 'loc') and hasattr(dist, 'scale'):
+                diagnostics['action_loc_mean'] = dist.loc.mean().item()
+                diagnostics['action_scale_mean'] = dist.scale.mean().item()
+                if dist.loc.numel() > 1:
+                    diagnostics['action_loc_std'] = dist.loc.std(unbiased=False).item()
+                if dist.scale.numel() > 1:
+                    diagnostics['action_scale_std'] = dist.scale.std(unbiased=False).item()
+
         indices = np.arange(batch_size)
 
         metrics = {
@@ -182,7 +241,22 @@ class PPOParadigm(ModelFreeParadigm):
                 metrics[key] /= updates
 
         self.step += 1
+        metrics['entropy_coef'] = float(self.entropy_coef)
+        metrics.update(diagnostics)
         return metrics
+
+    def update_schedules(self, progress: float) -> None:
+        """Update any annealed hyperparameters based on training progress."""
+        if self.entropy_coef_schedule == 'linear':
+            if self.entropy_schedule_fraction <= 0:
+                schedule_progress = 1.0
+            else:
+                schedule_progress = progress / self.entropy_schedule_fraction
+            clipped = max(0.0, min(1.0, schedule_progress))
+            self.entropy_coef = (
+                self.entropy_coef_initial
+                + (self.entropy_coef_final - self.entropy_coef_initial) * clipped
+            )
 
 
 class CompositeActor(nn.Module):

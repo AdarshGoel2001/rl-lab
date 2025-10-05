@@ -43,7 +43,8 @@ env.bak/
 venv.bak/
 
 # Experiment outputs (if you want to ignore them)
-# experiments/
+experiments/
+runs/
 # logs/
 # outputs/
 

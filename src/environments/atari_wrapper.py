@@ -15,7 +15,7 @@ preprocessing for deep RL, including:
 Based on established best practices from DeepMind Atari papers.
 """
 
-from typing import Dict, Any, Tuple, Optional, Union
+from typing import Dict, Any, Tuple, Optional, Union, List
 import numpy as np
 import torch
 import gymnasium as gym
@@ -210,65 +210,129 @@ class AtariEnvironment(BaseEnvironment):
         self.terminal_on_life_loss = config.get('terminal_on_life_loss', True)
         self.clip_rewards = config.get('clip_rewards', True)
         self.full_action_space = config.get('full_action_space', False)
-        
+        self.num_environments = int(config.get('num_environments', config.get('num_envs', 1)))
+        self.parallel_backend = config.get('parallel_backend', 'sync')
+        self.start_method = config.get('start_method', None)
+
+        # Vectorization flags (consumed by BaseEnvironment)
+        self.is_vectorized = self.num_environments > 1
+        self.num_envs = self.num_environments if self.is_vectorized else 1
+
+        # These will be populated during setup
+        self._single_obs_shape: Optional[Tuple[int, ...]] = None
+        self._single_obs_dtype: Optional[np.dtype] = None
+        self._single_action_n: Optional[int] = None
+        self._single_action_shape: Optional[Tuple[int, ...]] = None
+
         super().__init__(config)
     
     def _setup_environment(self):
         """Setup Atari environment with all preprocessing wrappers"""
-        # Create base environment
-        self.env = gym.make(
+        def build_single_env() -> gym.Env:
+            env = gym.make(
+                self.game,
+                full_action_space=self.full_action_space,
+                frameskip=1  # We handle frame skipping manually for more control
+            )
+
+            env = AtariPreprocessing(
+                env,
+                noop_max=self.noop_max,
+                frame_skip=self.frame_skip,
+                screen_size=84,
+                terminal_on_life_loss=self.terminal_on_life_loss,
+                grayscale_obs=True,
+                grayscale_newaxis=False,
+                scale_obs=False
+            )
+
+            if self.clip_rewards:
+                env = ClipReward(env, min_reward=-1.0, max_reward=1.0)
+
+            if self.frame_stack > 1:
+                env = FrameStackObservation(env, stack_size=self.frame_stack)
+
+            return env
+
+        # Cache action meanings (safe for vectorized envs)
+        probe_env = gym.make(
             self.game,
             full_action_space=self.full_action_space,
-            frameskip=1  # We handle frame skipping manually for more control
+            frameskip=1
         )
-        
-        # Use gymnasium's built-in AtariPreprocessing for compatibility
-        self.env = AtariPreprocessing(
-            self.env,
-            noop_max=self.noop_max,
-            frame_skip=self.frame_skip,
-            screen_size=84,
-            terminal_on_life_loss=self.terminal_on_life_loss,
-            grayscale_obs=True,
-            grayscale_newaxis=False,
-            scale_obs=False  # We'll handle scaling in _process_observation
-        )
-        
-        # Reward clipping
-        if self.clip_rewards:
-            self.env = ClipReward(self.env, min_reward=-1.0, max_reward=1.0)
-        
-        # Frame stacking (must be last)
-        if self.frame_stack > 1:
-            self.env = FrameStackObservation(self.env, stack_size=self.frame_stack)
-        
-        # Store action meanings for debugging
-        self.action_meanings = self.env.unwrapped.get_action_meanings()
+        try:
+            self.action_meanings = probe_env.unwrapped.get_action_meanings()
+        finally:
+            probe_env.close()
+
+        if self.is_vectorized:
+            try:
+                from gymnasium.vector import AsyncVectorEnv, SyncVectorEnv
+            except ImportError as e:
+                raise ImportError("gymnasium installation is required for vectorized Atari environments") from e
+
+            def make_env_fn(seed_offset: int = 0):
+                def _init():
+                    env = build_single_env()
+                    if self.start_method == 'spawn':
+                        # Ensure deterministic seeding when using subprocesses
+                        env.reset(seed=(self.config.get('seed', None) or 0) + seed_offset)
+                    return env
+                return _init
+
+            env_fns = [make_env_fn(i) for i in range(self.num_envs)]
+            use_async = self.parallel_backend in ('async', 'auto')
+
+            if use_async and self.parallel_backend != 'sync':
+                self.env = AsyncVectorEnv(env_fns, shared_memory=False)
+            else:
+                self.env = SyncVectorEnv(env_fns)
+
+            self._single_obs_shape = self.env.single_observation_space.shape
+            self._single_obs_dtype = getattr(self.env.single_observation_space, 'dtype', np.uint8)
+            self._single_action_shape = self.env.single_action_space.shape if hasattr(self.env.single_action_space, 'shape') else ()
+            self._single_action_n = getattr(self.env.single_action_space, 'n', None)
+
+            # Track per-environment episode statistics for logging
+            self._episode_returns = np.zeros(self.num_envs, dtype=np.float32)
+            self._episode_lengths = np.zeros(self.num_envs, dtype=np.int32)
+            self._episode_counts = np.zeros(self.num_envs, dtype=np.int64)
+        else:
+            self.env = build_single_env()
+            obs_space = getattr(self.env, 'observation_space', None)
+            action_space = getattr(self.env, 'action_space', None)
+            self._single_obs_shape = obs_space.shape if obs_space is not None else (84, 84, self.frame_stack)
+            self._single_obs_dtype = getattr(obs_space, 'dtype', np.uint8)
+            self._single_action_shape = getattr(action_space, 'shape', ())
+            self._single_action_n = getattr(action_space, 'n', None)
         
     def _get_observation_space(self) -> SpaceSpec:
         """Get observation space specification for stacked grayscale frames"""
-        if self.frame_stack > 1:
-            shape = (84, 84, self.frame_stack)  # HWC format
+        stack_size = self.frame_stack if self.frame_stack > 1 else 1
+
+        if self._single_obs_shape is not None:
+            shape = self._single_obs_shape
+            # Ensure frame dimension is last to match downstream networks
+            if len(shape) == 3 and shape[0] in [1, 4] and shape[-1] not in [1, 4]:
+                shape = (shape[1], shape[2], shape[0])
         else:
-            shape = (84, 84, 1)
-        
+            shape = (84, 84, stack_size)
+
         return SpaceSpec(
             shape=shape,
-            dtype=np.uint8,  # Keep as uint8 to save memory, convert to float in network
-            low=0,
-            high=255,
+            dtype=np.float32,
+            low=0.0,
+            high=1.0,
             discrete=False
         )
     
     def _get_action_space(self) -> SpaceSpec:
         """Get action space specification"""
-        n_actions = self.env.action_space.n
-        # Ensure we always have a valid shape - protect against initialization issues
+        n_actions = self._single_action_n
         if n_actions is None or n_actions <= 0:
-            # Default to 6 actions for Pong (fallback)
             n_actions = 6
         return SpaceSpec(
-            shape=(n_actions,),  # Match gym_wrapper format
+            shape=(n_actions,),
             dtype=np.int64,
             discrete=True,
             n=n_actions
@@ -276,51 +340,133 @@ class AtariEnvironment(BaseEnvironment):
     
     def _reset_environment(self, seed: Optional[int] = None) -> np.ndarray:
         """Reset environment and return initial observation"""
-        if seed is not None:
-            obs, _ = self.env.reset(seed=seed)
+        if self.is_vectorized:
+            if seed is not None:
+                seeds = [seed + i for i in range(self.num_envs)]
+                obs, _ = self.env.reset(seed=seeds)
+            else:
+                obs, _ = self.env.reset()
+
+            # Reset running episode statistics when the vectorized env resets
+            if hasattr(self, '_episode_returns'):
+                self._episode_returns.fill(0.0)
+                self._episode_lengths.fill(0)
         else:
-            obs, _ = self.env.reset()
-        
-        # Convert observation format
+            if seed is not None:
+                obs, _ = self.env.reset(seed=seed)
+            else:
+                obs, _ = self.env.reset()
+
         obs = self._process_observation(obs)
         return obs
     
     def _step_environment(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, Dict[str, Any]]:
         """Step environment and return processed results"""
-        # Convert action to scalar if needed
+        if self.is_vectorized:
+            actions = np.asarray(action)
+            if actions.ndim == 2 and actions.shape[1] == 1:
+                actions = actions.squeeze(-1)
+            obs, rewards, terminated, truncated, infos = self.env.step(actions)
+            obs = self._process_observation(obs)
+            rewards = np.asarray(rewards, dtype=np.float32)
+            dones = np.logical_or(terminated, truncated)
+            infos = self._normalize_vector_infos(infos)
+
+            # Update running episode statistics for downstream logging
+            if hasattr(self, '_episode_returns'):
+                self._episode_returns += rewards
+                self._episode_lengths += 1
+
+            # Annotate infos with action meanings when possible
+            if isinstance(actions, np.ndarray) and actions.shape == (self.num_envs,):
+                for info, act in zip(infos, actions):
+                    if isinstance(info, dict):
+                        info.setdefault('action_meaning', self._action_meaning(int(act)))
+
+            # Surface episodic statistics so vectorized trainers can log returns/lengths
+            if hasattr(self, '_episode_returns'):
+                for idx, (done, info) in enumerate(zip(dones, infos)):
+                    if not isinstance(info, dict):
+                        continue
+
+                    # Always expose running totals (helpful for streaming dashboards)
+                    info.setdefault('episode_return', float(self._episode_returns[idx]))
+                    info.setdefault('episode_length', int(self._episode_lengths[idx]))
+
+                    if done:
+                        episode_return = float(self._episode_returns[idx])
+                        episode_length = int(self._episode_lengths[idx])
+                        info['episode_return'] = episode_return
+                        info['episode_length'] = episode_length
+                        info.setdefault('episode', {'r': episode_return, 'l': episode_length})
+                        info['episode_count'] = int(self._episode_counts[idx] + 1)
+
+                        # Reset trackers for next episode and increment counter
+                        self._episode_returns[idx] = 0.0
+                        self._episode_lengths[idx] = 0
+                        self._episode_counts[idx] += 1
+
+            return obs, rewards.astype(float), dones, infos
+
+        # Convert action to scalar if needed for single-environment case
         if isinstance(action, np.ndarray):
             action = int(action.item()) if action.ndim > 0 else int(action)
-        
-        obs, reward, terminated, truncated, info = self.env.step(action)
-        
-        # Process observation
+
+        obs, reward, terminated, truncated, info = self.env.step(int(action))
         obs = self._process_observation(obs)
-        
-        # Combine terminated and truncated into single done flag
         done = terminated or truncated
-        
-        # Add Atari-specific info
-        info['lives'] = getattr(self.env.unwrapped.ale, 'lives', lambda: 0)()
-        info['action_meaning'] = self.action_meanings[action] if action < len(self.action_meanings) else f'ACTION_{action}'
-        
+
+        if isinstance(info, dict):
+            # Add Atari-specific info for debugging convenience
+            if 'lives' not in info:
+                info['lives'] = getattr(self.env.unwrapped.ale, 'lives', lambda: 0)()
+            info['action_meaning'] = self._action_meaning(int(action))
+
         return obs, float(reward), done, info
     
     def _process_observation(self, obs: np.ndarray) -> np.ndarray:
         """Process raw observation to standard format"""
-        # Convert to float32 and normalize to [0, 1]
-        if obs.dtype == np.uint8:
-            obs = obs.astype(np.float32) / 255.0
-        
-        # Ensure HWC format (Height, Width, Channels)
-        if obs.ndim == 3:
-            if obs.shape[0] in [1, 4]:  # CHW format
-                obs = np.transpose(obs, (1, 2, 0))  # Convert to HWC
-        elif obs.ndim == 4:  # Batch dimension accidentally added
-            obs = obs[0]  # Remove batch dimension
-            if obs.shape[0] in [1, 4]:  # CHW format
-                obs = np.transpose(obs, (1, 2, 0))
-        
-        return obs
+        obs_array = np.asarray(obs)
+
+        if obs_array.dtype == np.uint8:
+            obs_array = obs_array.astype(np.float32) / 255.0
+
+        if self.is_vectorized:
+            # Expected format: (num_envs, H, W, C)
+            if obs_array.ndim == 4 and obs_array.shape[1] in [1, 4]:
+                obs_array = np.transpose(obs_array, (0, 2, 3, 1))
+            return obs_array
+
+        if obs_array.ndim == 3 and obs_array.shape[0] in [1, 4]:
+            obs_array = np.transpose(obs_array, (1, 2, 0))
+        elif obs_array.ndim == 4 and obs_array.shape[1] in [1, 4] and obs_array.shape[0] == 1:
+            obs_array = np.transpose(obs_array[0], (1, 2, 0))
+
+        return obs_array
+
+    def _normalize_vector_infos(self, infos: Union[List[Dict[str, Any]], Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Normalize Gymnasium vector info outputs to list-of-dicts."""
+        if isinstance(infos, list):
+            return [dict(info) if isinstance(info, dict) else {} for info in infos]
+
+        if isinstance(infos, dict):
+            normalized = []
+            keys = list(infos.keys())
+            for idx in range(self.num_envs):
+                entry = {}
+                for key in keys:
+                    value = infos[key]
+                    if isinstance(value, (list, tuple, np.ndarray)) and len(value) > idx:
+                        entry[key] = value[idx]
+                normalized.append(entry)
+            return normalized
+
+        return [{} for _ in range(self.num_envs)]
+
+    def _action_meaning(self, action: int) -> str:
+        if 0 <= action < len(self.action_meanings):
+            return self.action_meanings[action]
+        return f'ACTION_{action}'
     
     def get_action_meanings(self):
         """Get human-readable action meanings"""

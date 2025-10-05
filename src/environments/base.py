@@ -249,38 +249,64 @@ class BaseEnvironment(ABC):
         
         # Step underlying environment
         obs, reward, done, info = self._step_environment(action)
-        
+
         # Apply transforms first, then normalization
         obs = self._apply_transforms(obs)
-        
-        # Apply observation normalization
+
+        if self.is_vectorized:
+            # Handle vectorized outputs (arrays/lists)
+            if self.normalize_obs:
+                obs = self._normalize_observation(obs)
+
+            if self.normalize_reward:
+                reward = np.asarray(reward, dtype=np.float32)
+                reward = np.array([self._normalize_reward(r) for r in reward], dtype=np.float32)
+            else:
+                reward = np.asarray(reward, dtype=np.float32)
+
+            done = np.asarray(done)
+
+            if not isinstance(info, list):
+                if isinstance(info, dict):
+                    info = [dict(info) for _ in range(self.num_envs)]
+                else:
+                    info = [{} for _ in range(self.num_envs)]
+
+            return torch.tensor(obs, dtype=torch.float32), reward, done, info
+
+        # Scalar environment handling
         if self.normalize_obs:
             obs = self._normalize_observation(obs)
-        
-        # Apply reward normalization  
+
         if self.normalize_reward:
-            reward = self._normalize_reward(reward)
-        
+            reward = self._normalize_reward(float(reward))
+
         # Update episode statistics
         self._episode_return += reward
-        
+
         # Check for episode timeout
         if self.max_episode_steps and self._current_step >= self.max_episode_steps:
             done = True
-            info['timeout'] = True
-        
+            if isinstance(info, dict):
+                info['timeout'] = True
+            else:
+                info = {'timeout': True}
+
+        if not isinstance(info, dict):
+            info = {}
+
         # Add episode statistics to info
         info.update({
             'episode_step': self._current_step,
             'episode_return': self._episode_return
         })
-        
+
         # Reset episode counter when done
         if done:
             self._episode_count += 1
             info['episode_count'] = self._episode_count
-        
-        return torch.tensor(obs, dtype=torch.float32), float(reward), done, info
+
+        return torch.tensor(obs, dtype=torch.float32), float(reward), bool(done), info
     
     def _normalize_observation(self, obs: np.ndarray) -> np.ndarray:
         """Apply observation normalization"""
