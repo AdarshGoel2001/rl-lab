@@ -32,6 +32,9 @@ POLICY_HEAD_REGISTRY: Dict[str, Type] = {}
 VALUE_FUNCTION_REGISTRY: Dict[str, Type] = {}
 PLANNER_REGISTRY: Dict[str, Type] = {}
 PARADIGM_REGISTRY: Dict[str, Type] = {}
+REWARD_PREDICTOR_REGISTRY: Dict[str, Type] = {}
+CONTINUE_PREDICTOR_REGISTRY: Dict[str, Type] = {}
+DECODER_REGISTRY: Dict[str, Type] = {}
 
 
 def register_algorithm(name: str) -> Callable:
@@ -155,6 +158,39 @@ def register_paradigm(name: str) -> Callable:
     return decorator
 
 
+def register_reward_predictor(name: str) -> Callable:
+    """Register a reward predictor class for automatic discovery"""
+    def decorator(cls: Type) -> Type:
+        if name in REWARD_PREDICTOR_REGISTRY:
+            logger.warning(f"Reward predictor '{name}' already registered, overwriting...")
+        REWARD_PREDICTOR_REGISTRY[name] = cls
+        logger.info(f"Registered reward predictor: {name} -> {cls.__name__}")
+        return cls
+    return decorator
+
+
+def register_continue_predictor(name: str) -> Callable:
+    """Register a continue predictor class for automatic discovery"""
+    def decorator(cls: Type) -> Type:
+        if name in CONTINUE_PREDICTOR_REGISTRY:
+            logger.warning(f"Continue predictor '{name}' already registered, overwriting...")
+        CONTINUE_PREDICTOR_REGISTRY[name] = cls
+        logger.info(f"Registered continue predictor: {name} -> {cls.__name__}")
+        return cls
+    return decorator
+
+
+def register_decoder(name: str) -> Callable:
+    """Register a decoder class for automatic discovery"""
+    def decorator(cls: Type) -> Type:
+        if name in DECODER_REGISTRY:
+            logger.warning(f"Decoder '{name}' already registered, overwriting...")
+        DECODER_REGISTRY[name] = cls
+        logger.info(f"Registered decoder: {name} -> {cls.__name__}")
+        return cls
+    return decorator
+
+
 def get_algorithm(name: str) -> Type:
     """Get algorithm class by name"""
     if name not in ALGORITHM_REGISTRY:
@@ -243,6 +279,30 @@ def get_paradigm(name: str) -> Type:
     return PARADIGM_REGISTRY[name]
 
 
+def get_reward_predictor(name: str) -> Type:
+    """Get reward predictor class by name"""
+    if name not in REWARD_PREDICTOR_REGISTRY:
+        raise ValueError(f"Reward predictor '{name}' not found in registry. "
+                        f"Available: {list(REWARD_PREDICTOR_REGISTRY.keys())}")
+    return REWARD_PREDICTOR_REGISTRY[name]
+
+
+def get_continue_predictor(name: str) -> Type:
+    """Get continue predictor class by name"""
+    if name not in CONTINUE_PREDICTOR_REGISTRY:
+        raise ValueError(f"Continue predictor '{name}' not found in registry. "
+                        f"Available: {list(CONTINUE_PREDICTOR_REGISTRY.keys())}")
+    return CONTINUE_PREDICTOR_REGISTRY[name]
+
+
+def get_decoder(name: str) -> Type:
+    """Get decoder class by name"""
+    if name not in DECODER_REGISTRY:
+        raise ValueError(f"Decoder '{name}' not found in registry. "
+                        f"Available: {list(DECODER_REGISTRY.keys())}")
+    return DECODER_REGISTRY[name]
+
+
 def list_registered_components() -> Dict[str, list]:
     """List all registered components"""
     return {
@@ -256,7 +316,9 @@ def list_registered_components() -> Dict[str, list]:
         'policy_heads': list(POLICY_HEAD_REGISTRY.keys()),
         'value_functions': list(VALUE_FUNCTION_REGISTRY.keys()),
         'planners': list(PLANNER_REGISTRY.keys()),
-        'paradigms': list(PARADIGM_REGISTRY.keys())
+        'paradigms': list(PARADIGM_REGISTRY.keys()),
+        'reward_predictors': list(REWARD_PREDICTOR_REGISTRY.keys()),
+        'continue_predictors': list(CONTINUE_PREDICTOR_REGISTRY.keys())
     }
 
 
@@ -276,8 +338,10 @@ def auto_import_modules():
     module_dirs = [
         'algorithms', 'networks', 'environments', 'buffers',
         'components.encoders', 'components.representation_learners',
+        'components.decoders',
         'components.dynamics', 'components.policy_heads',
         'components.value_functions', 'components.planners',
+        'components.reward_predictors', 'components.continue_predictors',
         'paradigms'
     ]
 
@@ -357,4 +421,14 @@ class RegistryMixin:
     def create_paradigm(self, name: str, config: Any):
         """Create paradigm instance from registry"""
         cls = get_paradigm(name)
+        return cls(config)
+
+    def create_reward_predictor(self, name: str, config: Any):
+        """Create reward predictor instance from registry"""
+        cls = get_reward_predictor(name)
+        return cls(config)
+
+    def create_continue_predictor(self, name: str, config: Any):
+        """Create continue predictor instance from registry"""
+        cls = get_continue_predictor(name)
         return cls(config)

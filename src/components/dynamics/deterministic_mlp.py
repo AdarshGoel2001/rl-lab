@@ -97,7 +97,7 @@ class DeterministicMLPDynamics(BaseDynamicsModel):
         next_state_mean = self.network(state_action)
 
         # For deterministic dynamics, use small fixed variance
-        variance = self.config.get('output_variance', 1e-4)
+        variance = float(self.config.get('output_variance', 1e-4))
         next_state_std = torch.full_like(next_state_mean, variance ** 0.5)
 
         return Normal(next_state_mean, next_state_std)

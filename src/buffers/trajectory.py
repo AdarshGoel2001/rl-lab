@@ -58,11 +58,15 @@ class TrajectoryBuffer(BaseBuffer):
         config.setdefault('gae_lambda', 0.95) 
         config.setdefault('normalize_advantages', True)
         config.setdefault('compute_returns', True)
-        
+        config.setdefault('sequence_length', 1)
+        config.setdefault('sequence_stride', 1)
+
         self.gamma = config['gamma']
         self.gae_lambda = config['gae_lambda']
         self.normalize_advantages = config['normalize_advantages']
         self.compute_returns = config['compute_returns']
+        self.sequence_length = max(1, int(config.get('sequence_length', 1)))
+        self.sequence_stride = max(1, int(config.get('sequence_stride', 1)))
         
         super().__init__(config)
     
@@ -436,11 +440,24 @@ class TrajectoryBuffer(BaseBuffer):
         """
         if batch_size is None:
             batch_size = self.batch_size
-        
+
+        if self.sequence_length <= 1:
+            batch = self._sample_transitions(batch_size)
+        else:
+            batch = self._sample_sequences(batch_size)
+
+        if 'advantages' in batch and self.normalize_advantages:
+            batch['advantages'] = self._normalize_advantages(batch['advantages'])
+
+        if self.sequence_length > 1:
+            batch['_sequence_length'] = torch.tensor(self.sequence_length, dtype=torch.int64)
+
+        return batch
+
+    def _sample_transitions(self, batch_size: int) -> Dict[str, torch.Tensor]:
         if self._size < batch_size:
             raise ValueError(f"Buffer has {self._size} experiences but {batch_size} requested")
-        
-        # Flatten all trajectories into individual steps
+
         all_data = defaultdict(list)
 
         for trajectory in self.trajectories:
@@ -456,42 +473,114 @@ class TrajectoryBuffer(BaseBuffer):
                 flattened_values = self._flatten_key(values, steps, num_envs)
                 all_data[key].extend(flattened_values)
 
-        # Sample random indices
         total_steps = len(all_data['rewards']) if 'rewards' in all_data else 0
         if total_steps == 0:
             raise ValueError("No observations found in buffer")
 
         indices = np.random.choice(total_steps, size=min(batch_size, total_steps), replace=False)
 
-        # Create batch dictionary
-        batch = {}
+        batch: Dict[str, torch.Tensor] = {}
         for key, values in all_data.items():
-            if len(values) > 0:
-                # Check if all keys have same length
-                if len(values) != total_steps:
-                    # Skip keys with wrong length to avoid crashes
-                    # (This is expected for keys like bootstrap_values which are trajectory-level)
-                    continue
-                sampled_values = [values[i] for i in indices]
-                
-                # Convert to numpy array with proper handling for different data shapes
-                if len(sampled_values) > 0:
-                    first_item = sampled_values[0]
-                    if isinstance(first_item, np.ndarray) and first_item.ndim > 0:
-                        # For multi-dimensional data (like observations), stack along new batch dimension
-                        batch[key] = self.to_tensor(np.stack(sampled_values, axis=0))
-                    else:
-                        # For scalar data (like actions, rewards), convert to array normally
-                        batch[key] = self.to_tensor(np.array(sampled_values))
+            if len(values) == 0 or len(values) != total_steps:
+                continue
+            sampled_values = [values[i] for i in indices]
+
+            if len(sampled_values) > 0:
+                first_item = sampled_values[0]
+                if isinstance(first_item, np.ndarray) and first_item.ndim > 0:
+                    batch[key] = self.to_tensor(np.stack(sampled_values, axis=0))
                 else:
-                    # Empty case - should not happen but handle gracefully
                     batch[key] = self.to_tensor(np.array(sampled_values))
-        
-        # Normalize advantages if present and requested
-        if 'advantages' in batch and self.normalize_advantages:
-            batch['advantages'] = self._normalize_advantages(batch['advantages'])
-        
+            else:
+                batch[key] = self.to_tensor(np.array(sampled_values))
+
         return batch
+
+    def _sample_sequences(self, batch_size: int) -> Dict[str, torch.Tensor]:
+        sequence_candidates: List[Tuple[int, int, int, Dict[str, np.ndarray]]] = []
+
+        for traj_idx, trajectory in enumerate(self.trajectories):
+            try:
+                steps, num_envs = self._get_trajectory_shape(trajectory)
+            except ValueError as exc:
+                logger.warning(f"Skipping trajectory during sampling: {exc}")
+                continue
+
+            effective_steps = steps - self.sequence_length + 1
+            if effective_steps <= 0:
+                continue
+
+            for env_idx in range(num_envs):
+                for start in range(0, effective_steps, self.sequence_stride):
+                    sequence_candidates.append((traj_idx, start, env_idx, trajectory))
+
+        total_sequences = len(sequence_candidates)
+        if total_sequences == 0:
+            raise ValueError("No trajectory chunks available in buffer")
+
+        sample_count = min(batch_size, total_sequences)
+        indices = np.random.choice(total_sequences, size=sample_count, replace=False)
+
+        batch_data: Dict[str, List[np.ndarray]] = defaultdict(list)
+
+        for idx in indices:
+            traj_idx, start, env_idx, trajectory = sequence_candidates[idx]
+            steps, num_envs = self._get_trajectory_shape(trajectory)
+
+            for key, values in trajectory.items():
+                if key == 'bootstrap_value':
+                    continue
+                seq = self._extract_sequence(values, start, env_idx, steps, num_envs)
+                if seq is None:
+                    continue
+                batch_data[key].append(seq)
+
+        if 'observations' not in batch_data:
+            raise ValueError("Sequence sampling failed to gather observations")
+
+        batch: Dict[str, torch.Tensor] = {}
+        for key, sequences in batch_data.items():
+            if len(sequences) == 0:
+                continue
+            first_item = sequences[0]
+            try:
+                stacked = np.stack(sequences, axis=0)
+            except ValueError as exc:
+                logger.warning(f"Skipping key '{key}' during sequence stacking: {exc}")
+                continue
+            batch[key] = self.to_tensor(stacked)
+
+        return batch
+
+    def _extract_sequence(self,
+                          values: Any,
+                          start: int,
+                          env_idx: int,
+                          steps: int,
+                          num_envs: int) -> Optional[np.ndarray]:
+        arr = np.asarray(values)
+        if arr.shape[0] != steps:
+            return None
+
+        end = start + self.sequence_length
+        if num_envs == 1 or arr.ndim == 1:
+            return arr[start:end]
+
+        env_axis = None
+        for axis in range(1, arr.ndim):
+            if arr.shape[axis] == num_envs:
+                env_axis = axis
+                break
+
+        if env_axis is not None and env_axis != 1:
+            arr = np.moveaxis(arr, env_axis, 1)
+
+        if arr.ndim >= 2 and arr.shape[1] == num_envs:
+            return arr[start:end, env_idx]
+
+        # Fallback for data broadcast across env dimension
+        seq = arr[start:end]
+        return seq
     
     def sample_all(self) -> Dict[str, torch.Tensor]:
         """

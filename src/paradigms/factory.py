@@ -12,6 +12,7 @@ import logging
 from ..utils.registry import (
     get_encoder, get_representation_learner, get_dynamics_model,
     get_policy_head, get_value_function, get_planner, get_paradigm,
+    get_reward_predictor, get_continue_predictor, get_decoder,
     RegistryMixin
 )
 from .base import BaseParadigm
@@ -50,7 +51,10 @@ class ComponentFactory(RegistryMixin):
             'policy_head': get_policy_head,
             'value_function': get_value_function,
             'planner': get_planner,
-            'paradigm': get_paradigm
+            'paradigm': get_paradigm,
+            'reward_predictor': get_reward_predictor,
+            'continue_predictor': get_continue_predictor,
+            'decoder': get_decoder,
         }
 
         if component_type not in registry_map:
@@ -112,7 +116,9 @@ class ComponentFactory(RegistryMixin):
                 'policy_head': 'policy_head',
                 'value_function': 'value_function',
                 'dynamics_model': 'dynamics_model',
-                'planner': 'planner'
+                'planner': 'planner',
+                'reward_predictor': 'reward_predictor',
+                'continue_predictor': 'continue_predictor'
             }
 
             registry_type = registry_type_map[comp_name]
@@ -142,10 +148,18 @@ class ComponentFactory(RegistryMixin):
             )
 
         elif paradigm_type == 'world_model':
-            # World model needs dynamics model and value function
+            # World model needs dynamics, reward predictor, continue predictor, and value function
             dynamics_config = config.get('dynamics_model')
             if not dynamics_config:
                 raise ValueError("World model paradigm requires 'dynamics_model'")
+
+            reward_config = config.get('reward_predictor')
+            if not reward_config:
+                raise ValueError("World model paradigm requires 'reward_predictor'")
+
+            continue_config = config.get('continue_predictor')
+            if not continue_config:
+                raise ValueError("World model paradigm requires 'continue_predictor'")
 
             value_config = config.get('value_function')
             if not value_config:
@@ -153,6 +167,12 @@ class ComponentFactory(RegistryMixin):
 
             components['dynamics_model'] = ComponentFactory.create_component(
                 'dynamics_model', dynamics_config['type'], dynamics_config.get('config', {})
+            )
+            components['reward_predictor'] = ComponentFactory.create_component(
+                'reward_predictor', reward_config['type'], reward_config.get('config', {})
+            )
+            components['continue_predictor'] = ComponentFactory.create_component(
+                'continue_predictor', continue_config['type'], continue_config.get('config', {})
             )
             components['value_function'] = ComponentFactory.create_component(
                 'value_function', value_config['type'], value_config.get('config', {})
@@ -166,12 +186,21 @@ class ComponentFactory(RegistryMixin):
                     'planner', planner_config['type'], planner_config.get('config', {})
                 )
 
-            # Import here to avoid circular imports
-            from .world_model import WorldModelParadigm
-            return WorldModelParadigm(
+            implementation = (
+                config.get('variant') or
+                config.get('implementation') or
+                config.get('paradigm_config', {}).get('variant') or
+                config.get('paradigm_config', {}).get('implementation') or
+                'world_model_mvp'
+            )
+
+            paradigm_class = get_paradigm(implementation)
+            return paradigm_class(
                 encoder=components['encoder'],
                 representation_learner=components['representation_learner'],
                 dynamics_model=components['dynamics_model'],
+                reward_predictor=components['reward_predictor'],
+                continue_predictor=components['continue_predictor'],
                 policy_head=components['policy_head'],
                 value_function=components['value_function'],
                 planner=planner,
@@ -249,6 +278,10 @@ class ComponentFactory(RegistryMixin):
         elif paradigm_type == 'world_model':
             if 'dynamics_model' not in config:
                 raise ValueError("World model paradigm requires 'dynamics_model'")
+            if 'reward_predictor' not in config:
+                raise ValueError("World model paradigm requires 'reward_predictor'")
+            if 'continue_predictor' not in config:
+                raise ValueError("World model paradigm requires 'continue_predictor'")
             if 'value_function' not in config:
                 raise ValueError("World model paradigm requires 'value_function'")
 
@@ -308,7 +341,19 @@ class ComponentFactory(RegistryMixin):
                     "config": {}
                 },
                 "dynamics_model": {
-                    "type": "deterministic_mlp",
+                    "type": "stochastic_mlp",
+                    "config": {
+                        "hidden_dims": [256, 256]
+                    }
+                },
+                "reward_predictor": {
+                    "type": "mlp",
+                    "config": {
+                        "hidden_dims": [256, 256]
+                    }
+                },
+                "continue_predictor": {
+                    "type": "mlp",
                     "config": {
                         "hidden_dims": [256, 256]
                     }

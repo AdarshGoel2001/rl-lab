@@ -106,8 +106,14 @@ class AlgorithmConfig:
         if not hasattr(self, 'lr'):
             self.lr = 3e-4
         
-        if hasattr(self, 'lr') and isinstance(self.lr, (int, float)) and self.lr <= 0:
-            raise ConfigError(f"Learning rate must be positive, got {self.lr}")
+        if hasattr(self, 'lr'):
+            if isinstance(self.lr, str):
+                try:
+                    self.lr = float(self.lr)
+                except ValueError:
+                    raise ConfigError(f"Learning rate must be numeric, got {self.lr}")
+            if isinstance(self.lr, (int, float)) and self.lr <= 0:
+                raise ConfigError(f"Learning rate must be positive, got {self.lr}")
 
 
 @dataclass
@@ -179,10 +185,22 @@ class BufferConfig:
         if not hasattr(self, 'batch_size'):
             self.batch_size = 64
         
-        if hasattr(self, 'capacity') and isinstance(self.capacity, int) and self.capacity <= 0:
-            raise ConfigError(f"Buffer capacity must be positive, got {self.capacity}")
-        if hasattr(self, 'batch_size') and isinstance(self.batch_size, int) and self.batch_size <= 0:
-            raise ConfigError(f"Batch size must be positive, got {self.batch_size}")
+        if hasattr(self, 'capacity'):
+            if isinstance(self.capacity, str):
+                try:
+                    self.capacity = int(self.capacity)
+                except ValueError:
+                    raise ConfigError(f"Buffer capacity must be integer, got {self.capacity}")
+            if isinstance(self.capacity, int) and self.capacity <= 0:
+                raise ConfigError(f"Buffer capacity must be positive, got {self.capacity}")
+        if hasattr(self, 'batch_size'):
+            if isinstance(self.batch_size, str):
+                try:
+                    self.batch_size = int(self.batch_size)
+                except ValueError:
+                    raise ConfigError(f"Batch size must be integer, got {self.batch_size}")
+            if isinstance(self.batch_size, int) and self.batch_size <= 0:
+                raise ConfigError(f"Batch size must be positive, got {self.batch_size}")
 
 
 @dataclass
@@ -208,8 +226,14 @@ class TrainingConfig:
         if not hasattr(self, 'num_eval_episodes'):
             self.num_eval_episodes = 10
         
-        if hasattr(self, 'total_timesteps') and isinstance(self.total_timesteps, int) and self.total_timesteps <= 0:
-            raise ConfigError(f"Total timesteps must be positive, got {self.total_timesteps}")
+        if hasattr(self, 'total_timesteps'):
+            if isinstance(self.total_timesteps, str):
+                try:
+                    self.total_timesteps = int(self.total_timesteps)
+                except ValueError:
+                    raise ConfigError(f"Total timesteps must be integer, got {self.total_timesteps}")
+            if isinstance(self.total_timesteps, int) and self.total_timesteps <= 0:
+                raise ConfigError(f"Total timesteps must be positive, got {self.total_timesteps}")
 
 
 @dataclass
@@ -257,6 +281,7 @@ class Config:
     logging: LoggingConfig
     components: Dict[str, Any] = field(default_factory=dict)
     evaluation: Optional[EnvironmentConfig] = None
+    paradigm_config: Dict[str, Any] = field(default_factory=dict)
     
     @classmethod
     def from_dict(cls, config_dict: Dict[str, Any]) -> 'Config':
@@ -289,7 +314,8 @@ class Config:
                 training=TrainingConfig(**config_dict.get('training', {})),
                 logging=LoggingConfig(**config_dict.get('logging', {})),
                 components=config_dict.get('components', {}),
-                evaluation=evaluation
+                evaluation=evaluation,
+                paradigm_config=config_dict.get('paradigm_config', {})
             )
         except TypeError as e:
             raise ConfigError(f"Invalid configuration: {e}")
@@ -304,6 +330,7 @@ class Config:
         else:
             config_dict['network'] = asdict(self.network)
             
+        config_dict['paradigm_config'] = self.paradigm_config
         return config_dict
     
     def get_hash(self) -> str:
