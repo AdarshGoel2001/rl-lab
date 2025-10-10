@@ -32,6 +32,9 @@ POLICY_HEAD_REGISTRY: Dict[str, Type] = {}
 VALUE_FUNCTION_REGISTRY: Dict[str, Type] = {}
 PLANNER_REGISTRY: Dict[str, Type] = {}
 PARADIGM_REGISTRY: Dict[str, Type] = {}
+REWARD_PREDICTOR_REGISTRY: Dict[str, Type] = {}
+OBSERVATION_DECODER_REGISTRY: Dict[str, Type] = {}
+RETURN_COMPUTER_REGISTRY: Dict[str, Type] = {}
 
 
 def register_algorithm(name: str) -> Callable:
@@ -144,6 +147,32 @@ def register_planner(name: str) -> Callable:
     return decorator
 
 
+def register_reward_predictor(name: str) -> Callable:
+    """Register a reward predictor class for world models."""
+
+    def decorator(cls: Type) -> Type:
+        if name in REWARD_PREDICTOR_REGISTRY:
+            logger.warning(f"Reward predictor '{name}' already registered, overwriting...")
+        REWARD_PREDICTOR_REGISTRY[name] = cls
+        logger.info(f"Registered reward predictor: {name} -> {cls.__name__}")
+        return cls
+
+    return decorator
+
+
+def register_observation_decoder(name: str) -> Callable:
+    """Register an observation decoder class for world models."""
+
+    def decorator(cls: Type) -> Type:
+        if name in OBSERVATION_DECODER_REGISTRY:
+            logger.warning(f"Observation decoder '{name}' already registered, overwriting...")
+        OBSERVATION_DECODER_REGISTRY[name] = cls
+        logger.info(f"Registered observation decoder: {name} -> {cls.__name__}")
+        return cls
+
+    return decorator
+
+
 def register_paradigm(name: str) -> Callable:
     """Register a paradigm class for automatic discovery"""
     def decorator(cls: Type) -> Type:
@@ -152,6 +181,19 @@ def register_paradigm(name: str) -> Callable:
         PARADIGM_REGISTRY[name] = cls
         logger.info(f"Registered paradigm: {name} -> {cls.__name__}")
         return cls
+    return decorator
+
+
+def register_return_computer(name: str) -> Callable:
+    """Register a return computer class for world models."""
+
+    def decorator(cls: Type) -> Type:
+        if name in RETURN_COMPUTER_REGISTRY:
+            logger.warning(f"Return computer '{name}' already registered, overwriting...")
+        RETURN_COMPUTER_REGISTRY[name] = cls
+        logger.info(f"Registered return computer: {name} -> {cls.__name__}")
+        return cls
+
     return decorator
 
 
@@ -235,12 +277,42 @@ def get_planner(name: str) -> Type:
     return PLANNER_REGISTRY[name]
 
 
+def get_reward_predictor(name: str) -> Type:
+    """Get reward predictor class by name."""
+    if name not in REWARD_PREDICTOR_REGISTRY:
+        raise ValueError(
+            f"Reward predictor '{name}' not found in registry. "
+            f"Available: {list(REWARD_PREDICTOR_REGISTRY.keys())}"
+        )
+    return REWARD_PREDICTOR_REGISTRY[name]
+
+
+def get_observation_decoder(name: str) -> Type:
+    """Get observation decoder class by name."""
+    if name not in OBSERVATION_DECODER_REGISTRY:
+        raise ValueError(
+            f"Observation decoder '{name}' not found in registry. "
+            f"Available: {list(OBSERVATION_DECODER_REGISTRY.keys())}"
+        )
+    return OBSERVATION_DECODER_REGISTRY[name]
+
+
 def get_paradigm(name: str) -> Type:
     """Get paradigm class by name"""
     if name not in PARADIGM_REGISTRY:
         raise ValueError(f"Paradigm '{name}' not found in registry. "
                         f"Available: {list(PARADIGM_REGISTRY.keys())}")
     return PARADIGM_REGISTRY[name]
+
+
+def get_return_computer(name: str) -> Type:
+    """Get return computer class by name."""
+    if name not in RETURN_COMPUTER_REGISTRY:
+        raise ValueError(
+            f"Return computer '{name}' not found in registry. "
+            f"Available: {list(RETURN_COMPUTER_REGISTRY.keys())}"
+        )
+    return RETURN_COMPUTER_REGISTRY[name]
 
 
 def list_registered_components() -> Dict[str, list]:
@@ -256,7 +328,10 @@ def list_registered_components() -> Dict[str, list]:
         'policy_heads': list(POLICY_HEAD_REGISTRY.keys()),
         'value_functions': list(VALUE_FUNCTION_REGISTRY.keys()),
         'planners': list(PLANNER_REGISTRY.keys()),
-        'paradigms': list(PARADIGM_REGISTRY.keys())
+        'reward_predictors': list(REWARD_PREDICTOR_REGISTRY.keys()),
+        'observation_decoders': list(OBSERVATION_DECODER_REGISTRY.keys()),
+        'paradigms': list(PARADIGM_REGISTRY.keys()),
+        'return_computers': list(RETURN_COMPUTER_REGISTRY.keys())
     }
 
 
@@ -275,9 +350,10 @@ def auto_import_modules():
     # Import all modules in core directories and new component directories
     module_dirs = [
         'algorithms', 'networks', 'environments', 'buffers',
-        'components.encoders', 'components.representation_learners',
-        'components.dynamics', 'components.policy_heads',
-        'components.value_functions', 'components.planners',
+        'components.encoders', 'components.world_models.representation_learners',
+        'components.policy_heads', 'components.value_functions',
+        'components.world_models.controllers', 'components.world_models',
+        'components.world_models.return_computers',
         'paradigms'
     ]
 
@@ -354,7 +430,17 @@ class RegistryMixin:
         cls = get_planner(name)
         return cls(config)
 
+    def create_observation_decoder(self, name: str, config: Any):
+        """Create observation decoder instance from registry"""
+        cls = get_observation_decoder(name)
+        return cls(config)
+
     def create_paradigm(self, name: str, config: Any):
         """Create paradigm instance from registry"""
         cls = get_paradigm(name)
+        return cls(config)
+
+    def create_return_computer(self, name: str, config: Any):
+        """Create return computer instance from registry"""
+        cls = get_return_computer(name)
         return cls(config)

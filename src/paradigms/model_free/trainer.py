@@ -231,7 +231,7 @@ class Trainer(RegistryMixin):
                 representation_learner = ComponentFactory.create_component('representation_learner', repr_entry['type'], repr_cfg)
             else:
                 logger.info("No representation learner provided - defaulting to identity")
-                from src.components.representation_learners.identity import IdentityRepresentationLearner
+                from src.components.world_models.representation_learners.identity import IdentityRepresentationLearner
                 representation_learner = IdentityRepresentationLearner({'device': device, 'representation_dim': encoder_output_dim})
             if hasattr(representation_learner, 'to'):
                 representation_learner.to(device)

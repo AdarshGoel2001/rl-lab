@@ -27,7 +27,7 @@ class PPOParadigm(ModelFreeParadigm):
         encoder = components['encoder']
         representation_learner = components.get('representation_learner')
         if representation_learner is None:
-            from ...components.representation_learners.identity import IdentityRepresentationLearner
+            from ...components.world_models.representation_learners.identity import IdentityRepresentationLearner
             representation_learner = IdentityRepresentationLearner({'device': cfg.get('device', 'cpu'),
                                                                      'representation_dim': getattr(encoder, 'output_dim', None)})
 

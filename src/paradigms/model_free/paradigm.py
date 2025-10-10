@@ -13,7 +13,7 @@ from torch.distributions import Distribution
 
 from ..base import BaseParadigm
 from ...components.encoders.base import BaseEncoder
-from ...components.representation_learners.base import BaseRepresentationLearner
+from ...components.world_models.representation_learners.base import BaseRepresentationLearner
 from ...components.policy_heads.base import BasePolicyHead
 from ...components.value_functions.base import BaseValueFunction
 

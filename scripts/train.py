@@ -29,7 +29,7 @@ def get_trainer_for_paradigm(paradigm: str):
         from src.paradigms.model_free.trainer import create_trainer_from_config
         return create_trainer_from_config
     elif paradigm == "world_model":
-        from src.paradigms.world_model.trainer import create_trainer_from_config
+        from src.paradigms.world_models.trainer import create_trainer_from_config
         return create_trainer_from_config
     elif paradigm == "vla":
         from src.paradigms.vla.trainer import create_trainer_from_config

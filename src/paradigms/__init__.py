@@ -2,6 +2,6 @@
 
 from .base import BaseParadigm
 from .model_free import ModelFreeParadigm
-from .world_model import WorldModelParadigm
+from .world_models import WorldModelParadigm
 
 __all__ = ['BaseParadigm', 'ModelFreeParadigm', 'WorldModelParadigm']

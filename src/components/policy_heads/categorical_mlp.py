@@ -28,6 +28,8 @@ class CategoricalMLPPolicyHead(BasePolicyHead):
         hidden_dims = self.config.get('hidden_dims', [64])
         activation = self.config.get('activation', 'tanh')
 
+        self.discrete_actions = True
+
         layers = []
         current_dim = self.representation_dim
 

@@ -13,7 +13,7 @@ import torch.nn as nn
 from torch.distributions import Distribution
 
 from ..components.encoders.base import BaseEncoder
-from ..components.representation_learners.base import BaseRepresentationLearner
+from ..components.world_models.representation_learners.base import BaseRepresentationLearner
 from ..components.policy_heads.base import BasePolicyHead
 
 

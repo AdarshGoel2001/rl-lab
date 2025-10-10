@@ -12,6 +12,8 @@ import logging
 from ..utils.registry import (
     get_encoder, get_representation_learner, get_dynamics_model,
     get_policy_head, get_value_function, get_planner, get_paradigm,
+    get_reward_predictor,
+    get_observation_decoder,
     RegistryMixin
 )
 from .base import BaseParadigm
@@ -50,6 +52,8 @@ class ComponentFactory(RegistryMixin):
             'policy_head': get_policy_head,
             'value_function': get_value_function,
             'planner': get_planner,
+            'reward_predictor': get_reward_predictor,
+            'observation_decoder': get_observation_decoder,
             'paradigm': get_paradigm
         }
 
@@ -88,6 +92,15 @@ class ComponentFactory(RegistryMixin):
 
         logger.info(f"Creating paradigm: {paradigm_type}")
 
+        # Ensure representation learner is aware of action dimensionality when available.
+        policy_cfg = config.get('policy_head') or {}
+        policy_params = policy_cfg.setdefault('config', {})
+        inferred_action_dim = policy_params.get('action_dim')
+        rep_cfg = config.get('representation_learner') or {}
+        rep_params = rep_cfg.setdefault('config', {})
+        if inferred_action_dim is not None:
+            rep_params.setdefault('action_dim', inferred_action_dim)
+
         # Create required components
         components = {}
 
@@ -100,20 +113,30 @@ class ComponentFactory(RegistryMixin):
                 raise ValueError(f"Missing required component: {comp_name}")
 
             comp_type = comp_config.get('type')
-            comp_params = comp_config.get('config', {})
+            comp_params = comp_config.setdefault('config', {})
 
             if not comp_type:
                 raise ValueError(f"Component {comp_name} missing 'type' field")
 
-            # Map component names to registry types
             registry_type_map = {
                 'encoder': 'encoder',
                 'representation_learner': 'representation_learner',
                 'policy_head': 'policy_head',
                 'value_function': 'value_function',
                 'dynamics_model': 'dynamics_model',
-                'planner': 'planner'
+                'planner': 'planner',
+                'reward_predictor': 'reward_predictor'
             }
+
+            if comp_name == 'representation_learner' and 'encoder' in components:
+                encoder = components['encoder']
+                if hasattr(encoder, 'output_dim') and 'feature_dim' not in comp_params:
+                    comp_params['feature_dim'] = encoder.output_dim
+
+            if comp_name == 'policy_head' and 'representation_learner' in components:
+                rep = components['representation_learner']
+                if hasattr(rep, 'representation_dim') and 'representation_dim' not in comp_params:
+                    comp_params['representation_dim'] = rep.representation_dim
 
             registry_type = registry_type_map[comp_name]
             components[comp_name] = ComponentFactory.create_component(
@@ -127,8 +150,13 @@ class ComponentFactory(RegistryMixin):
             if not value_config:
                 raise ValueError("Model-free paradigm requires 'value_function'")
 
+            value_params = value_config.setdefault('config', {})
+            rep = components['representation_learner']
+            if hasattr(rep, 'representation_dim'):
+                value_params.setdefault('representation_dim', rep.representation_dim)
+
             components['value_function'] = ComponentFactory.create_component(
-                'value_function', value_config['type'], value_config.get('config', {})
+                'value_function', value_config['type'], value_params
             )
 
             # Import here to avoid circular imports
@@ -151,12 +179,51 @@ class ComponentFactory(RegistryMixin):
             if not value_config:
                 raise ValueError("World model paradigm requires 'value_function'")
 
+            dynamics_params = dynamics_config.setdefault('config', {})
+            value_params = value_config.setdefault('config', {})
+
+            rep = components['representation_learner']
+            if hasattr(rep, 'representation_dim'):
+                state_dim = rep.representation_dim
+                dynamics_params.setdefault('state_dim', state_dim)
+                value_params.setdefault('representation_dim', state_dim)
+            if hasattr(rep, 'deterministic_state_dim'):
+                dynamics_params.setdefault('deterministic_dim', rep.deterministic_state_dim)
+            if hasattr(rep, 'stochastic_state_dim'):
+                dynamics_params.setdefault('stochastic_dim', rep.stochastic_state_dim)
+
+            policy = components['policy_head']
+            if hasattr(policy, 'action_dim') and policy.action_dim is not None:
+                dynamics_params.setdefault('action_dim', policy.action_dim)
+
             components['dynamics_model'] = ComponentFactory.create_component(
-                'dynamics_model', dynamics_config['type'], dynamics_config.get('config', {})
+                'dynamics_model', dynamics_config['type'], dynamics_params
             )
             components['value_function'] = ComponentFactory.create_component(
-                'value_function', value_config['type'], value_config.get('config', {})
+                'value_function', value_config['type'], value_params
             )
+
+            reward_predictor = None
+            reward_config = config.get('reward_predictor')
+            if reward_config:
+                reward_params = reward_config.setdefault('config', {})
+                if hasattr(rep, 'representation_dim'):
+                    reward_params.setdefault('representation_dim', rep.representation_dim)
+                reward_predictor = ComponentFactory.create_component(
+                    'reward_predictor', reward_config['type'], reward_params
+                )
+                components['reward_predictor'] = reward_predictor
+
+            observation_decoder = None
+            decoder_config = config.get('observation_decoder')
+            if decoder_config:
+                decoder_params = decoder_config.setdefault('config', {})
+                if hasattr(rep, 'representation_dim'):
+                    decoder_params.setdefault('representation_dim', rep.representation_dim)
+                observation_decoder = ComponentFactory.create_component(
+                    'observation_decoder', decoder_config['type'], decoder_params
+                )
+                components['observation_decoder'] = observation_decoder
 
             # Planner is optional
             planner = None
@@ -167,14 +234,16 @@ class ComponentFactory(RegistryMixin):
                 )
 
             # Import here to avoid circular imports
-            from .world_model import WorldModelParadigm
+            from .world_models import WorldModelParadigm
             return WorldModelParadigm(
                 encoder=components['encoder'],
                 representation_learner=components['representation_learner'],
                 dynamics_model=components['dynamics_model'],
                 policy_head=components['policy_head'],
                 value_function=components['value_function'],
+                reward_predictor=reward_predictor,
                 planner=planner,
+                observation_decoder=observation_decoder,
                 config=config.get('paradigm_config', {})
             )
 
