@@ -52,7 +52,7 @@ Replay buffers (`src/buffers/world_model_sequence.py`) assume Dreamer rollouts, 
 +--------------------+        +---------------------+
          |                                |
          v                                v
-  Controllers / Simulators        ReplayBuffer / OfflineDataset
+  Controllers / Imagination helpers        ReplayBuffer / OfflineDataset
 ```
 
 ### Orchestrator
@@ -122,11 +122,11 @@ Replay buffers (`src/buffers/world_model_sequence.py`) assume Dreamer rollouts, 
 - Config: `controllers: { policy: {...}, planner: {...} }`.
 - `WorkflowContext` exposes a `ControllerManager` to fetch controllers by role and coordinate metrics/state dicts.
 
-### Simulator Service
+### Imagination Helpers
 
-- `src/simulation/simulator_service.py`.
-- Wrap existing world-model imagination utilities (`WorldModelParadigm.system.imagine`) plus planner-specific rollouts or tree search APIs.
-- Workflows and controllers request imagined trajectories through this service, keeping orchestrator agnostic to Dreamer internals.
+- Each workflow exposes its own rollout helper (e.g., `DreamerWorkflow.imagine`) tailored to that algorithm’s latent dynamics.
+- Controllers or phase logic call into the workflow helper directly; no extra simulator facade is introduced.
+- This keeps algorithm-specific imagination logic co-located with the workflow while still allowing shared helper mixins if multiple workflows need similar rollout code.
 
 ### Logging & Metrics
 
@@ -185,7 +185,7 @@ controllers:
 | `WorkflowContext` | Shared resources for workflows | Accessors for envs, data, controllers |
 | `DataSource` | Unified sampling and storage interface | `add()`, `sample()`, `ready()` |
 | `ControllerManager` | Controller lookup and optional learning | `get(role)`, `learn()` |
-| `SimulatorService` | Imagination/planning utilities | `rollout()`, `value_estimate()` |
+| `Workflow Imagination Helper` | Algorithm-specific rollout utilities | `imagine()`, `evaluate_candidates()` |
 
 ## Implementation Roadmap
 
@@ -205,13 +205,13 @@ controllers:
 3. **Controllers & Simulation**
    - Extend `ComponentFactory` to register multiple controllers by role.
    - Implement `ControllerManager` + hooks for learning.
-   - Introduce `SimulatorService` bridging workflows and imagination utilities.
+   - Add imagination helper(s) inside each workflow where needed (e.g., Dreamer’s latent rollout).
 
 4. **Testing & Migration**
    - Snapshot Dreamer regression tests (phase scheduling, checkpoint resume, metrics parity).
    - Add unit tests: `tests/orchestration/test_phase_scheduler.py`, `tests/workflows/test_dreamer_workflow.py`, `tests/data_sources/test_replay_source.py`.
    - Update documentation (this design doc, README, config examples).
-   - Deprecate legacy `WorldModelTrainer` after tests green and configs updated.
+- Deprecate legacy `WorldModelTrainer` after tests green and configs updated.
 
 5. **Extension (post-MVP)**
    - Implement `BehaviorCloningWorkflow` demonstrating offline training path.
@@ -227,10 +227,10 @@ controllers:
 
 ## Migration Plan
 
-1. Introduce orchestrator and new workflow path behind feature flag (`config.training.use_orchestrator`, default `False`).
+1. Land the orchestrator-driven workflow path as the default runner for Dreamer-style configs (legacy trainer removed).
 2. Mirror existing Dreamer configs with new schema (`configs/experiments/dreamer_cartpole.yaml` -> add `training.phases`).
-3. Once parity tests pass, flip default to orchestrator-driven path and mark legacy trainer deprecated.
-4. Remove old trainer after one release cycle, leaving compatibility shim for archived runs.
+3. Validate parity and checkpoint resume against historical runs, tightening automated coverage before wider rollout.
+4. Document compatibility shims for archived runs that still depend on the removed trainer.
 
 ## Risks & Open Questions
 
@@ -245,6 +245,9 @@ controllers:
 - `src/orchestration/phase_scheduler.py`
 - `src/workflows/world_models/{base.py,dreamer.py,context.py}`
 - `src/data_sources/{base.py,replay.py,offline.py}`
-- Controller manager + simulator service modules
+- Controller manager module
 - Updated configs, tests, and documentation (including this design doc)
 
+## Implementation Insight: World-Model Training Modes
+
+To keep Dreamer behaviour consistent across online and offline phases, the workflow reads an explicit `training_mode` flag from the active phase (e.g., `"online"`, `"offline_warmup"`). Inside `DreamerWorkflow.update_world_model` a tiny router dispatches to `_update_world_model_online` or `_update_world_model_offline` helpers. Both expect actions (offline datasets must include them), while reward/value heads are only updated in modes whose phases enable those losses. Phase definitions supply the signal; the workflow enforces requirements by checking the batch contents before running each loss. This avoids guessing from missing fields, keeps algorithm-specific checks in one place, and makes it easy to extend with additional modes later (Dreamer-v4 alternating schedules, planner-only updates, etc.).

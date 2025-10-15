@@ -20,24 +20,9 @@ from typing import Dict, Any, Optional
 # Add src to Python path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from src.orchestration import WorldModelOrchestrator
 from src.utils.config import ConfigError, load_config
-
-
-def get_trainer_for_paradigm(paradigm: str):
-    """Dynamically import the correct trainer based on paradigm"""
-    if paradigm == "model_free":
-        from src.paradigms.model_free.trainer import create_trainer_from_config
-        return create_trainer_from_config
-    elif paradigm == "world_model":
-        from src.paradigms.world_models.trainer import create_trainer_from_config
-        return create_trainer_from_config
-    elif paradigm == "vla":
-        from src.paradigms.vla.trainer import create_trainer_from_config
-        return create_trainer_from_config
-    else:
-        # Default to core trainer
-        from src.core.trainer import create_trainer_from_config
-        return create_trainer_from_config
+from src.workflows.world_models.dreamer import DreamerWorkflow
 
 
 def setup_logging(level: str = 'INFO'):
@@ -198,34 +183,37 @@ def main():
         # Load config to determine paradigm
         logger.info("Loading configuration to determine paradigm...")
         config = load_config(str(config_path), config_overrides)
-        paradigm = getattr(config.experiment, 'paradigm', 'core')
+        paradigm = getattr(config.experiment, 'paradigm', 'world_model')
         logger.info(f"Using paradigm: {paradigm}")
 
-        # Get the appropriate trainer function
-        create_trainer_from_config = get_trainer_for_paradigm(paradigm)
+        if paradigm != "world_model":
+            raise ValueError(
+                "Non world-model paradigms are no longer routed through this entry point. "
+                "Please update the configuration or wiring to use the new orchestration path."
+            )
 
-        # Create trainer
-        logger.info("Creating trainer...")
-        trainer = create_trainer_from_config(
-            str(config_path),
-            str(experiment_dir) if experiment_dir else None,
-            config_overrides
+        logger.info("Creating world-model orchestrator...")
+        workflow = DreamerWorkflow(config=config)
+        orchestrator = WorldModelOrchestrator(
+            config,
+            workflow,
+            experiment_dir=experiment_dir,
         )
         
-        logger.info(f"Experiment directory: {trainer.experiment_dir}")
-        logger.info(f"Configuration hash: {trainer.config.get_hash()}")
+        logger.info(f"Experiment directory: {orchestrator.experiment_dir}")
+        logger.info(f"Configuration hash: {orchestrator.config.get_hash()}")
         
         # Dry run mode
         if args.dry_run:
             logger.info("Dry run mode - components initialized successfully")
             logger.info("Configuration:")
             import yaml
-            print(yaml.dump(trainer.config.to_dict(), default_flow_style=False))
+            print(yaml.dump(orchestrator.config.to_dict(), default_flow_style=False))
             return
         
         # Run training
         logger.info("Starting training loop...")
-        results = trainer.train()
+        results = orchestrator.train()
         
         # Print final results
         logger.info("Training completed successfully!")
@@ -256,8 +244,8 @@ def main():
     finally:
         # Cleanup
         try:
-            if 'trainer' in locals():
-                trainer.cleanup()
+            if 'orchestrator' in locals():
+                orchestrator.cleanup()
         except Exception as e:
             logger.warning(f"Cleanup error: {e}")
 

@@ -107,7 +107,7 @@ class CategoricalMLPPolicyHead(BasePolicyHead):
     ...
 ```
 
-Factory creates components from config via `src/paradigms/factory.py`:
+Factory creates components from config via `src/orchestration/factory.py`:
 ```yaml
 encoder:
   type: mlp  # looks up registered "mlp" encoder
@@ -118,7 +118,7 @@ encoder:
 ### Configuration Flow
 
 1. **YAML Config** → `src/utils/config.py` loads and validates
-2. **ComponentFactory** (`src/paradigms/factory.py`) creates paradigm and components
+2. **ComponentFactory** (`src/orchestration/factory.py`) creates paradigm and components
 3. **Trainer** (paradigm-specific) orchestrates training loop
 4. Training entry point: `scripts/train.py` routes to appropriate trainer based on `paradigm` field
 

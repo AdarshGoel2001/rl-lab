@@ -9,7 +9,7 @@ Key features:
 - Automatic space conversion to framework format
 - Optional observation and reward normalization
 - Episode length limiting
-- Consistent tensor-based interface
+- Consistent array-based interface
 - Error handling and logging
 """
 

@@ -24,14 +24,14 @@ NETWORK_REGISTRY: Dict[str, Type] = {}
 ENVIRONMENT_REGISTRY: Dict[str, Type] = {}
 BUFFER_REGISTRY: Dict[str, Type] = {}
 
-# New paradigm component registries
+# Modular component registries
 ENCODER_REGISTRY: Dict[str, Type] = {}
 REPRESENTATION_REGISTRY: Dict[str, Type] = {}
 DYNAMICS_REGISTRY: Dict[str, Type] = {}
 POLICY_HEAD_REGISTRY: Dict[str, Type] = {}
 VALUE_FUNCTION_REGISTRY: Dict[str, Type] = {}
 PLANNER_REGISTRY: Dict[str, Type] = {}
-PARADIGM_REGISTRY: Dict[str, Type] = {}
+CONTROLLER_REGISTRY: Dict[str, Type] = {}
 REWARD_PREDICTOR_REGISTRY: Dict[str, Type] = {}
 OBSERVATION_DECODER_REGISTRY: Dict[str, Type] = {}
 RETURN_COMPUTER_REGISTRY: Dict[str, Type] = {}
@@ -147,6 +147,19 @@ def register_planner(name: str) -> Callable:
     return decorator
 
 
+def register_controller(name: str) -> Callable:
+    """Register a controller class for automatic discovery"""
+
+    def decorator(cls: Type) -> Type:
+        if name in CONTROLLER_REGISTRY:
+            logger.warning(f"Controller '{name}' already registered, overwriting...")
+        CONTROLLER_REGISTRY[name] = cls
+        logger.info(f"Registered controller: {name} -> {cls.__name__}")
+        return cls
+
+    return decorator
+
+
 def register_reward_predictor(name: str) -> Callable:
     """Register a reward predictor class for world models."""
 
@@ -170,17 +183,6 @@ def register_observation_decoder(name: str) -> Callable:
         logger.info(f"Registered observation decoder: {name} -> {cls.__name__}")
         return cls
 
-    return decorator
-
-
-def register_paradigm(name: str) -> Callable:
-    """Register a paradigm class for automatic discovery"""
-    def decorator(cls: Type) -> Type:
-        if name in PARADIGM_REGISTRY:
-            logger.warning(f"Paradigm '{name}' already registered, overwriting...")
-        PARADIGM_REGISTRY[name] = cls
-        logger.info(f"Registered paradigm: {name} -> {cls.__name__}")
-        return cls
     return decorator
 
 
@@ -277,6 +279,16 @@ def get_planner(name: str) -> Type:
     return PLANNER_REGISTRY[name]
 
 
+def get_controller(name: str) -> Type:
+    """Get controller class by name."""
+    if name not in CONTROLLER_REGISTRY:
+        raise ValueError(
+            f"Controller '{name}' not found in registry. "
+            f"Available: {list(CONTROLLER_REGISTRY.keys())}"
+        )
+    return CONTROLLER_REGISTRY[name]
+
+
 def get_reward_predictor(name: str) -> Type:
     """Get reward predictor class by name."""
     if name not in REWARD_PREDICTOR_REGISTRY:
@@ -295,14 +307,6 @@ def get_observation_decoder(name: str) -> Type:
             f"Available: {list(OBSERVATION_DECODER_REGISTRY.keys())}"
         )
     return OBSERVATION_DECODER_REGISTRY[name]
-
-
-def get_paradigm(name: str) -> Type:
-    """Get paradigm class by name"""
-    if name not in PARADIGM_REGISTRY:
-        raise ValueError(f"Paradigm '{name}' not found in registry. "
-                        f"Available: {list(PARADIGM_REGISTRY.keys())}")
-    return PARADIGM_REGISTRY[name]
 
 
 def get_return_computer(name: str) -> Type:
@@ -330,7 +334,6 @@ def list_registered_components() -> Dict[str, list]:
         'planners': list(PLANNER_REGISTRY.keys()),
         'reward_predictors': list(REWARD_PREDICTOR_REGISTRY.keys()),
         'observation_decoders': list(OBSERVATION_DECODER_REGISTRY.keys()),
-        'paradigms': list(PARADIGM_REGISTRY.keys()),
         'return_computers': list(RETURN_COMPUTER_REGISTRY.keys())
     }
 
@@ -354,7 +357,7 @@ def auto_import_modules():
         'components.policy_heads', 'components.value_functions',
         'components.world_models.controllers', 'components.world_models',
         'components.world_models.return_computers',
-        'paradigms'
+        'data_sources',
     ]
 
     for module_dir in module_dirs:
@@ -433,11 +436,6 @@ class RegistryMixin:
     def create_observation_decoder(self, name: str, config: Any):
         """Create observation decoder instance from registry"""
         cls = get_observation_decoder(name)
-        return cls(config)
-
-    def create_paradigm(self, name: str, config: Any):
-        """Create paradigm instance from registry"""
-        cls = get_paradigm(name)
         return cls(config)
 
     def create_return_computer(self, name: str, config: Any):

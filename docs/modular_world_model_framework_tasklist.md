@@ -8,7 +8,7 @@ The following task breakdown translates the design into concrete implementation 
 - [ ] Implement `WorkflowContext` (`src/workflows/world_models/context.py`) wiring environments, components, loggers, checkpoint manager
 - [ ] Define `WorldModelWorkflow` ABC (`src/workflows/world_models/base.py`)
 - [ ] Migrate current Dreamer training logic into `DreamerWorkflow` (`src/workflows/world_models/dreamer.py`)
-- [ ] Add compatibility shim in `src/paradigms/world_models/__init__.py` to choose orchestrator path when enabled
+- [x] Expose orchestrator entrypoint in `src/paradigms/world_models/__init__.py` (legacy trainer removed)
 - [ ] Create thin replay data source adapter wrapping `WorldModelSequenceBuffer` (`src/data_sources/replay.py`)
 - [ ] Update unit tests to point Dreamer path at workflow (`tests/workflows/test_dreamer_workflow.py`)
 
@@ -26,8 +26,8 @@ The following task breakdown translates the design into concrete implementation 
 - [ ] Extend `ComponentFactory` to instantiate controllers by role and register them in context
 - [ ] Introduce `ControllerManager` helper (`src/workflows/world_models/controllers.py` or similar)
 - [ ] Add optional `controller.learn()` hook invocation inside `update_controller`
-- [ ] Implement `SimulatorService` (`src/simulation/simulator_service.py`) wrapping imagination utilities
-- [ ] Update Dreamer workflow to consume controller manager & simulator service
+- [x] Implement imagination helper inside Dreamer workflow (`DreamerWorkflow.imagine`) and share mixins if reused
+- [x] Update Dreamer workflow to consume controller manager & its own imagination helper
 
 ## Milestone 4 — Testing & Migration
 
@@ -36,13 +36,13 @@ The following task breakdown translates the design into concrete implementation 
 - [ ] Create end-to-end smoke test (`tests/integration/test_world_model_orchestrator.py`)
 - [ ] Mirror legacy metrics in new path and compare (guarded test or script)
 - [ ] Update documentation + READMEs referencing orchestrator workflow
-- [ ] Mark legacy `WorldModelTrainer` as deprecated (issue warning) and ensure configs opt-in
+- [x] Remove legacy `WorldModelTrainer`; all configs use orchestrator path
 
 ## Milestone 5 — Post-MVP Extensions
 
 - [ ] Implement `BehaviorCloningWorkflow` using offline data
 - [ ] Scaffold planner/diffusion workflow stubs demonstrating interface usage
-- [ ] Add simulator utilities for planner rollouts (e.g., CEM loop)
+- [ ] Add reusable imagination helper mixins for planner rollouts (e.g., CEM loop)
 - [ ] Remove deprecated trainer once parity confirmed
 
 ## Cross-Cutting Concerns
@@ -52,4 +52,3 @@ The following task breakdown translates the design into concrete implementation 
 - [ ] Verify logging remains backward compatible with `experiment_logger`
 
 > **Note:** Track progress via repo issues or project board; keep this checklist in sync after each merged PR.
-

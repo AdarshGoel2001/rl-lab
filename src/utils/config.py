@@ -5,7 +5,7 @@ import hashlib
 import json
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -60,6 +60,8 @@ class Config:
     logging: ConfigNode
     components: Dict[str, Any]
     paradigm_config: Dict[str, Any]
+    controllers: Dict[str, Any] = field(default_factory=dict)
+    data_sources: Dict[str, Any] = field(default_factory=dict)
     evaluation: Optional[ConfigNode] = None
 
     @classmethod
@@ -75,6 +77,8 @@ class Config:
         logging_cfg = ConfigNode(**data.get("logging", {}))
         components = copy.deepcopy(data.get("components", {}))
         paradigm_cfg = copy.deepcopy(data.get("paradigm_config", {}))
+        controllers = copy.deepcopy(data.get("controllers", {})) or {}
+        data_sources = copy.deepcopy(data.get("data_sources", {})) or {}
         evaluation_cfg = data.get("evaluation")
         evaluation = ConfigNode(**evaluation_cfg) if evaluation_cfg else None
 
@@ -88,6 +92,8 @@ class Config:
             logging=logging_cfg,
             components=components,
             paradigm_config=paradigm_cfg,
+            controllers=controllers,
+            data_sources=data_sources,
             evaluation=evaluation,
         )
 
@@ -102,6 +108,8 @@ class Config:
             "logging": self.logging.to_dict(),
             "components": copy.deepcopy(self.components),
             "paradigm_config": copy.deepcopy(self.paradigm_config),
+            "controllers": copy.deepcopy(self.controllers),
+            "data_sources": copy.deepcopy(self.data_sources),
             "evaluation": self.evaluation.to_dict() if self.evaluation else None,
         }
 

@@ -12,13 +12,12 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.paradigms.factory import ComponentFactory
+from src.orchestration.factory import ComponentFactory
 from src.utils.registry import auto_import_modules
 
 
 def _dreamer_cartpole_config():
     return {
-        "paradigm": "world_model",
         "encoder": {
             "type": "mlp",
             "config": {
@@ -30,6 +29,7 @@ def _dreamer_cartpole_config():
         "representation_learner": {
             "type": "rssm",
             "config": {
+                "feature_dim": 64,
                 "latent_dim": 16,
                 "hidden_dim": 64,
                 "min_std": 0.1,
@@ -60,6 +60,7 @@ def _dreamer_cartpole_config():
         "policy_head": {
             "type": "categorical_mlp",
             "config": {
+                "representation_dim": 64,
                 "hidden_dims": [64, 64],
                 "activation": "elu",
                 "discrete_actions": True,
@@ -69,42 +70,26 @@ def _dreamer_cartpole_config():
         "value_function": {
             "type": "critic_mlp",
             "config": {
+                "representation_dim": 64,
                 "hidden_dims": [64, 64],
                 "activation": "elu",
             },
         },
-        "paradigm_config": {
-            "imagination_length": 3,
-            "gamma": 0.99,
-            "lambda_return": 0.95,
-            "entropy_coef": 0.0,
-        },
     }
 
 
-def test_world_model_loss_smoke():
+def test_world_model_components_smoke():
     auto_import_modules()
-    factory = ComponentFactory()
-    paradigm = factory.create_paradigm(_dreamer_cartpole_config())
+    bundle = ComponentFactory.create_world_model_components(_dreamer_cartpole_config(), device="cpu")
+    components = bundle.as_dict()
 
-    batch_size = 8
-    observations = torch.randn(batch_size, 4)
-    next_observations = torch.randn(batch_size, 4)
-    actions = torch.randint(0, 2, (batch_size,))
-    rewards = torch.randn(batch_size)
-    returns = torch.randn(batch_size)
+    assert components["encoder"] is not None
+    assert components["representation_learner"] is not None
+    assert components["dynamics_model"] is not None
 
-    batch = {
-        "observations": observations,
-        "next_observations": next_observations,
-        "actions": actions,
-        "rewards": rewards,
-        "returns": returns,
-    }
-
-    losses = paradigm.compute_loss(batch)
-
-    assert "total_loss" in losses
-    for value in losses.values():
-        if isinstance(value, torch.Tensor):
-            assert torch.isfinite(value).all()
+    observations = torch.randn(4, 4)
+    encoder = components["encoder"]
+    with torch.no_grad():
+        features = encoder(observations)
+    assert isinstance(features, torch.Tensor)
+    assert torch.isfinite(features).all()

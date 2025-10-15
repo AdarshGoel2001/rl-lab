@@ -436,7 +436,7 @@ class VectorizedGymWrapper(BaseEnvironment):
             logger.warning(f"Unknown infos format: {type(infos)}, using empty dicts")
             return [{} for _ in range(self.num_envs)]
     
-    def reset(self, seed: Optional[int] = None) -> torch.Tensor:
+    def reset(self, seed: Optional[int] = None) -> np.ndarray:
         """
         Reset all environments and return initial observations.
         
@@ -444,7 +444,7 @@ class VectorizedGymWrapper(BaseEnvironment):
             seed: Random seed for reproducibility
             
         Returns:
-            Initial observations as PyTorch tensor with shape (num_envs, obs_dim)
+            Initial observations as numpy array with shape (num_envs, obs_dim)
         """
         # Reset underlying environments
         obs = self._reset_environment(seed)
@@ -453,9 +453,9 @@ class VectorizedGymWrapper(BaseEnvironment):
         if self.normalize_obs:
             obs = self._normalize_observation_batch(obs)
         
-        return torch.tensor(obs, dtype=torch.float32)
+        return np.asarray(obs, dtype=np.float32)
     
-    def step(self, actions: Union[torch.Tensor, np.ndarray]) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, List[Dict[str, Any]]]:
+    def step(self, actions: Union[torch.Tensor, np.ndarray]) -> Tuple[np.ndarray, np.ndarray, np.ndarray, List[Dict[str, Any]]]:
         """
         Execute batched actions and return results.
         
@@ -464,9 +464,9 @@ class VectorizedGymWrapper(BaseEnvironment):
             
         Returns:
             Tuple of (observations, rewards, dones, infos) where:
-            - observations: PyTorch tensor (num_envs, obs_dim)
-            - rewards: PyTorch tensor (num_envs,)
-            - dones: PyTorch tensor (num_envs,)
+            - observations: numpy array (num_envs, obs_dim)
+            - rewards: numpy array (num_envs,)
+            - dones: numpy array (num_envs,)
             - infos: List of info dictionaries, one per environment
         """
         # Convert actions to numpy if needed
@@ -484,12 +484,10 @@ class VectorizedGymWrapper(BaseEnvironment):
         if self.normalize_reward:
             rewards = self._normalize_reward_batch(rewards)
         
-        return (
-            torch.tensor(obs, dtype=torch.float32),
-            torch.tensor(rewards, dtype=torch.float32),
-            torch.tensor(dones, dtype=torch.bool),
-            infos
-        )
+        obs_out = np.asarray(obs, dtype=np.float32)
+        rewards_out = np.asarray(rewards, dtype=np.float32)
+        dones_out = np.asarray(dones, dtype=bool)
+        return obs_out, rewards_out, dones_out, infos
     
     def _normalize_observation_batch(self, obs_batch: np.ndarray) -> np.ndarray:
         """Apply observation normalization to a batch of observations"""
