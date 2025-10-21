@@ -20,12 +20,11 @@ class WorldModelComponents:
     encoder: Any
     representation_learner: Any
     dynamics_model: Any
-    policy_head: Any
-    value_function: Any
     reward_predictor: Optional[Any] = None
     observation_decoder: Optional[Any] = None
     planner: Optional[Any] = None
     config: Dict[str, Any] = field(default_factory=dict)
+    specs: Dict[str, Any] = field(default_factory=dict)
 
     def to(self, device: Any) -> "WorldModelComponents":
         """Move all components to the specified device."""
@@ -33,8 +32,6 @@ class WorldModelComponents:
             self.encoder,
             self.representation_learner,
             self.dynamics_model,
-            self.policy_head,
-            self.value_function,
             self.reward_predictor,
             self.observation_decoder,
             self.planner,
@@ -53,12 +50,11 @@ class WorldModelComponents:
             "encoder": self.encoder,
             "representation_learner": self.representation_learner,
             "dynamics_model": self.dynamics_model,
-            "policy_head": self.policy_head,
-            "value_function": self.value_function,
             "reward_predictor": self.reward_predictor,
             "observation_decoder": self.observation_decoder,
             "planner": self.planner,
             "config": self.config,
+            "specs": self.specs,
         }
 
 

@@ -141,6 +141,7 @@ class WorldModelOrchestrator:
         )
 
         controllers_cfg = getattr(self.config, "controllers", None) or {}
+        controllers_cfg = self._prepare_controller_config(controllers_cfg, components)
         controllers = ComponentFactory.create_controllers(
             controllers_cfg,
             device=self.device,
@@ -236,20 +237,32 @@ class WorldModelOrchestrator:
                 shape = tuple(shape[1:]) if len(shape) > 1 else shape
             encoder_cfg.setdefault("input_dim", shape)
 
-        policy_cfg = _inject("policy_head")
+        if "policy_head" in component_spec:
+            policy_cfg = _inject("policy_head")
+            if getattr(action_space, "discrete", False):
+                policy_cfg.setdefault("action_dim", action_space.n)
+                policy_cfg.setdefault("discrete_actions", True)
+            else:
+                action_dim = getattr(action_space, "shape", None) or (0,)
+                if getattr(environment, "is_vectorized", False) and action_dim:
+                    action_dim = action_dim[1:] if len(action_dim) > 1 else action_dim
+                policy_cfg.setdefault("action_dim", int(np.prod(action_dim)))
+                policy_cfg.setdefault("discrete_actions", False)
+
+        _inject("representation_learner")
+        dynamics_cfg = _inject("dynamics_model")
         if getattr(action_space, "discrete", False):
-            policy_cfg.setdefault("action_dim", action_space.n)
-            policy_cfg.setdefault("discrete_actions", True)
+            dynamics_cfg.setdefault("action_dim", int(action_space.n))
+            dynamics_cfg.setdefault("discrete_actions", True)
         else:
             action_dim = getattr(action_space, "shape", None) or (0,)
             if getattr(environment, "is_vectorized", False) and action_dim:
                 action_dim = action_dim[1:] if len(action_dim) > 1 else action_dim
-            policy_cfg.setdefault("action_dim", int(np.prod(action_dim)))
-            policy_cfg.setdefault("discrete_actions", False)
-
-        _inject("representation_learner")
-        _inject("dynamics_model")
-        _inject("value_function")
+            flat_dim = int(np.prod(action_dim))
+            dynamics_cfg.setdefault("action_dim", flat_dim)
+            dynamics_cfg.setdefault("discrete_actions", False)
+        if "value_function" in component_spec:
+            _inject("value_function")
         _inject("reward_predictor")
         _inject("observation_decoder")
         if "planner" in component_spec:
@@ -260,6 +273,41 @@ class WorldModelOrchestrator:
             component_spec["paradigm_config"].update(paradigm_overrides)
 
         return component_spec
+    def _prepare_controller_config(
+        self,
+        controller_cfg: Mapping[str, Any],
+        components: WorldModelComponents,
+    ) -> Dict[str, Any]:
+        """Inject default latent/action specs into controller configuration."""
+        normalised: Dict[str, Any] = {}
+        specs = getattr(components, "specs", {}) or {}
+        representation_dim = specs.get("representation_dim")
+        action_dim = specs.get("action_dim")
+        discrete_actions = specs.get("discrete_actions")
+
+        for role, entry in (controller_cfg or {}).items():
+            if entry is None:
+                continue
+            if hasattr(entry, "to_dict"):
+                payload = entry.to_dict()
+            elif isinstance(entry, Mapping):
+                payload = copy.deepcopy(dict(entry))
+            else:
+                raise TypeError(
+                    f"Controller configuration for role '{role}' must be dict-like, got {type(entry)}"
+                )
+
+            config_block = payload.setdefault("config", {})
+            if representation_dim is not None:
+                config_block.setdefault("representation_dim", representation_dim)
+            if action_dim is not None:
+                config_block.setdefault("action_dim", action_dim)
+            if discrete_actions is not None:
+                config_block.setdefault("discrete_actions", bool(discrete_actions))
+
+            normalised[role] = payload
+
+        return normalised
 
     def initialize(self) -> None:
         if self._initialized:

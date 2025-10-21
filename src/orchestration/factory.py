@@ -9,6 +9,7 @@ related modules directly from YAML specs.
 
 import copy
 import logging
+import numpy as np
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Union
 
@@ -35,20 +36,17 @@ class WorldModelComponentBundle:
     encoder: Any
     representation_learner: Any
     dynamics_model: Any
-    policy_head: Any
-    value_function: Any
     reward_predictor: Optional[Any] = None
     observation_decoder: Optional[Any] = None
     planner: Optional[Any] = None
     config: Dict[str, Any] = field(default_factory=dict)
+    specs: Dict[str, Any] = field(default_factory=dict)
 
     def to(self, device: Union[str, "torch.device"]) -> "WorldModelComponentBundle":
         components = [
             self.encoder,
             self.representation_learner,
             self.dynamics_model,
-            self.policy_head,
-            self.value_function,
             self.reward_predictor,
             self.observation_decoder,
             self.planner,
@@ -66,12 +64,11 @@ class WorldModelComponentBundle:
             "encoder": self.encoder,
             "representation_learner": self.representation_learner,
             "dynamics_model": self.dynamics_model,
-            "policy_head": self.policy_head,
-            "value_function": self.value_function,
             "reward_predictor": self.reward_predictor,
             "observation_decoder": self.observation_decoder,
             "planner": self.planner,
             "config": self.config,
+            "specs": self.specs,
         }
 
 
@@ -142,9 +139,11 @@ class ComponentFactory(RegistryMixin):
         internal_paradigm_cfg = spec.pop("paradigm_config", None)
         model_config = dict(paradigm_config or internal_paradigm_cfg or {})
 
-        def _normalise(entry: Any, *, name: str) -> Dict[str, Any]:
+        def _normalise(entry: Any, *, name: str, required: bool = True) -> Optional[Dict[str, Any]]:
             if entry is None:
-                raise ValueError(f"World model configuration missing '{name}' entry.")
+                if required:
+                    raise ValueError(f"World model configuration missing '{name}' entry.")
+                return None
             if hasattr(entry, "to_dict"):
                 return entry.to_dict()
             if isinstance(entry, dict):
@@ -153,13 +152,14 @@ class ComponentFactory(RegistryMixin):
                 return dict(entry.__dict__)
             raise TypeError(f"Unsupported configuration type for '{name}': {type(entry)}")
 
-        def _extract(name: str, *, required: bool = True) -> Optional[tuple[str, Dict[str, Any]]]:
-            entry = spec.get(name)
-            if entry is None:
-                if required:
-                    raise ValueError(f"World model configuration missing '{name}'.")
+        def _extract(
+            name: str,
+            *,
+            required: bool = True,
+        ) -> Optional[tuple[str, Dict[str, Any]]]:
+            data = _normalise(spec.get(name), name=name, required=required)
+            if data is None:
                 return None
-            data = _normalise(entry, name=name)
             entry_type = data.get("type")
             if not entry_type:
                 raise ValueError(f"Component '{name}' is missing a 'type' field.")
@@ -168,34 +168,65 @@ class ComponentFactory(RegistryMixin):
 
         encoder_type, encoder_cfg = _extract("encoder")  # type: ignore[misc]
         representation_type, representation_cfg = _extract("representation_learner")  # type: ignore[misc]
-        policy_type, policy_cfg = _extract("policy_head")  # type: ignore[misc]
         dynamics_type, dynamics_cfg = _extract("dynamics_model")  # type: ignore[misc]
-        value_type, value_cfg = _extract("value_function")  # type: ignore[misc]
+        policy_entry = _extract("policy_head", required=False)
+        value_entry = _extract("value_function", required=False)
 
         encoder = ComponentFactory.create_component("encoder", encoder_type, encoder_cfg)
         representation_learner = ComponentFactory.create_component(
             "representation_learner", representation_type, representation_cfg
         )
-        policy_head = ComponentFactory.create_component("policy_head", policy_type, policy_cfg)
 
         dynamics_params = dict(dynamics_cfg)
-        value_params = dict(value_cfg)
-
+        specs: Dict[str, Any] = {}
         rep = representation_learner
         if hasattr(rep, "representation_dim"):
             state_dim = rep.representation_dim
             dynamics_params.setdefault("state_dim", state_dim)
-            value_params.setdefault("representation_dim", state_dim)
+            specs["representation_dim"] = state_dim
         if hasattr(rep, "deterministic_state_dim"):
             dynamics_params.setdefault("deterministic_dim", rep.deterministic_state_dim)
+            specs["deterministic_state_dim"] = rep.deterministic_state_dim
         if hasattr(rep, "stochastic_state_dim"):
             dynamics_params.setdefault("stochastic_dim", rep.stochastic_state_dim)
+            specs["stochastic_state_dim"] = rep.stochastic_state_dim
+        if "action_dim" in dynamics_params and "action_dim" not in specs:
+            try:
+                specs["action_dim"] = int(np.prod(dynamics_params["action_dim"]))
+            except Exception:
+                specs["action_dim"] = dynamics_params["action_dim"]
+        if "discrete_actions" in dynamics_params and "discrete_actions" not in specs:
+            specs["discrete_actions"] = bool(dynamics_params["discrete_actions"])
 
-        if hasattr(policy_head, "action_dim") and getattr(policy_head, "action_dim") is not None:
-            dynamics_params.setdefault("action_dim", policy_head.action_dim)
+        policy_config: Dict[str, Any] = {}
+        temp_policy_head = None
+        if policy_entry is not None:
+            policy_type, policy_cfg = policy_entry
+            policy_config = dict(policy_cfg)
+            specs["policy_head"] = {
+                "type": policy_type,
+                "config": policy_cfg,
+            }
+            if "representation_dim" not in policy_config and "representation_dim" in specs:
+                policy_config["representation_dim"] = specs["representation_dim"]
+            # Legacy behaviour: infer action dim for dynamics
+            temp_policy_head = ComponentFactory.create_component("policy_head", policy_type, policy_config)
+            action_dim = getattr(temp_policy_head, "action_dim", None)
+            if action_dim is not None:
+                dynamics_params.setdefault("action_dim", action_dim)
+                specs["action_dim"] = action_dim
+            specs["discrete_actions"] = getattr(temp_policy_head, "discrete_actions", False)
+
+        if temp_policy_head is not None:
+            del temp_policy_head
 
         dynamics_model = ComponentFactory.create_component("dynamics_model", dynamics_type, dynamics_params)
-        value_function = ComponentFactory.create_component("value_function", value_type, value_params)
+        if value_entry is not None:
+            value_type, value_cfg = value_entry
+            specs["value_function"] = {
+                "type": value_type,
+                "config": value_cfg,
+            }
 
         reward_predictor = None
         reward_entry = _extract("reward_predictor", required=False)
@@ -227,12 +258,11 @@ class ComponentFactory(RegistryMixin):
             encoder=encoder,
             representation_learner=representation_learner,
             dynamics_model=dynamics_model,
-            policy_head=policy_head,
-            value_function=value_function,
             reward_predictor=reward_predictor,
             observation_decoder=observation_decoder,
             planner=planner,
             config=model_config,
+            specs=specs,
         )
 
         if device is not None:
@@ -274,6 +304,8 @@ class ComponentFactory(RegistryMixin):
             params.setdefault('device', device)
         if components is not None:
             params.setdefault('components', components)
+            if 'specs' not in params:
+                params['specs'] = getattr(components, "specs", {})
 
         controller = ComponentFactory.create_component('controller', controller_type, params)
         if hasattr(controller, 'to') and device is not None:

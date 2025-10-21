@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Any, Optional
 
 import torch
 from torch.distributions import Distribution
@@ -22,11 +22,12 @@ class BaseController(ABC, torch.nn.Module):
     def act(
         self,
         latent_state: torch.Tensor,
-        dynamics_model: BaseDynamicsModel,
-        value_function: BaseValueFunction,
+        dynamics_model: Optional[BaseDynamicsModel] = None,
+        value_function: Optional[BaseValueFunction] = None,
         *,
         deterministic: bool = False,
         horizon: Optional[int] = None,
+        **kwargs: Any,
     ) -> Distribution:
         """Return an action distribution conditioned on the latent state."""
         raise NotImplementedError

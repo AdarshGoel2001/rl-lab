@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable, Mapping, Optional
 
+import torch
+from torch.distributions import Distribution
+
 
 class ControllerManager:
     """Lightweight wrapper coordinating controller instances by role."""
@@ -27,6 +30,29 @@ class ControllerManager:
 
     def add(self, role: str, controller: Any) -> None:
         self._controllers[role] = controller
+
+    def act(
+        self,
+        role: str,
+        *args: Any,
+        deterministic: bool = False,
+        sample_action: bool = False,
+        return_distribution: bool = True,
+        **kwargs: Any,
+    ) -> Any:
+        """Request an action distribution (and optional sample) from a controller."""
+        controller = self.get(role)
+        hook = getattr(controller, "act", None)
+        if not callable(hook):
+            raise AttributeError(f"Controller '{role}' does not implement act().")
+
+        distribution = hook(*args, deterministic=deterministic, **kwargs)
+        if sample_action and isinstance(distribution, Distribution):
+            action = self._sample_from_distribution(distribution, deterministic=deterministic)
+            if return_distribution:
+                return action, distribution
+            return action
+        return distribution
 
     def learn(
         self,
@@ -86,3 +112,26 @@ class ControllerManager:
 
     def as_dict(self) -> Dict[str, Any]:
         return dict(self._controllers)
+
+    @staticmethod
+    def _sample_from_distribution(
+        distribution: Distribution,
+        *,
+        deterministic: bool,
+    ) -> torch.Tensor:
+        if deterministic:
+            if hasattr(distribution, "mode"):
+                mode = distribution.mode
+                if callable(mode):
+                    return mode()
+                return mode
+            if hasattr(distribution, "mean"):
+                mean = distribution.mean
+                if callable(mean):
+                    return mean()
+                return mean
+            if hasattr(distribution, "probs"):
+                return torch.argmax(distribution.probs, dim=-1)
+        if getattr(distribution, "has_rsample", False):
+            return distribution.rsample()
+        return distribution.sample()

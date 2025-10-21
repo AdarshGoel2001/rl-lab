@@ -1,222 +1,376 @@
-"""Recurrent State-Space Model (RSSM) representation learner."""
+"""Recurrent state-space model (RSSM) representation learner."""
 
 from __future__ import annotations
 
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Tuple
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.distributions import Normal, kl_divergence
 
-from .base import BaseRepresentationLearner
-from ....utils.registry import register_representation_learner
-from ..rssm import RSSMState
+from src.utils.registry import register_representation_learner
+
+from .base import BaseRepresentationLearner, LatentSequence, LatentStep, RSSMState
 
 
-def _build_mlp(input_dim: int, hidden_dim: int) -> nn.Sequential:
-    return nn.Sequential(
-        nn.Linear(input_dim, hidden_dim),
-        nn.ELU(),
-        nn.Linear(hidden_dim, hidden_dim),
-        nn.ELU(),
-    )
+def _build_activation(name: str) -> nn.Module:
+    name = (name or "elu").lower()
+    if name == "relu":
+        return nn.ReLU()
+    if name == "tanh":
+        return nn.Tanh()
+    if name == "sigmoid":
+        return nn.Sigmoid()
+    if name == "gelu":
+        return nn.GELU()
+    if name in {"swish", "silu"}:
+        return nn.SiLU()
+    if name == "leaky_relu":
+        return nn.LeakyReLU(0.2)
+    return nn.ELU()
+
+
+def _split_stats(stats: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    mean, std_param = torch.chunk(stats, 2, dim=-1)
+    return mean, std_param
 
 
 @register_representation_learner("rssm")
 class RSSMRepresentationLearner(BaseRepresentationLearner):
-    """Dreamer-style RSSM posterior with deterministic and stochastic state."""
+    """Dreamer-style RSSM with stochastic + deterministic latent components."""
 
-    def _build_learner(self) -> None:
-        self.feature_dim = self.config.get("feature_dim")
-        self.stochastic_dim = self.config.get("latent_dim")
-        if self.feature_dim is None or self.stochastic_dim is None:
-            raise ValueError("RSSMRepresentationLearner requires 'feature_dim' and 'latent_dim'")
+    def __init__(self, config: Dict[str, int | float | bool]) -> None:
+        super().__init__(config)
 
-        self.hidden_dim = self.config.get("hidden_dim", 256)
-        self.deterministic_dim = self.config.get("deterministic_dim", self.hidden_dim)
-        self.action_dim = self.config.get("action_dim", 0)
-        if self.action_dim < 0:
-            raise ValueError("'action_dim' must be non-negative")
+        self.stochastic_dim = int(self.config.get("stochastic_dim", self.config.get("latent_dim", 32)))
+        self.deterministic_dim = int(self.config.get("deterministic_dim", self.config.get("hidden_dim", 200)))
+        self.hidden_dim = int(self.config.get("hidden_dim", max(self.deterministic_dim, 200)))
+        self.feature_dim = int(self.config.get("feature_dim", self.config.get("embedding_dim", self.stochastic_dim)))
+        self.action_dim = int(self.config.get("action_dim", 0))
+        self.discrete_actions = bool(self.config.get("discrete_actions", False))
 
-        self.min_std = self.config.get("min_std", 0.1)
-        self.sample_posteriors = not self.config.get("deterministic", False)
+        self.min_std = float(self.config.get("min_std", 0.1))
+        self.max_std = float(self.config.get("max_std", 0.0)) or None
+        self.std_transform = str(self.config.get("std_transform", "softplus"))
+        self.sample_prior = bool(self.config.get("sample_prior", True))
+        self.sample_posterior = bool(self.config.get("sample_posterior", True))
 
-        # Observation encoder that maps raw features to embedding used by posterior.
-        self.obs_encoder = _build_mlp(self.feature_dim, self.hidden_dim)
+        activation = _build_activation(str(self.config.get("activation", "elu")))
 
-        # GRU transition maintains deterministic state h_t given previous stochastic state and action.
-        transition_input_dim = self.stochastic_dim + self.action_dim
-        self.transition = nn.GRUCell(transition_input_dim, self.deterministic_dim)
-
-        # Prior network p(z_t | h_t)
-        self.prior_net = _build_mlp(self.deterministic_dim, self.hidden_dim)
-        self.prior_mean_layer = nn.Linear(self.hidden_dim, self.stochastic_dim)
-        self.prior_std_layer = nn.Linear(self.hidden_dim, self.stochastic_dim)
-
-        # Posterior network q(z_t | h_t, o_t)
-        self.posterior_net = _build_mlp(self.deterministic_dim + self.hidden_dim, self.hidden_dim)
-        self.posterior_mean_layer = nn.Linear(self.hidden_dim, self.stochastic_dim)
-        self.posterior_std_layer = nn.Linear(self.hidden_dim, self.stochastic_dim)
-
-        # Optional decoder that reconstructs encoder features from latent state.
-        decoder_input_dim = self.deterministic_dim + self.stochastic_dim
-        self.decoder = nn.Sequential(
-            nn.Linear(decoder_input_dim, self.hidden_dim),
-            nn.ELU(),
-            nn.Linear(self.hidden_dim, self.hidden_dim),
-            nn.ELU(),
-            nn.Linear(self.hidden_dim, self.feature_dim),
+        input_dim = self.stochastic_dim + self.action_dim
+        self.input_layer = nn.Sequential(
+            nn.Linear(input_dim, self.hidden_dim),
+            activation,
         )
 
-        self._last_state: Optional[RSSMState] = None
-        self._prev_state: Optional[RSSMState] = None
-        self._last_features: Optional[torch.Tensor] = None
+        self.gru = nn.GRUCell(self.hidden_dim, self.deterministic_dim)
 
-    # ------------------------------------------------------------------
-    # State helpers
-    # ------------------------------------------------------------------
-    def initial_state(self, batch_size: int, device: Optional[torch.device] = None) -> RSSMState:
-        """Create zero-initialised RSSM state for a batch."""
-        device = device or self.device
-        deterministic = torch.zeros(batch_size, self.deterministic_dim, device=device)
-        stochastic = torch.zeros(batch_size, self.stochastic_dim, device=device)
-        return RSSMState(deterministic=deterministic, stochastic=stochastic)
-
-    def reset_state(self) -> None:
-        """Forget any cached recurrent state."""
-        self._prev_state = None
-        self._last_state = None
-        self._last_features = None
-
-    def _ensure_state_batch(self, state: Optional[RSSMState], batch_size: int, device: torch.device) -> RSSMState:
-        if state is not None and state.batch_size == batch_size:
-            return state
-        return self.initial_state(batch_size, device)
-
-    # ------------------------------------------------------------------
-    # Encoding
-    # ------------------------------------------------------------------
-    def encode(
-        self,
-        features: torch.Tensor,
-        prev_state: Optional[RSSMState] = None,
-        prev_action: Optional[torch.Tensor] = None,
-        *,
-        sample: bool = True,
-    ) -> torch.Tensor:
-        """Encode features into RSSM latent by updating posterior state.
-
-        Args:
-            features: Encoder features for the current observation.
-            prev_state: Optional RSSM state carrying (h_{t-1}, z_{t-1}). If not
-                provided, the learner falls back to the cached recurrent state or
-                initialises a fresh one for the batch size.
-            prev_action: Optional previous action a_{t-1}. Required when the
-                transition depends on control inputs. If omitted, zeros are used.
-            sample: Whether to sample from the posterior (default) or return mean.
-        """
-        if features.dim() != 2:
-            features = features.reshape(features.shape[0], -1)
-
-        batch_size = features.shape[0]
-        device = features.device
-        obs_embed = self.obs_encoder(features)
-
-        cached_state = prev_state or self._prev_state
-        state = self._ensure_state_batch(cached_state, batch_size, device)
-
-        if self.action_dim > 0:
-            if prev_action is None:
-                action = torch.zeros(batch_size, self.action_dim, device=device)
-            else:
-                action = prev_action
-                if action.dim() == 1:
-                    action = action.unsqueeze(-1)
-                if action.shape[0] != batch_size:
-                    raise ValueError("prev_action batch size does not match features")
-        else:
-            action = None
-
-        transition_input = state.stochastic
-        if action is not None:
-            transition_input = torch.cat([transition_input, action], dim=-1)
-
-        deterministic = self.transition(transition_input, state.deterministic)
-
-        prior_hidden = self.prior_net(deterministic)
-        prior_mean = self.prior_mean_layer(prior_hidden)
-        prior_std = F.softplus(self.prior_std_layer(prior_hidden)) + self.min_std
-
-        posterior_input = torch.cat([deterministic, obs_embed], dim=-1)
-        posterior_hidden = self.posterior_net(posterior_input)
-        posterior_mean = self.posterior_mean_layer(posterior_hidden)
-        posterior_std = F.softplus(self.posterior_std_layer(posterior_hidden)) + self.min_std
-
-        if sample and self.sample_posteriors:
-            noise = torch.randn_like(posterior_std)
-            stochastic = posterior_mean + posterior_std * noise
-        else:
-            stochastic = posterior_mean
-
-        new_state = RSSMState(
-            deterministic=deterministic,
-            stochastic=stochastic,
-            prior_mean=prior_mean,
-            prior_std=prior_std,
-            posterior_mean=posterior_mean,
-            posterior_std=posterior_std,
+        self.prior_mlp = nn.Sequential(
+            nn.Linear(self.deterministic_dim, self.hidden_dim),
+            _build_activation(str(self.config.get("prior_activation", "elu"))),
+            nn.Linear(self.hidden_dim, 2 * self.stochastic_dim),
         )
 
-        self._last_state = new_state
-        self._prev_state = new_state.detach()
-        self._last_features = features
+        self.posterior_mlp = nn.Sequential(
+            nn.Linear(self.deterministic_dim + self.feature_dim, self.hidden_dim),
+            _build_activation(str(self.config.get("posterior_activation", "elu"))),
+            nn.Linear(self.hidden_dim, 2 * self.stochastic_dim),
+        )
 
-        return new_state.latent()
+        self._state: Optional[RSSMState] = None
+        self._prior_state: Optional[RSSMState] = None
 
-    def decode(self, representation: torch.Tensor) -> torch.Tensor:
-        if representation.dim() != 2:
-            representation = representation.reshape(representation.shape[0], -1)
-        return self.decoder(representation)
+        self.to(self.device)
 
-    def representation_loss(self, features: torch.Tensor, **kwargs: Any) -> Dict[str, torch.Tensor]:
-        """KL divergence between posterior and prior."""
-        state = kwargs.get("state")
-        if state is None:
-            state = self._last_state
-            if state is None:
-                _ = self.encode(features, **{k: kwargs[k] for k in ("prev_state", "prev_action") if k in kwargs})
-                state = self._last_state
-        if state is None:
-            raise RuntimeError("RSSMRepresentationLearner.representation_loss called without a state")
-
-        if state.posterior_mean is None or state.prior_mean is None:
-            raise RuntimeError("RSSMState missing posterior/prior statistics for KL computation")
-
-        posterior = Normal(state.posterior_mean, state.posterior_std)
-        prior = Normal(state.prior_mean, state.prior_std)
-        kl = kl_divergence(posterior, prior)
-        if kl.dim() > 1:
-            kl = kl.sum(dim=-1)
-        kl_loss = kl.mean()
-        return {
-            "representation_loss": kl_loss,
-            "representation_kl": kl_loss,
-            "posterior_mean_abs": state.posterior_mean.abs().mean(),
-            "prior_std_mean": state.prior_std.mean(),
-        }
-
+    # ------------------------------------------------------------------
+    # BaseRepresentationLearner API
+    # ------------------------------------------------------------------
     @property
     def representation_dim(self) -> int:
         return self.deterministic_dim + self.stochastic_dim
 
-    @property
-    def deterministic_state_dim(self) -> int:
-        return self.deterministic_dim
+    def initial_state(self, batch_size: int) -> RSSMState:
+        zeros_det = torch.zeros(batch_size, self.deterministic_dim, device=self.device)
+        zeros_stoch = torch.zeros(batch_size, self.stochastic_dim, device=self.device)
+        std = torch.ones_like(zeros_stoch) * self.min_std
+        return RSSMState(
+            deterministic=zeros_det,
+            stochastic=zeros_stoch,
+            mean=zeros_stoch.clone(),
+            std=std,
+        )
 
-    @property
-    def stochastic_state_dim(self) -> int:
-        return self.stochastic_dim
+    def reset_state(
+        self,
+        batch_size: Optional[int] = None,
+        indices: Optional[torch.Tensor] = None,
+    ) -> None:
+        if batch_size is not None:
+            self._state = self.initial_state(batch_size)
+            self._prior_state = self.initial_state(batch_size)
+            return
+        if self._state is None:
+            return
+        if indices is None:
+            self._state = None
+            self._prior_state = None
+            return
+        idx = self._indices_from_mask(indices, self._state.deterministic.shape[0])
+        if idx is None:
+            return
+        idx = idx.to(self._state.deterministic.device)
+        self._state.deterministic[idx] = 0.0
+        self._state.stochastic[idx] = 0.0
+        self._state.mean[idx] = 0.0
+        self._state.std[idx] = self.min_std
+        if self._prior_state is not None:
+            self._prior_state.deterministic[idx] = 0.0
+            self._prior_state.stochastic[idx] = 0.0
+            self._prior_state.mean[idx] = 0.0
+            self._prior_state.std[idx] = self.min_std
 
-    def get_cached_state(self) -> Optional[RSSMState]:
-        return self._last_state
+    def get_state(self) -> RSSMState:
+        if self._state is None:
+            raise RuntimeError("RSSM state requested before observe() was called.")
+        return self._state
+
+    def set_state(self, state: RSSMState) -> None:
+        self._state = state.to(self.device)
+
+    def observe(
+        self,
+        features: torch.Tensor,
+        prev_action: Optional[torch.Tensor] = None,
+        reset_mask: Optional[torch.Tensor] = None,
+        *,
+        detach_posteriors: bool = False,
+    ) -> LatentStep:
+        features = features.to(self.device)
+        batch_size = features.shape[0]
+
+        if self._state is None or self._state.deterministic.shape[0] != batch_size:
+            self.reset_state(batch_size=batch_size)
+
+        if reset_mask is not None:
+            self.reset_state(indices=reset_mask)
+
+        prev_state = self._state.clone()
+        prior = self._compute_prior(prev_state, prev_action)
+        posterior = self._compute_posterior(prior.deterministic, features)
+
+        self._state = posterior.clone()
+        self._prior_state = prior.clone()
+
+        result = LatentStep(posterior=posterior, prior=prior)
+        return result.detach() if detach_posteriors else result
+
+    def observe_batch(
+        self,
+        features: torch.Tensor,
+        prev_action: Optional[torch.Tensor] = None,
+        state: Optional[RSSMState] = None,
+        reset_mask: Optional[torch.Tensor] = None,
+    ) -> Tuple[LatentStep, RSSMState]:
+        features = features.to(self.device)
+        batch_size = features.shape[0]
+
+        if state is None:
+            state = self.initial_state(batch_size)
+        else:
+            state = state.to(self.device)
+
+        if reset_mask is not None:
+            idx = self._indices_from_mask(reset_mask, state.deterministic.shape[0])
+            if idx is not None:
+                idx = idx.to(state.deterministic.device)
+                state.deterministic[idx] = 0.0
+                state.stochastic[idx] = 0.0
+                state.mean[idx] = 0.0
+                state.std[idx] = self.min_std
+
+        prior = self._compute_prior(state, prev_action)
+        posterior = self._compute_posterior(prior.deterministic, features)
+        return LatentStep(posterior=posterior, prior=prior), posterior.clone()
+
+    def observe_sequence(
+        self,
+        features: torch.Tensor,
+        actions: Optional[torch.Tensor] = None,
+        dones: Optional[torch.Tensor] = None,
+        state: Optional[RSSMState] = None,
+    ) -> LatentSequence:
+        features = features.to(self.device)
+        batch_size, horizon, _ = features.shape
+
+        if state is None:
+            current_state = self.initial_state(batch_size)
+        else:
+            current_state = state.to(self.device)
+
+        if actions is not None and self.action_dim > 0:
+            actions = actions.to(self.device)
+        else:
+            actions = None
+
+        if dones is not None:
+            dones = dones.to(self.device)
+
+        zero_action = (
+            torch.zeros(batch_size, self.action_dim, device=self.device)
+            if self.action_dim > 0
+            else None
+        )
+
+        prior_det, prior_stoch, prior_mean, prior_std = [], [], [], []
+        post_det, post_stoch, post_mean, post_std = [], [], [], []
+
+        for t in range(horizon):
+            if dones is not None and t > 0:
+                reset_mask = dones[:, t - 1]
+                idx = self._indices_from_mask(reset_mask, current_state.deterministic.shape[0])
+                if idx is not None:
+                    idx = idx.to(self.device)
+                    current_state.deterministic[idx] = 0.0
+                    current_state.stochastic[idx] = 0.0
+                    current_state.mean[idx] = 0.0
+                    current_state.std[idx] = self.min_std
+
+            prior_state = current_state.clone()
+
+            if self.action_dim > 0:
+                if actions is None:
+                    prev_action = zero_action
+                elif t == 0:
+                    prev_action = zero_action
+                else:
+                    prev_action = actions[:, t - 1]
+            else:
+                prev_action = None
+
+            prior = self._compute_prior(prior_state, prev_action)
+            posterior = self._compute_posterior(prior.deterministic, features[:, t])
+
+            prior_det.append(prior.deterministic.clone())
+            prior_stoch.append(prior.stochastic.clone())
+            prior_mean.append(prior.mean.clone())
+            prior_std.append(prior.std.clone())
+
+            post_det.append(posterior.deterministic.clone())
+            post_stoch.append(posterior.stochastic.clone())
+            post_mean.append(posterior.mean.clone())
+            post_std.append(posterior.std.clone())
+
+            current_state = posterior.clone()
+
+        posterior_stack = RSSMState(
+            deterministic=torch.stack(post_det, dim=1),
+            stochastic=torch.stack(post_stoch, dim=1),
+            mean=torch.stack(post_mean, dim=1),
+            std=torch.stack(post_std, dim=1),
+        )
+        prior_stack = RSSMState(
+            deterministic=torch.stack(prior_det, dim=1),
+            stochastic=torch.stack(prior_stoch, dim=1),
+            mean=torch.stack(prior_mean, dim=1),
+            std=torch.stack(prior_std, dim=1),
+        )
+
+        return LatentSequence(
+            posterior=posterior_stack,
+            prior=prior_stack,
+            last_posterior=current_state.clone(),
+        )
+
+    def imagine_step(
+        self,
+        state: RSSMState,
+        action: torch.Tensor,
+        *,
+        deterministic: bool = False,
+    ) -> RSSMState:
+        state = state.to(self.device)
+        return self._compute_prior(state, action, deterministic=deterministic)
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+    def _compute_prior(
+        self,
+        state: RSSMState,
+        action: Optional[torch.Tensor],
+        *,
+        deterministic: bool = False,
+    ) -> RSSMState:
+        action_tensor = self._prepare_action(action, state.deterministic.shape[0])
+        if action_tensor is None:
+            input_tensor = state.stochastic
+        else:
+            input_tensor = torch.cat([state.stochastic, action_tensor], dim=-1)
+        hidden = self.input_layer(input_tensor)
+        deter = self.gru(hidden, state.deterministic)
+
+        stats = self.prior_mlp(deter)
+        mean, std_param = _split_stats(stats)
+        std = self._compute_std(std_param)
+        stoch = self._sample(mean, std, deterministic=deterministic or not self.sample_prior)
+        return RSSMState(deterministic=deter, stochastic=stoch, mean=mean, std=std)
+
+    def _compute_posterior(self, deter: torch.Tensor, features: torch.Tensor) -> RSSMState:
+        stats = self.posterior_mlp(torch.cat([deter, features], dim=-1))
+        mean, std_param = _split_stats(stats)
+        std = self._compute_std(std_param)
+        stoch = self._sample(mean, std, deterministic=not self.sample_posterior)
+        return RSSMState(deterministic=deter, stochastic=stoch, mean=mean, std=std)
+
+    def _compute_std(self, std_param: torch.Tensor) -> torch.Tensor:
+        if self.std_transform == "exp":
+            std = torch.exp(std_param)
+        else:
+            std = F.softplus(std_param) + self.min_std
+        if self.max_std is not None:
+            std = torch.clamp(std, max=self.max_std)
+        return std
+
+    def _sample(self, mean: torch.Tensor, std: torch.Tensor, *, deterministic: bool) -> torch.Tensor:
+        if deterministic:
+            return mean
+        noise = torch.randn_like(std)
+        return mean + noise * std
+
+    def _prepare_action(self, action: Optional[torch.Tensor], batch_size: int) -> Optional[torch.Tensor]:
+        if self.action_dim <= 0:
+            return None
+        if action is None:
+            return torch.zeros(batch_size, self.action_dim, device=self.device)
+        action = action.to(self.device)
+        if action.dim() == 1:
+            action = action.unsqueeze(-1)
+        if self.discrete_actions and action.shape[-1] == 1:
+            one_hot = torch.zeros(batch_size, self.action_dim, device=self.device)
+            indices = action.long().view(-1)
+            one_hot.scatter_(1, indices.unsqueeze(-1), 1.0)
+            action = one_hot
+        return action
+
+    @staticmethod
+    def _indices_from_mask(mask: torch.Tensor, length: int) -> Optional[torch.Tensor]:
+        mask = mask.to(mask.device)
+        if mask.dtype == torch.bool:
+            if mask.numel() != length:
+                mask = mask.view(-1)
+            idx = torch.nonzero(mask, as_tuple=False).squeeze(-1)
+            if idx.numel() == 0:
+                return None
+            return idx.to(torch.long)
+        if mask.dtype.is_floating_point:
+            mask = mask >= 0.5
+            idx = torch.nonzero(mask, as_tuple=False).squeeze(-1)
+            if idx.numel() == 0:
+                return None
+            return idx.to(torch.long)
+        if mask.dtype in (torch.int32, torch.int64):
+            return mask.view(-1).to(torch.long)
+        raise TypeError(f"Unsupported mask dtype: {mask.dtype}")
+
+
+__all__ = ["RSSMRepresentationLearner"]

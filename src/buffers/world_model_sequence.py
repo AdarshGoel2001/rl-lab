@@ -23,7 +23,7 @@ class WorldModelSequenceBuffer(BaseBuffer):
         config.setdefault("sequence_length", 16)
         config.setdefault("sequence_stride", None)
         config.setdefault("num_envs", 1)
-        config.setdefault("pad_end_of_episode", True)
+        config.setdefault("pad_end_of_episode", False)
 
         self.gamma = float(config["gamma"])
         self.sequence_length = int(config["sequence_length"])
@@ -39,7 +39,7 @@ class WorldModelSequenceBuffer(BaseBuffer):
         if self.num_envs <= 0:
             raise ValueError("num_envs must be positive for world-model buffer")
 
-        self.pad_end_of_episode = bool(config.get("pad_end_of_episode", True))
+        self.pad_end_of_episode = bool(config.get("pad_end_of_episode", False))
 
         # Return computer setup (optional, for MuZero/TD-MPC style algorithms)
         return_computer_config = config.get("return_computer")
@@ -117,15 +117,12 @@ class WorldModelSequenceBuffer(BaseBuffer):
         choice = np.random.choice(len(candidates), size=batch_size, replace=replace)
 
         sequences: Dict[str, List[np.ndarray]] = defaultdict(list)
-        masks: List[np.ndarray] = []
-
         env_cache = self._env_arrays_cache()
 
         for idx in choice:
             env_idx, start = candidates[idx]
             env_arrays = env_cache[env_idx]
             end = start + self.sequence_length
-            masks.append(self._build_mask(env_arrays.get("dones"), start, end))
             for key, array in env_arrays.items():
                 if array.shape[0] < end:
                     continue
@@ -137,8 +134,6 @@ class WorldModelSequenceBuffer(BaseBuffer):
             stacked = np.stack(windows, axis=0)
             batch[key] = self.to_tensor(stacked)
 
-        if masks:
-            batch["sequence_mask"] = self.to_tensor(np.stack(masks, axis=0), dtype=torch.float32)
         batch["sequence_length"] = torch.tensor(self.sequence_length, device=self.device)
         batch["sequence_stride"] = torch.tensor(self.sequence_stride, device=self.device)
 
@@ -158,12 +153,9 @@ class WorldModelSequenceBuffer(BaseBuffer):
 
         env_cache = self._env_arrays_cache()
         sequences: Dict[str, List[np.ndarray]] = defaultdict(list)
-        masks: List[np.ndarray] = []
-
         for env_idx, start in candidates:
             env_arrays = env_cache[env_idx]
             end = start + self.sequence_length
-            masks.append(self._build_mask(env_arrays.get("dones"), start, end))
             for key, array in env_arrays.items():
                 if array.shape[0] < end:
                     continue
@@ -175,8 +167,6 @@ class WorldModelSequenceBuffer(BaseBuffer):
             stacked = np.stack(windows, axis=0)
             batch[key] = self.to_tensor(stacked)
 
-        if masks:
-            batch["sequence_mask"] = self.to_tensor(np.stack(masks, axis=0), dtype=torch.float32)
         batch["sequence_length"] = torch.tensor(self.sequence_length, device=self.device)
         batch["sequence_stride"] = torch.tensor(self.sequence_stride, device=self.device)
 
