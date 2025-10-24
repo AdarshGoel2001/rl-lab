@@ -25,8 +25,10 @@ class DataSource(abc.ABC):
         """Whether the data source can produce training batches."""
         return False
 
-    def state_dict(self) -> Mapping[str, Any]:
-        """Serializable snapshot of data source state."""
+    def state_dict(self, *, mode: str = "checkpoint") -> Mapping[str, Any]:
+        """Serializable snapshot or metrics projection of data source state."""
+        if mode != "checkpoint":
+            return {}
         return {}
 
     def load_state_dict(self, state: Mapping[str, Any]) -> None:

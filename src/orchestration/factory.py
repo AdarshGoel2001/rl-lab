@@ -10,8 +10,9 @@ related modules directly from YAML specs.
 import copy
 import logging
 import numpy as np
+import torch
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Union, Mapping
 
 from ..utils.registry import (
     get_encoder,
@@ -269,6 +270,52 @@ class ComponentFactory(RegistryMixin):
             bundle.to(device)
 
         return bundle
+
+    @staticmethod
+    def create_world_model_optimizers(
+        components: WorldModelComponentBundle,
+        *,
+        algorithm_config: Optional[Any] = None,
+    ) -> Dict[str, torch.optim.Optimizer]:
+        """
+        Build optimizers for world-model components using algorithm configuration.
+        """
+
+        def _config_value(name: str, default: Any) -> Any:
+            if algorithm_config is None:
+                return default
+            if isinstance(algorithm_config, Mapping):
+                return algorithm_config.get(name, default)
+            return getattr(algorithm_config, name, default)
+
+        modules = (
+            components.encoder,
+            components.representation_learner,
+            components.reward_predictor,
+            components.observation_decoder,
+        )
+
+        params: list[torch.nn.Parameter] = []
+        for module in modules:
+            if module is None:
+                continue
+            params.extend(list(module.parameters()))
+
+        if not params:
+            raise RuntimeError("No parameters available to build world-model optimizer.")
+
+        lr = float(_config_value("world_model_lr", 2e-4))
+        betas = _config_value("world_model_betas", (0.9, 0.999))
+        weight_decay = float(_config_value("world_model_weight_decay", 0.0))
+
+        world_model_optimizer = torch.optim.Adam(
+            params,
+            lr=lr,
+            betas=betas,
+            weight_decay=weight_decay,
+        )
+
+        return {"world_model": world_model_optimizer}
 
     @staticmethod
     def create_controller(

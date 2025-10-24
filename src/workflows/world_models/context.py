@@ -74,6 +74,9 @@ class WorkflowContext:
     controller_manager: Optional[ControllerManager] = None
     data_sources: Optional[Dict[str, "DataSource"]] = None
     simulator_service: Optional[Any] = None
+    optimizers: Optional[Dict[str, Any]] = None
+    initial_observation: Optional[Any] = None
+    initial_dones: Optional[Any] = None
     global_step: int = 0
 
     def with_updates(self, **kwargs: Any) -> "WorkflowContext":

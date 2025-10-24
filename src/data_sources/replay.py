@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Optional
+from typing import Any, Dict, Mapping, Optional
 
 from ..buffers.base import BaseBuffer
 from ..utils.registry import get_buffer
@@ -53,9 +53,23 @@ class ReplayDataSource(DataSource):
             return False
         return self.buffer.ready()
 
-    def state_dict(self) -> Mapping[str, Any]:
+    def state_dict(self, *, mode: str = "checkpoint") -> Mapping[str, Any]:
         if self.buffer is None:
             return {}
+        if mode == "metrics":
+            metrics: Dict[str, Any] = {}
+            size = getattr(self.buffer, "size", None)
+            if size is not None:
+                metrics["replay/size"] = float(size)
+            capacity = getattr(self.buffer, "capacity", None)
+            if capacity is not None:
+                metrics["replay/capacity"] = float(capacity)
+            ready = getattr(self.buffer, "ready", None)
+            if callable(ready):
+                metrics["replay/ready"] = float(bool(ready()))
+            return metrics
+        if mode != "checkpoint":
+            raise ValueError(f"ReplayDataSource does not support state_dict mode '{mode}'.")
         return {"buffer": self.buffer.save_checkpoint()}
 
     def load_state_dict(self, state: Mapping[str, Any]) -> None:

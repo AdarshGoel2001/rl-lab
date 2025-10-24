@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import logging
 import time
-import random
-from collections import deque
 from typing import Any, Dict, Mapping, Optional, TYPE_CHECKING
 
 import numpy as np
@@ -31,6 +29,7 @@ class DreamerWorkflow(WorldModelWorkflow):
     """Skeleton workflow that will gradually replace the legacy Dreamer trainer."""
 
     def __init__(self, *, config: Optional[Config] = None) -> None:
+        super().__init__()
         self._override_config = config
 
         self.context: Optional[WorkflowContext] = None
@@ -39,7 +38,6 @@ class DreamerWorkflow(WorldModelWorkflow):
         self.buffer = None
         self.environment = None
         self.eval_environment = None
-        self.controllers: Dict[str, Any] = {}
         self.controller_manager: Optional[ControllerManager] = None
         self.actor_controller: Optional[torch.nn.Module] = None
         self.critic_controller: Optional[torch.nn.Module] = None
@@ -61,14 +59,6 @@ class DreamerWorkflow(WorldModelWorkflow):
         self.current_dones = None
         self.is_vectorized = False
         self.num_envs = 1
-
-        self.episode_returns: deque[float] = deque(maxlen=100)
-        self.episode_lengths: deque[int] = deque(maxlen=100)
-        self.current_episode_return = 0.0
-        self.current_episode_length = 0
-        self.vector_episode_returns: Optional[np.ndarray] = None
-        self.vector_episode_lengths: Optional[np.ndarray] = None
-        self.total_episodes = 0
         self.start_time: Optional[float] = None
         self._rssm_state = None
         self._prev_actions_model: Optional[torch.Tensor] = None
@@ -94,9 +84,11 @@ class DreamerWorkflow(WorldModelWorkflow):
         logger.info("Initializing Dreamer workflow from orchestrator context")
         self._bind_context(context)
 
-        self._prepare_optimizers()
-        self._set_seeds(self.config.experiment.seed)
-        self._reset_rollout_state()
+        self._reset_episode_tracking(self.num_envs, clear_history=True)
+        self._reset_rollout_state(
+            initial_obs=context.initial_observation,
+            initial_dones=context.initial_dones,
+        )
 
         training_cfg = self.config.training
         policy_warmup = int(getattr(training_cfg, "policy_warmup_updates", 0) or 0)
@@ -137,186 +129,79 @@ class DreamerWorkflow(WorldModelWorkflow):
         self.reward_predictor = self.components.reward_predictor
         self.observation_decoder = self.components.observation_decoder
 
-        self.controllers = context.controllers or {}
+        if context.controller_manager is None:
+            raise RuntimeError("DreamerWorkflow requires a controller manager in the workflow context.")
         self.controller_manager = context.controller_manager
-        self.actor_controller = self._resolve_controller(["actor", "policy"])
-        self.critic_controller = self._resolve_controller(["critic", "value", "value_function"])
+        self.actor_controller = self.controller_manager.get("actor")
+        self.critic_controller = self.controller_manager.get("critic")
+        if self.actor_controller is None or self.critic_controller is None:
+            raise RuntimeError("DreamerWorkflow requires 'actor' and 'critic' controllers in the workflow context.")
+
+        specs = getattr(self.components, "specs", {}) or {}
+        if "action_dim" not in specs:
+            raise RuntimeError("World-model components missing 'action_dim' spec; ensure the factory populates it.")
+        self.action_dim = int(specs["action_dim"])
+        self.discrete_actions = bool(specs.get("discrete_actions", False))
 
         self.is_vectorized = getattr(self.environment, "is_vectorized", False)
         self.num_envs = int(getattr(self.environment, "num_envs", 1) or 1)
 
-        specs = getattr(self.components, "specs", {}) or {}
-        if self.actor_controller is not None:
-            self.action_dim = getattr(self.actor_controller, "action_dim", specs.get("action_dim", 0))
-            self.discrete_actions = bool(getattr(self.actor_controller, "discrete_actions", specs.get("discrete_actions", False)))
-        else:
-            self.action_dim = int(specs.get("action_dim", 0))
-            self.discrete_actions = bool(specs.get("discrete_actions", False))
+        optimizers = context.optimizers or {}
+        self.world_model_optimizer = optimizers.get("world_model")
+        if self.world_model_optimizer is None:
+            raise RuntimeError("DreamerWorkflow requires a 'world_model' optimizer supplied via workflow context.")
 
-        if not self.action_dim and hasattr(self.environment, "action_space"):
-            action_space = self.environment.action_space
-            if getattr(action_space, "discrete", False):
-                self.discrete_actions = True
-                self.action_dim = int(getattr(action_space, "n", 1))
-            else:
-                shape = getattr(action_space, "shape", None) or (1,)
-                self.action_dim = int(np.prod(shape))
+        param_groups = getattr(self.world_model_optimizer, "param_groups", None)
+        if not param_groups or not param_groups[0].get("params"):
+            raise RuntimeError("World-model optimizer supplied to workflow does not manage any parameters.")
 
         self.collect_length = max(1, int(self.collect_length))
 
-    def _prepare_optimizers(self) -> None:
-        params = []
-        for module in (
-            self.encoder,
-            self.rssm,
-            self.reward_predictor,
-            self.observation_decoder,
-        ):
-            if module is None:
-                continue
-            params.extend(list(module.parameters()))
-
-        if not params:
-            raise RuntimeError("DreamerWorkflow could not gather parameters for world-model optimizer.")
-
-        lr = float(getattr(self.config.algorithm, "world_model_lr", 2e-4))
-        betas = getattr(self.config.algorithm, "world_model_betas", (0.9, 0.999))
-        weight_decay = float(getattr(self.config.algorithm, "world_model_weight_decay", 0.0))
-        self.world_model_optimizer = torch.optim.Adam(params, lr=lr, betas=betas, weight_decay=weight_decay)
-
-    def _set_seeds(self, seed: Optional[int]) -> None:
-        if seed is None:
-            return
-        random.seed(seed)
-        np.random.seed(seed)
-        torch.manual_seed(seed)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(seed)
-        if hasattr(self.environment, "reset"):
-            try:
-                self.environment.reset(seed=seed)
-            except TypeError:
-                # Some envs expect seed via config, ignore silently
-                pass
-
-    def _reset_rollout_state(self) -> None:
+    def _reset_rollout_state(
+        self,
+        *,
+        initial_obs: Optional[Any] = None,
+        initial_dones: Optional[Any] = None,
+    ) -> None:
         if self.environment is None:
             raise RuntimeError("Environment not bound before resetting rollout state.")
-        initial_obs = self.environment.reset()
+
+        if initial_obs is None:
+            raise ValueError("Initial observation snapshot missing from workflow context.")
         if isinstance(initial_obs, tuple):
             initial_obs = initial_obs[0]
-        self.current_obs = np.asarray(initial_obs, dtype=np.float32)
-        if self.current_obs.ndim == 1:
-            self.current_obs = np.expand_dims(self.current_obs, axis=0)
-        self.current_dones = np.zeros(self.current_obs.shape[0], dtype=bool)
+
+        obs_array = np.asarray(initial_obs, dtype=np.float32)
+        if obs_array.shape[0] != self.num_envs:
+            raise ValueError(
+                f"Environment reset returned batch dimension {obs_array.shape[0]}, expected {self.num_envs}."
+            )
+        self.current_obs = obs_array
+
+        if initial_dones is not None:
+            dones_array = np.asarray(initial_dones, dtype=bool)
+        else:
+            raise ValueError("Initial done mask missing from workflow context.")
+        if dones_array.shape[0] != self.num_envs:
+            raise ValueError(
+                f"Initial done mask provided batch dimension {dones_array.shape[0]}, expected {self.num_envs}."
+            )
+        self.current_dones = dones_array
+
+        self._reset_episode_tracking(self.num_envs, clear_history=False)
+
         self._prev_actions_model = torch.zeros(
-            self.current_obs.shape[0],
-            self.action_dim if self.action_dim else 1,
+            self.num_envs,
+            self.action_dim,
             device=self.device,
             dtype=torch.float32,
         )
-        self.current_episode_return = 0.0
-        self.current_episode_length = 0
-        if self.is_vectorized:
-            self.vector_episode_returns = np.zeros(self.num_envs, dtype=np.float32)
-            self.vector_episode_lengths = np.zeros(self.num_envs, dtype=np.int32)
-
-    def _resolve_controller(self, roles: list[str]) -> Optional[torch.nn.Module]:
-        if self.controller_manager is None:
-            for role in roles:
-                controller = self.controllers.get(role)
-                if controller is not None:
-                    return controller
-            return None
-        for role in roles:
-            try:
-                return self.controller_manager.get(role)
-            except KeyError:
-                continue
-        return None
 
     # ------------------------------------------------------------------
     # Utility helpers
     # ------------------------------------------------------------------
     def _latent_to_tensor(self, state: RSSMState) -> torch.Tensor:
         return torch.cat([state.deterministic, state.stochastic], dim=-1)
-
-    def _prepare_action_tensor(self, actions: torch.Tensor) -> torch.Tensor:
-        if actions is None:
-            return torch.zeros(1, self.action_dim, device=self.device)
-        if actions.dtype.is_floating_point():
-            return actions
-        # assume discrete indices
-        one_hot = F.one_hot(actions.to(torch.long), num_classes=self.action_dim).to(torch.float32)
-        return one_hot
-
-    def _action_to_env(self, action: torch.Tensor) -> np.ndarray:
-        if self.discrete_actions:
-            if action.dim() > 1:
-                return torch.argmax(action, dim=-1).cpu().numpy()
-            return action.long().cpu().numpy()
-        return action.cpu().numpy()
-
-    def _action_to_rssm(self, action: torch.Tensor) -> torch.Tensor:
-        if self.discrete_actions:
-            if action.dtype.is_floating_point() and action.shape[-1] == self.action_dim:
-                return action.to(torch.float32)
-            return F.one_hot(action.long(), num_classes=self.action_dim).to(torch.float32)
-        if action.dim() == 1:
-            return action.unsqueeze(-1)
-        return action
-
-    def _prepare_action_sequence(self, actions: torch.Tensor) -> torch.Tensor:
-        if self.discrete_actions:
-            if actions.dim() == 2:
-                return F.one_hot(actions.long(), num_classes=self.action_dim).to(torch.float32)
-            if actions.dim() == 3 and actions.shape[-1] == 1:
-                actions = actions.squeeze(-1)
-                return F.one_hot(actions.long(), num_classes=self.action_dim).to(torch.float32)
-        if actions.dim() == 2:
-            return actions.unsqueeze(-1).to(torch.float32)
-        return actions.to(torch.float32)
-
-    def _sample_action(self, dist: Distribution, deterministic: bool = False) -> torch.Tensor:
-        if deterministic:
-            if hasattr(dist, "mode"):
-                mode = dist.mode
-                return mode() if callable(mode) else mode
-            if hasattr(dist, "mean"):
-                mean = dist.mean
-                return mean() if callable(mean) else mean
-        if getattr(dist, "has_rsample", False):
-            return dist.rsample()
-        return dist.sample()
-
-    def _update_episode_stats(self, rewards: np.ndarray, dones: np.ndarray, infos: list[dict[str, Any]]) -> None:
-        rewards = np.asarray(rewards, dtype=np.float32)
-        dones = np.asarray(dones, dtype=bool)
-        if self.is_vectorized:
-            assert self.vector_episode_returns is not None
-            assert self.vector_episode_lengths is not None
-            self.vector_episode_returns += rewards
-            self.vector_episode_lengths += 1
-            for idx, done in enumerate(dones):
-                if done:
-                    ep_return = float(self.vector_episode_returns[idx])
-                    ep_length = int(self.vector_episode_lengths[idx])
-                    self.episode_returns.append(ep_return)
-                    self.episode_lengths.append(ep_length)
-                    self.total_episodes += 1
-                    self.vector_episode_returns[idx] = 0.0
-                    self.vector_episode_lengths[idx] = 0
-        else:
-            reward = float(rewards.item())
-            done = bool(dones.item())
-            self.current_episode_return += reward
-            self.current_episode_length += 1
-            if done:
-                self.episode_returns.append(self.current_episode_return)
-                self.episode_lengths.append(self.current_episode_length)
-                self.total_episodes += 1
-                self.current_episode_return = 0.0
-                self.current_episode_length = 0
 
     def _collect_metrics(self, rewards: np.ndarray, duration: float) -> Dict[str, float]:
         metrics: Dict[str, float] = {
@@ -331,29 +216,21 @@ class DreamerWorkflow(WorldModelWorkflow):
             metrics["episode_length/rolling_mean"] = float(np.mean(self.episode_lengths))
         return metrics
 
-    def _prepare_batch(self, batch: Batch) -> Dict[str, torch.Tensor]:
-        device = self.device or "cpu"
-        tensor_batch: Dict[str, torch.Tensor] = {}
-        for key, value in batch.items():
-            if isinstance(value, torch.Tensor):
-                tensor_batch[key] = value.to(device)
-            else:
-                tensor_batch[key] = torch.as_tensor(value, device=device)
-        return tensor_batch
-
-    def _world_model_parameters(self):
-        modules = [
-            self.encoder,
-            self.rssm,
-            self.reward_predictor,
-            self.observation_decoder,
-        ]
-        for module in modules:
-            if module is None:
-                continue
-            for param in module.parameters():
-                if param.requires_grad:
-                    yield param
+    def _metrics_state(self) -> Dict[str, float]:
+        metrics: Dict[str, float] = {
+            "workflow/world_model_updates": float(self.world_model_updates),
+            "workflow/episodes_total": float(self.total_episodes),
+        }
+        if self.episode_returns:
+            metrics["workflow/return_mean"] = float(np.mean(self.episode_returns))
+            metrics["workflow/return_std"] = float(np.std(self.episode_returns))
+            metrics["workflow/return_max"] = float(np.max(self.episode_returns))
+            metrics["workflow/return_min"] = float(np.min(self.episode_returns))
+        if self.episode_lengths:
+            metrics["workflow/episode_length_mean"] = float(np.mean(self.episode_lengths))
+        if self.start_time is not None:
+            metrics["workflow/runtime_seconds"] = float(time.time() - self.start_time)
+        return metrics
 
     def _compute_lambda_returns(
         self,
@@ -413,15 +290,12 @@ class DreamerWorkflow(WorldModelWorkflow):
             latent_tensor = self._latent_to_tensor(latent_step.posterior)
 
             actor_dist: Distribution = self.actor_controller.forward(latent_tensor)
-            action_tensor = self._sample_action(actor_dist, deterministic=deterministic)
-            action_env = self._action_to_env(action_tensor)
+            action_tensor = actor_dist.mean if deterministic else actor_dist.rsample()
 
-            value_pred = self.critic_controller.forward(latent_tensor).detach() if self.critic_controller else torch.zeros(
-                latent_tensor.shape[0], device=self.device
-            )
+            value_pred = self.critic_controller.forward(latent_tensor).detach()
             log_prob = actor_dist.log_prob(action_tensor)
 
-            next_obs, reward, done, infos = self.environment.step(action_env)
+            next_obs, reward, done, infos = self.environment.step(action_tensor)
 
             self._update_episode_stats(reward, done, infos)
 
@@ -430,15 +304,21 @@ class DreamerWorkflow(WorldModelWorkflow):
             dones_list.append(np.asarray(done, dtype=bool))
             values_list.append(value_pred.cpu().numpy())
             log_probs_list.append(log_prob.detach().cpu().numpy())
-            actions_list.append(np.asarray(action_env))
+            actions_list.append(action_tensor.detach().cpu().numpy())
             next_obs_list.append(np.asarray(next_obs, dtype=np.float32))
 
             self.current_obs = np.asarray(next_obs, dtype=np.float32)
-            if self.current_obs.ndim == 1:
-                self.current_obs = np.expand_dims(self.current_obs, axis=0)
+            if self.current_obs.shape[0] != self.num_envs:
+                raise ValueError(
+                    f"Environment step returned batch dimension {self.current_obs.shape[0]}, expected {self.num_envs}."
+                )
             self.current_dones = np.asarray(done, dtype=bool)
+            if self.current_dones.shape[0] != self.num_envs:
+                raise ValueError(
+                    f"Environment step returned done batch dimension {self.current_dones.shape[0]}, expected {self.num_envs}."
+                )
 
-            self._prev_actions_model = self._action_to_rssm(action_tensor.detach()).to(self.device)
+            self._prev_actions_model = action_tensor.detach()
 
         duration = max(time.time() - start_time, 1e-9)
         rewards_stack = np.stack(rewards_for_metrics, axis=0)
@@ -470,7 +350,12 @@ class DreamerWorkflow(WorldModelWorkflow):
         if self.world_model_optimizer is None or self.encoder is None or self.rssm is None:
             raise RuntimeError("World-model components not ready before update.")
 
-        tensor_batch = self._prepare_batch(batch)
+        device = self.device or "cpu"
+        tensor_batch: Dict[str, torch.Tensor] = {
+            key: (value.to(device) if isinstance(value, torch.Tensor) else torch.as_tensor(value, device=device))
+            for key, value in batch.items()
+        }
+
         observations = tensor_batch["observations"].to(torch.float32)  # (B, T, ...)
         actions = tensor_batch.get("actions")
         dones = tensor_batch.get("dones")
@@ -481,18 +366,13 @@ class DreamerWorkflow(WorldModelWorkflow):
         batch_size, horizon = observations.shape[0], observations.shape[1]
         obs_flat = observations.reshape(batch_size * horizon, *observations.shape[2:])
         features_flat = self.encoder(obs_flat)
-        if features_flat.dim() == 1:
-            features_flat = features_flat.unsqueeze(-1)
         feature_dim = features_flat.shape[-1]
         features = features_flat.reshape(batch_size, horizon, feature_dim)
 
-        actions_seq = None
-        if actions is not None:
-            actions_seq = self._prepare_action_sequence(actions)
         if dones is not None:
             dones = dones.to(torch.bool)
 
-        sequence: LatentSequence = self.rssm.observe_sequence(features, actions=actions_seq, dones=dones)
+        sequence: LatentSequence = self.rssm.observe_sequence(features, actions=actions, dones=dones)
         posterior = sequence.posterior
         prior = sequence.prior
 
@@ -501,19 +381,15 @@ class DreamerWorkflow(WorldModelWorkflow):
 
         losses: Dict[str, torch.Tensor] = {}
 
-        recon_loss = torch.tensor(0.0, device=self.device)
         if self.observation_decoder is not None:
             target = obs_flat.reshape(batch_size * horizon, -1)
             recon = self.observation_decoder(latent_flat)
-            recon_loss = F.mse_loss(recon, target)
-            losses["reconstruction"] = recon_loss
+            losses["reconstruction"] = F.mse_loss(recon, target)
 
-        reward_loss = torch.tensor(0.0, device=self.device)
         if self.reward_predictor is not None and "rewards" in tensor_batch:
             rewards = tensor_batch["rewards"].to(torch.float32).reshape(batch_size * horizon, -1)
             pred_rewards = self.reward_predictor(latent_flat)
-            reward_loss = F.mse_loss(pred_rewards, rewards)
-            losses["reward"] = reward_loss
+            losses["reward"] = F.mse_loss(pred_rewards, rewards)
 
         prior_dist = prior.distribution() if prior is not None else None
         posterior_dist = posterior.distribution()
@@ -530,7 +406,7 @@ class DreamerWorkflow(WorldModelWorkflow):
         self.world_model_optimizer.zero_grad()
         total_loss.backward()
         if self.max_grad_norm is not None:
-            clip_grad_norm_(self._world_model_parameters(), self.max_grad_norm)
+            clip_grad_norm_(self.world_model_optimizer.param_groups[0]["params"], self.max_grad_norm)
         self.world_model_optimizer.step()
         self.world_model_updates += 1
 
@@ -539,9 +415,9 @@ class DreamerWorkflow(WorldModelWorkflow):
             "world_model/kl_loss": float(kl_loss.item()),
         }
         if "reconstruction" in losses:
-            metrics["world_model/recon_loss"] = float(recon_loss.item())
+            metrics["world_model/recon_loss"] = float(losses["reconstruction"].item())
         if "reward" in losses:
-            metrics["world_model/reward_loss"] = float(reward_loss.item())
+            metrics["world_model/reward_loss"] = float(losses["reward"].item())
         return metrics
 
     def update_controller(
@@ -550,12 +426,15 @@ class DreamerWorkflow(WorldModelWorkflow):
         *,
         phase: PhaseConfig,
     ) -> Dict[str, float]:
-        if self.actor_controller is None or self.critic_controller is None:
-            return {}
         if self.world_model_updates < self.actor_warmup_updates:
             return {"controller/skipped": 1.0}
 
-        tensor_batch = self._prepare_batch(batch)
+        device = self.device or "cpu"
+        tensor_batch: Dict[str, torch.Tensor] = {
+            key: (value.to(device) if isinstance(value, torch.Tensor) else torch.as_tensor(value, device=device))
+            for key, value in batch.items()
+        }
+
         observations = tensor_batch["observations"].to(torch.float32)
         actions = tensor_batch.get("actions")
         dones = tensor_batch.get("dones")
@@ -566,9 +445,8 @@ class DreamerWorkflow(WorldModelWorkflow):
             features_flat = self.encoder(obs_flat)
             feature_dim = features_flat.shape[-1]
             features = features_flat.reshape(batch_size, horizon, feature_dim)
-            actions_seq = self._prepare_action_sequence(actions) if actions is not None else None
             dones_seq = dones.to(torch.bool) if dones is not None else None
-            seq = self.rssm.observe_sequence(features, actions=actions_seq, dones=dones_seq)
+            seq = self.rssm.observe_sequence(features, actions=actions, dones=dones_seq)
             start_state = seq.last_posterior.detach()
 
         imagination_horizon = int(phase.get("imagination_horizon", self.imagination_horizon))
@@ -590,28 +468,23 @@ class DreamerWorkflow(WorldModelWorkflow):
         )
         advantages = returns - values.detach()
 
-        actor_optimizer = getattr(self.actor_controller, "optimizer", None)
-        critic_optimizer = getattr(self.critic_controller, "optimizer", None)
-
         actor_loss = -(advantages.detach() * log_probs).mean() - self.entropy_coef * entropies.mean()
-        if actor_optimizer is not None:
-            actor_optimizer.zero_grad()
+        actor_optimizer = self.actor_controller.optimizer
+        actor_optimizer.zero_grad()
         actor_loss.backward(retain_graph=True)
         actor_grad_clip = getattr(self.actor_controller, "grad_clip", None)
         if actor_grad_clip is not None:
             clip_grad_norm_(self.actor_controller.parameters(), actor_grad_clip)
-        if actor_optimizer is not None:
-            actor_optimizer.step()
+        actor_optimizer.step()
 
         critic_loss = F.mse_loss(values, returns.detach())
-        if critic_optimizer is not None:
-            critic_optimizer.zero_grad()
+        critic_optimizer = self.critic_controller.optimizer
+        critic_optimizer.zero_grad()
         critic_loss.backward()
         critic_grad_clip = getattr(self.critic_controller, "grad_clip", None)
         if critic_grad_clip is not None:
             clip_grad_norm_(self.critic_controller.parameters(), critic_grad_clip)
-        if critic_optimizer is not None:
-            critic_optimizer.step()
+        critic_optimizer.step()
 
         metrics = {
             "controller/actor_loss": float(actor_loss.item()),
@@ -663,14 +536,9 @@ class DreamerWorkflow(WorldModelWorkflow):
         for _ in range(horizon):
             latent_tensor = self._latent_to_tensor(state)
             actor_dist: Distribution = self.actor_controller.forward(latent_tensor)
-            action = self._sample_action(actor_dist, deterministic=deterministic)
-            rssm_action = self._action_to_rssm(action)
+            action = actor_dist.mean if deterministic else actor_dist.rsample()
 
-            critic_value = (
-                self.critic_controller.forward(latent_tensor)
-                if self.critic_controller is not None
-                else torch.zeros(batch_size, device=self.device)
-            )
+            critic_value = self.critic_controller.forward(latent_tensor)
             values.append(critic_value)
             log_probs.append(actor_dist.log_prob(action))
             entropy = actor_dist.entropy()
@@ -687,13 +555,9 @@ class DreamerWorkflow(WorldModelWorkflow):
             )
             rewards.append(reward_pred.squeeze(-1))
 
-            state = self.rssm.imagine_step(state, rssm_action, deterministic=deterministic)
+            state = self.rssm.imagine_step(state, action, deterministic=deterministic)
 
-        bootstrap_value = (
-            self.critic_controller.forward(self._latent_to_tensor(state))
-            if self.critic_controller is not None
-            else torch.zeros(batch_size, device=self.device)
-        )
+        bootstrap_value = self.critic_controller.forward(self._latent_to_tensor(state))
 
         states_tensor = torch.stack(states_feat, dim=1)
         rewards_tensor = torch.stack(rewards, dim=1)
@@ -703,7 +567,7 @@ class DreamerWorkflow(WorldModelWorkflow):
 
         return {
             "states": states_tensor,
-            "actions": torch.stack([self._action_to_rssm(a) for a in actions], dim=1),
+            "actions": torch.stack(actions, dim=1),
             "rewards": rewards_tensor,
             "values": values_tensor,
             "log_probs": log_probs_tensor,
@@ -711,13 +575,15 @@ class DreamerWorkflow(WorldModelWorkflow):
             "bootstrap": bootstrap_value.view(batch_size),
         }
 
-    def log_metrics(self, step: int, writer: Any) -> None:
-        if hasattr(self.buffer, "log_diagnostics"):
-            self.buffer.log_diagnostics(writer, step)
-
-    def state_dict(self) -> Dict[str, Any]:
+    def state_dict(self, *, mode: str = "checkpoint") -> Dict[str, Any]:
+        if mode == "metrics":
+            return self._metrics_state()
+        if mode != "checkpoint":
+            raise ValueError(f"DreamerWorkflow does not support state_dict mode '{mode}'.")
+        if self.world_model_optimizer is None:
+            raise RuntimeError("World-model optimizer not initialised before saving state.")
         payload = {
-            "world_model_optimizer": self._maybe_state_dict(self.world_model_optimizer),
+            "world_model_optimizer": self.world_model_optimizer.state_dict(),
             "world_model_updates": self.world_model_updates,
         }
         if self.controller_manager is not None:

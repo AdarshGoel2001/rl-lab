@@ -87,7 +87,16 @@ class OfflineDatasetSource(DataSource):
     def ready(self) -> bool:
         return self._size > 0
 
-    def state_dict(self) -> Mapping[str, Any]:
+    def state_dict(self, *, mode: str = "checkpoint") -> Mapping[str, Any]:
+        if mode == "metrics":
+            metrics: Dict[str, float] = {
+                "offline/size": float(self._size),
+            }
+            if self.path is not None:
+                metrics["offline/has_path"] = 1.0
+            return metrics
+        if mode != "checkpoint":
+            raise ValueError(f"OfflineDatasetSource does not support state_dict mode '{mode}'.")
         return {}
 
     def load_state_dict(self, state: Mapping[str, Any]) -> None:

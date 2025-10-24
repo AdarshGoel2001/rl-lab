@@ -88,12 +88,19 @@ class ControllerManager:
                 combined.update(metrics)
         return combined
 
-    def state_dict(self) -> Dict[str, Any]:
+    def state_dict(self, *, mode: str = "checkpoint") -> Dict[str, Any]:
         snapshot: Dict[str, Any] = {}
         for role, controller in self._controllers.items():
             state_hook = getattr(controller, "state_dict", None)
-            if callable(state_hook):
-                snapshot[role] = state_hook()
+            if not callable(state_hook):
+                continue
+            try:
+                snapshot[role] = state_hook(mode=mode)  # type: ignore[call-arg]
+            except TypeError:
+                if mode == "checkpoint":
+                    snapshot[role] = state_hook()
+                else:
+                    continue
         return snapshot
 
     def load_state_dict(self, state: Mapping[str, Any]) -> None:

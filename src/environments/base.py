@@ -224,8 +224,11 @@ class BaseEnvironment(ABC):
         # Apply normalization if enabled
         if self.normalize_obs:
             obs = self._normalize_observation(obs)
-        
-        return np.asarray(obs, dtype=np.float32)
+
+        obs_array = np.asarray(obs, dtype=np.float32)
+        if not self.is_vectorized:
+            obs_array = np.expand_dims(obs_array, axis=0)
+        return obs_array
     
     def step(self, action: Union[torch.Tensor, np.ndarray]) -> Tuple[np.ndarray, Union[float, np.ndarray], Union[bool, np.ndarray], Union[Dict[str, Any], List[Dict[str, Any]]]]:
         """
@@ -278,11 +281,12 @@ class BaseEnvironment(ABC):
         if self.normalize_obs:
             obs = self._normalize_observation(obs)
 
+        reward_value = float(reward)
         if self.normalize_reward:
-            reward = self._normalize_reward(float(reward))
+            reward_value = self._normalize_reward(reward_value)
 
         # Update episode statistics
-        self._episode_return += reward
+        self._episode_return += reward_value
 
         # Check for episode timeout
         if self.max_episode_steps and self._current_step >= self.max_episode_steps:
@@ -306,7 +310,10 @@ class BaseEnvironment(ABC):
             self._episode_count += 1
             info['episode_count'] = self._episode_count
 
-        return np.asarray(obs, dtype=np.float32), float(reward), bool(done), info
+        obs_array = np.expand_dims(np.asarray(obs, dtype=np.float32), axis=0)
+        reward_array = np.array([reward_value], dtype=np.float32)
+        done_array = np.array([bool(done)], dtype=bool)
+        return obs_array, reward_array, done_array, info
     
     def _normalize_observation(self, obs: np.ndarray) -> np.ndarray:
         """Apply observation normalization"""

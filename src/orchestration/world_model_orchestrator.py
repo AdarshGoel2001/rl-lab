@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import logging
 import copy
+import logging
+import random
 import time
-from collections import deque
 from numbers import Number
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
@@ -114,6 +114,9 @@ class WorldModelOrchestrator:
             eval_cls = get_environment(eval_cfg["wrapper"])
             eval_environment = eval_cls(eval_cfg)
 
+        seed = getattr(self.config.experiment, "seed", None)
+        self._configure_seeds(seed)
+
         component_spec = self._prepare_component_spec(train_environment)
         raw_components = ComponentFactory.create_world_model_components(
             component_spec,
@@ -122,6 +125,11 @@ class WorldModelOrchestrator:
         )
         raw_components.to(self.device)
         components = WorldModelComponents(**raw_components.as_dict())
+
+        optimizers = ComponentFactory.create_world_model_optimizers(
+            raw_components,
+            algorithm_config=getattr(self.config, "algorithm", None),
+        )
 
         buffer_cls = get_buffer(self.config.buffer.type)
         buffer_cfg = dict(self.config.buffer.__dict__)
@@ -139,6 +147,21 @@ class WorldModelOrchestrator:
             checkpoint_manager=self.checkpoint_manager,
             experiment_logger=self.experiment_logger,
         )
+
+        initial_obs = None
+        initial_dones = None
+        if hasattr(train_environment, "reset"):
+            reset_kwargs: Dict[str, Any] = {}
+            if seed is not None:
+                reset_kwargs["seed"] = seed
+            try:
+                initial_obs = train_environment.reset(**reset_kwargs)
+            except TypeError:
+                initial_obs = train_environment.reset()
+            if isinstance(initial_obs, tuple):
+                initial_obs = initial_obs[0]
+            num_envs = int(getattr(train_environment, "num_envs", 1) or 1)
+            initial_dones = np.zeros(num_envs, dtype=bool)
 
         controllers_cfg = getattr(self.config, "controllers", None) or {}
         controllers_cfg = self._prepare_controller_config(controllers_cfg, components)
@@ -159,7 +182,22 @@ class WorldModelOrchestrator:
         context = context.with_updates(data_sources=data_sources)
         self.data_sources = data_sources
 
+        context = context.with_updates(
+            optimizers=optimizers,
+            initial_observation=initial_obs,
+            initial_dones=initial_dones,
+        )
+
         return context
+
+    def _configure_seeds(self, seed: Optional[int]) -> None:
+        if seed is None:
+            return
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
 
     def _initialize_data_sources(
         self,
@@ -414,7 +452,9 @@ class WorldModelOrchestrator:
                 scheduler.advance(action)
 
             if log_freq > 0 and (self.global_step - last_log) >= log_freq:
-                self.workflow.log_metrics(self.global_step, self.experiment_logger)
+                workflow_metrics = self.workflow.state_dict(mode="metrics")
+                if workflow_metrics:
+                    self.experiment_logger.log_metrics(workflow_metrics, self.global_step, prefix="workflow")
                 last_log = self.global_step
 
             if ckpt_freq > 0 and (self.global_step - last_ckpt) >= ckpt_freq:
@@ -430,7 +470,9 @@ class WorldModelOrchestrator:
         duration = max(time.time() - start_time, 1e-6)
         final_metrics = dict(last_update_metrics)
         final_metrics.setdefault("wall_time", duration)
-        self.workflow.log_metrics(self.global_step, self.experiment_logger)
+        workflow_metrics = self.workflow.state_dict(mode="metrics")
+        if workflow_metrics:
+            self.experiment_logger.log_metrics(workflow_metrics, self.global_step, prefix="workflow")
         self._save_checkpoint(final=True)
         self.experiment_logger.finish()
         return final_metrics
@@ -451,14 +493,14 @@ class WorldModelOrchestrator:
         if self.controller_manager is None and new_context.controller_manager is not None:
             self.controller_manager = new_context.controller_manager
 
-    def _controller_state_dict(self) -> Dict[str, Any]:
+    def _controller_state_dict(self, *, mode: str = "checkpoint") -> Dict[str, Any]:
         manager = self.controller_manager
         if manager is None:
             context = self._context or self.ensure_context()
             manager = context.controller_manager
         if manager is None:
             return {}
-        return manager.state_dict()
+        return manager.state_dict(mode=mode)
 
     def _route_collect_result(self, result: CollectResult) -> None:
         extras = getattr(result, "extras", {}) or {}
@@ -498,40 +540,26 @@ class WorldModelOrchestrator:
         }
 
         workflow = self.workflow
+        episode_snapshot = workflow._snapshot_episode_tracking()
         original_state = {
             "environment": getattr(workflow, "environment", None),
             "is_vectorized": getattr(workflow, "is_vectorized", False),
             "num_envs": getattr(workflow, "num_envs", 1),
             "current_obs": getattr(workflow, "current_obs", None),
             "current_dones": getattr(workflow, "current_dones", None),
-            "episode_returns": getattr(workflow, "episode_returns", None),
-            "episode_lengths": getattr(workflow, "episode_lengths", None),
-            "total_episodes": getattr(workflow, "total_episodes", 0),
-            "current_episode_return": getattr(workflow, "current_episode_return", 0.0),
-            "current_episode_length": getattr(workflow, "current_episode_length", 0),
-            "vector_episode_returns": getattr(workflow, "vector_episode_returns", None),
-            "vector_episode_lengths": getattr(workflow, "vector_episode_lengths", None),
+            "episode_tracking": episode_snapshot,
         }
-
-        maxlen_returns = getattr(original_state["episode_returns"], "maxlen", 100) or 100
-        maxlen_lengths = getattr(original_state["episode_lengths"], "maxlen", 100) or 100
 
         workflow.environment = eval_environment
         workflow.is_vectorized = bool(getattr(eval_environment, "is_vectorized", False))
         workflow.num_envs = int(getattr(eval_environment, "num_envs", 1))
         workflow.current_obs = None
         workflow.current_dones = None
-        workflow.episode_returns = deque(maxlen=maxlen_returns)
-        workflow.episode_lengths = deque(maxlen=maxlen_lengths)
-        workflow.total_episodes = 0
-        workflow.current_episode_return = 0.0
-        workflow.current_episode_length = 0
-        if workflow.is_vectorized:
-            workflow.vector_episode_returns = np.zeros(workflow.num_envs, dtype=np.float32)
-            workflow.vector_episode_lengths = np.zeros(workflow.num_envs, dtype=np.int32)
-        else:
-            workflow.vector_episode_returns = None
-            workflow.vector_episode_lengths = None
+        workflow._reset_episode_tracking(
+            workflow.num_envs,
+            clear_history=True,
+            history=episode_snapshot.get("history_len"),
+        )
 
         start_time = time.time()
 
@@ -569,13 +597,7 @@ class WorldModelOrchestrator:
             workflow.num_envs = original_state["num_envs"]
             workflow.current_obs = original_state["current_obs"]
             workflow.current_dones = original_state["current_dones"]
-            workflow.episode_returns = original_state["episode_returns"]
-            workflow.episode_lengths = original_state["episode_lengths"]
-            workflow.total_episodes = original_state["total_episodes"]
-            workflow.current_episode_return = original_state["current_episode_return"]
-            workflow.current_episode_length = original_state["current_episode_length"]
-            workflow.vector_episode_returns = original_state["vector_episode_returns"]
-            workflow.vector_episode_lengths = original_state["vector_episode_lengths"]
+            workflow._restore_episode_tracking(original_state["episode_tracking"])
 
         duration = time.time() - start_time
 
@@ -672,8 +694,8 @@ class WorldModelOrchestrator:
             "buffer": self.ensure_context().buffer,
             "metrics": {},
             "world_model_updates": getattr(self.workflow, "world_model_updates", 0),
-            "workflow": self.workflow.state_dict(),
-            "data_sources": {name: src.state_dict() for name, src in self.data_sources.items()},
+            "workflow": self.workflow.state_dict(mode="checkpoint"),
+            "data_sources": {name: src.state_dict(mode="checkpoint") for name, src in self.data_sources.items()},
             "controllers": self._controller_state_dict(),
         }
         name = "final" if final else None

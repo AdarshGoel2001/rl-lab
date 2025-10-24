@@ -243,7 +243,7 @@ class RSSMRepresentationLearner(BaseRepresentationLearner):
                 elif t == 0:
                     prev_action = zero_action
                 else:
-                    prev_action = actions[:, t - 1]
+                    prev_action = self._prepare_action(actions[:, t - 1], batch_size)
             else:
                 prev_action = None
 
