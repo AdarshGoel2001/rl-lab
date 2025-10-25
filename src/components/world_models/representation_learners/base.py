@@ -4,11 +4,31 @@ from __future__ import annotations
 
 import abc
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, TypeVar, Protocol, runtime_checkable
 
 import torch
 import torch.nn as nn
 from torch.distributions import Independent, Normal
+
+
+LatentStateT = TypeVar("LatentStateT", bound="LatentState")
+
+
+@runtime_checkable
+class LatentState(Protocol):
+    """Lightweight protocol describing the minimal latent-state contract."""
+
+    def to_tensor(self) -> torch.Tensor:
+        """Return a flattened tensor view of the latent representation."""
+
+    def to(self: LatentStateT, device: torch.device | str) -> LatentStateT:
+        """Move latent tensors to the requested device."""
+
+    def detach(self: LatentStateT) -> LatentStateT:
+        """Detach latent tensors from the computation graph."""
+
+    def clone(self: LatentStateT) -> LatentStateT:
+        """Deep-copy latent tensors."""
 
 
 @dataclass
@@ -19,6 +39,9 @@ class RSSMState:
     stochastic: torch.Tensor
     mean: torch.Tensor
     std: torch.Tensor
+
+    def to_tensor(self) -> torch.Tensor:
+        return torch.cat([self.deterministic, self.stochastic], dim=-1)
 
     def clone(self) -> "RSSMState":
         return RSSMState(
@@ -56,8 +79,8 @@ class RSSMState:
 class LatentStep:
     """Posterior/prior pair returned by representation learner updates."""
 
-    posterior: RSSMState
-    prior: Optional[RSSMState] = None
+    posterior: LatentState
+    prior: Optional[LatentState] = None
 
     def detach(self) -> "LatentStep":
         prior = self.prior.detach() if self.prior is not None else None
@@ -69,22 +92,26 @@ class LatentStep:
 
     @property
     def posterior_dist(self) -> Independent:
-        return self.posterior.distribution()
+        if not hasattr(self.posterior, "distribution"):
+            raise AttributeError("LatentState implementation does not expose distribution().")
+        return self.posterior.distribution()  # type: ignore[attr-defined]
 
     @property
     def prior_dist(self) -> Optional[Independent]:
         if self.prior is None:
             return None
-        return self.prior.distribution()
+        if not hasattr(self.prior, "distribution"):
+            raise AttributeError("LatentState implementation does not expose distribution().")
+        return self.prior.distribution()  # type: ignore[attr-defined]
 
 
 @dataclass
 class LatentSequence:
     """Temporal rollout of posterior/prior states."""
 
-    posterior: RSSMState
-    prior: Optional[RSSMState]
-    last_posterior: RSSMState
+    posterior: LatentState
+    prior: Optional[LatentState]
+    last_posterior: LatentState
 
     def to(self, device: torch.device | str) -> "LatentSequence":
         prior = self.prior.to(device) if self.prior is not None else None
@@ -104,13 +131,17 @@ class LatentSequence:
 
     @property
     def posterior_dist(self) -> Independent:
-        return self.posterior.distribution()
+        if not hasattr(self.posterior, "distribution"):
+            raise AttributeError("LatentState implementation does not expose distribution().")
+        return self.posterior.distribution()  # type: ignore[attr-defined]
 
     @property
     def prior_dist(self) -> Optional[Independent]:
         if self.prior is None:
             return None
-        return self.prior.distribution()
+        if not hasattr(self.prior, "distribution"):
+            raise AttributeError("LatentState implementation does not expose distribution().")
+        return self.prior.distribution()  # type: ignore[attr-defined]
 
 
 class BaseRepresentationLearner(nn.Module, metaclass=abc.ABCMeta):
@@ -133,7 +164,7 @@ class BaseRepresentationLearner(nn.Module, metaclass=abc.ABCMeta):
     # State management
     # ------------------------------------------------------------------
     @abc.abstractmethod
-    def initial_state(self, batch_size: int) -> RSSMState:
+    def initial_state(self, batch_size: int) -> LatentState:
         """Return zero-initialised state for the requested batch size."""
 
     @abc.abstractmethod
@@ -145,12 +176,21 @@ class BaseRepresentationLearner(nn.Module, metaclass=abc.ABCMeta):
         """Reset cached online state buffers."""
 
     @abc.abstractmethod
-    def get_state(self) -> RSSMState:
+    def get_state(self) -> LatentState:
         """Return cached online posterior state."""
 
     @abc.abstractmethod
-    def set_state(self, state: RSSMState) -> None:
+    def set_state(self, state: LatentState) -> None:
         """Load cached online posterior state."""
+
+    def export_specs(self) -> Dict[str, Any]:
+        """Return metadata describing the latent representation.
+
+        Subclasses can extend this payload with additional keys used by other
+        components (e.g., deterministic/stochastic dims for RSSM). By default we
+        expose the flattened representation dimensionality.
+        """
+        return {"representation_dim": self.representation_dim}
 
     # ------------------------------------------------------------------
     # Online usage
@@ -174,9 +214,9 @@ class BaseRepresentationLearner(nn.Module, metaclass=abc.ABCMeta):
         self,
         features: torch.Tensor,
         prev_action: Optional[torch.Tensor] = None,
-        state: Optional[RSSMState] = None,
+        state: Optional[LatentState] = None,
         reset_mask: Optional[torch.Tensor] = None,
-    ) -> Tuple[LatentStep, RSSMState]:
+    ) -> Tuple[LatentStep, LatentState]:
         """Process a batch step without mutating the cached online state."""
 
     @abc.abstractmethod
@@ -185,7 +225,7 @@ class BaseRepresentationLearner(nn.Module, metaclass=abc.ABCMeta):
         features: torch.Tensor,
         actions: Optional[torch.Tensor] = None,
         dones: Optional[torch.Tensor] = None,
-        state: Optional[RSSMState] = None,
+        state: Optional[LatentState] = None,
     ) -> LatentSequence:
         """Encode an entire sequence of features/actions and return stacked latents."""
 
@@ -195,11 +235,11 @@ class BaseRepresentationLearner(nn.Module, metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def imagine_step(
         self,
-        state: RSSMState,
+        state: LatentState,
         action: torch.Tensor,
         *,
         deterministic: bool = False,
-    ) -> RSSMState:
+    ) -> LatentState:
         """Roll latent state forward without real observations."""
 
     # ------------------------------------------------------------------
@@ -218,4 +258,10 @@ class BaseRepresentationLearner(nn.Module, metaclass=abc.ABCMeta):
         return self
 
 
-__all__ = ["BaseRepresentationLearner", "RSSMState", "LatentStep", "LatentSequence"]
+__all__ = [
+    "BaseRepresentationLearner",
+    "LatentState",
+    "RSSMState",
+    "LatentStep",
+    "LatentSequence",
+]

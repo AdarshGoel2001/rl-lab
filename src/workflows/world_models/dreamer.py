@@ -17,7 +17,7 @@ from .base import Batch, CollectResult, PhaseConfig, WorldModelWorkflow
 from .context import WorkflowContext, WorldModelComponents
 from .controllers import ControllerManager
 from ...components.world_models.representation_learners import (
-    RSSMState,
+    LatentState,
     LatentStep,
     LatentSequence,
 )
@@ -200,9 +200,6 @@ class DreamerWorkflow(WorldModelWorkflow):
     # ------------------------------------------------------------------
     # Utility helpers
     # ------------------------------------------------------------------
-    def _latent_to_tensor(self, state: RSSMState) -> torch.Tensor:
-        return torch.cat([state.deterministic, state.stochastic], dim=-1)
-
     def _collect_metrics(self, rewards: np.ndarray, duration: float) -> Dict[str, float]:
         metrics: Dict[str, float] = {
             "reward/mean": float(np.mean(rewards)),
@@ -287,7 +284,7 @@ class DreamerWorkflow(WorldModelWorkflow):
                 reset_mask=reset_mask,
                 detach_posteriors=True,
             )
-            latent_tensor = self._latent_to_tensor(latent_step.posterior)
+            latent_tensor = latent_step.posterior.to_tensor()
 
             actor_dist: Distribution = self.actor_controller.forward(latent_tensor)
             action_tensor = actor_dist.mean if deterministic else actor_dist.rsample()
@@ -376,7 +373,7 @@ class DreamerWorkflow(WorldModelWorkflow):
         posterior = sequence.posterior
         prior = sequence.prior
 
-        latent_feat = torch.cat([posterior.deterministic, posterior.stochastic], dim=-1)
+        latent_feat = posterior.to_tensor()
         latent_flat = latent_feat.reshape(batch_size * horizon, -1)
 
         losses: Dict[str, torch.Tensor] = {}
@@ -391,8 +388,8 @@ class DreamerWorkflow(WorldModelWorkflow):
             pred_rewards = self.reward_predictor(latent_flat)
             losses["reward"] = F.mse_loss(pred_rewards, rewards)
 
-        prior_dist = prior.distribution() if prior is not None else None
-        posterior_dist = posterior.distribution()
+        prior_dist = sequence.prior_dist if prior is not None else None
+        posterior_dist = sequence.posterior_dist
         if prior_dist is None:
             raise RuntimeError("RSSM observe_sequence did not return prior states.")
         kl_values = kl_divergence(posterior_dist, prior_dist)
@@ -518,12 +515,12 @@ class DreamerWorkflow(WorldModelWorkflow):
             prev_action = self._prev_actions_model if self._prev_actions_model is not None else None
             latent_step = self.rssm.observe(obs_tensor, prev_action=prev_action, detach_posteriors=True)
             latent_state = latent_step.posterior.detach()
-        elif isinstance(latent, RSSMState):
+        elif isinstance(latent, LatentState):
             latent_state = latent.to(self.device)
         else:
             raise TypeError(f"Unsupported latent type for imagination: {type(latent)}")
 
-        batch_size = latent_state.deterministic.shape[0]
+        batch_size = latent_state.to_tensor().shape[0]
 
         states_feat = []
         rewards = []
@@ -534,7 +531,7 @@ class DreamerWorkflow(WorldModelWorkflow):
 
         state = latent_state
         for _ in range(horizon):
-            latent_tensor = self._latent_to_tensor(state)
+            latent_tensor = state.to_tensor()
             actor_dist: Distribution = self.actor_controller.forward(latent_tensor)
             action = actor_dist.mean if deterministic else actor_dist.rsample()
 
@@ -557,7 +554,7 @@ class DreamerWorkflow(WorldModelWorkflow):
 
             state = self.rssm.imagine_step(state, action, deterministic=deterministic)
 
-        bootstrap_value = self.critic_controller.forward(self._latent_to_tensor(state))
+        bootstrap_value = self.critic_controller.forward(state.to_tensor())
 
         states_tensor = torch.stack(states_feat, dim=1)
         rewards_tensor = torch.stack(rewards, dim=1)

@@ -20,6 +20,4 @@ via configuration files, enabling plug-and-play experimentation.
 # Ensure world-model specific components register with the global registry
 from .world_models import (  # noqa: F401
     RSSMRepresentationLearner,
-    RSSMDynamicsModel,
-    MLPRewardPredictor,
 )

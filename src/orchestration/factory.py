@@ -180,17 +180,29 @@ class ComponentFactory(RegistryMixin):
 
         dynamics_params = dict(dynamics_cfg)
         specs: Dict[str, Any] = {}
-        rep = representation_learner
-        if hasattr(rep, "representation_dim"):
-            state_dim = rep.representation_dim
-            dynamics_params.setdefault("state_dim", state_dim)
-            specs["representation_dim"] = state_dim
-        if hasattr(rep, "deterministic_state_dim"):
-            dynamics_params.setdefault("deterministic_dim", rep.deterministic_state_dim)
-            specs["deterministic_state_dim"] = rep.deterministic_state_dim
-        if hasattr(rep, "stochastic_state_dim"):
-            dynamics_params.setdefault("stochastic_dim", rep.stochastic_state_dim)
-            specs["stochastic_state_dim"] = rep.stochastic_state_dim
+
+        export_hook = getattr(representation_learner, "export_specs", None)
+        rep_specs = {}
+        if callable(export_hook):
+            rep_specs = export_hook() or {}
+            if not isinstance(rep_specs, dict):
+                raise TypeError(
+                    f"Representation learner export_specs() must return a dict, got {type(rep_specs)}"
+                )
+        specs.update(rep_specs)
+
+        rep_dim = rep_specs.get("representation_dim")
+        if rep_dim is not None:
+            dynamics_params.setdefault("state_dim", rep_dim)
+
+        deterministic_dim = rep_specs.get("deterministic_state_dim")
+        if deterministic_dim is not None:
+            dynamics_params.setdefault("deterministic_dim", deterministic_dim)
+
+        stochastic_dim = rep_specs.get("stochastic_state_dim")
+        if stochastic_dim is not None:
+            dynamics_params.setdefault("stochastic_dim", stochastic_dim)
+
         if "action_dim" in dynamics_params and "action_dim" not in specs:
             try:
                 specs["action_dim"] = int(np.prod(dynamics_params["action_dim"]))
@@ -233,8 +245,8 @@ class ComponentFactory(RegistryMixin):
         reward_entry = _extract("reward_predictor", required=False)
         if reward_entry is not None:
             reward_type, reward_params = reward_entry
-            if hasattr(rep, "representation_dim"):
-                reward_params.setdefault("representation_dim", rep.representation_dim)
+            if rep_dim is not None:
+                reward_params.setdefault("representation_dim", rep_dim)
             reward_predictor = ComponentFactory.create_component(
                 "reward_predictor", reward_type, reward_params
             )
@@ -243,8 +255,8 @@ class ComponentFactory(RegistryMixin):
         decoder_entry = _extract("observation_decoder", required=False)
         if decoder_entry is not None:
             decoder_type, decoder_params = decoder_entry
-            if hasattr(rep, "representation_dim"):
-                decoder_params.setdefault("representation_dim", rep.representation_dim)
+            if rep_dim is not None:
+                decoder_params.setdefault("representation_dim", rep_dim)
             observation_decoder = ComponentFactory.create_component(
                 "observation_decoder", decoder_type, decoder_params
             )

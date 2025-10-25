@@ -89,6 +89,16 @@ class RSSMRepresentationLearner(BaseRepresentationLearner):
     def representation_dim(self) -> int:
         return self.deterministic_dim + self.stochastic_dim
 
+    def export_specs(self) -> Dict[str, Any]:
+        specs = super().export_specs()
+        specs.update(
+            {
+                "deterministic_state_dim": self.deterministic_dim,
+                "stochastic_state_dim": self.stochastic_dim,
+            }
+        )
+        return specs
+
     def initial_state(self, batch_size: int) -> RSSMState:
         zeros_det = torch.zeros(batch_size, self.deterministic_dim, device=self.device)
         zeros_stoch = torch.zeros(batch_size, self.stochastic_dim, device=self.device)
