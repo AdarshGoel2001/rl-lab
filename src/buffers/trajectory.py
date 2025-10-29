@@ -20,12 +20,10 @@ from collections import defaultdict
 import logging
 
 from src.buffers.base import BaseBuffer, Experience
-from src.utils.registry import register_buffer
 
 logger = logging.getLogger(__name__)
 
 
-@register_buffer("trajectory")
 class TrajectoryBuffer(BaseBuffer):
     """
     Buffer for storing complete trajectories for on-policy RL algorithms.

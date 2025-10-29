@@ -20,12 +20,10 @@ from typing import Dict, Any, Tuple, Optional, Union, Callable, List
 import torch
 
 from src.environments.base import BaseEnvironment, SpaceSpec
-from src.utils.registry import register_environment
 
 logger = logging.getLogger(__name__)
 
 
-@register_environment("vectorized_gym")
 class VectorizedGymWrapper(BaseEnvironment):
     """
     Vectorized wrapper for OpenAI Gym environments using Gymnasium's vector environments.
@@ -41,7 +39,7 @@ class VectorizedGymWrapper(BaseEnvironment):
         vectorization_type: Type of vectorization used ('sync' or 'async')
     """
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Optional[Dict[str, Any]] = None, **kwargs: Any):
         """
         Initialize vectorized Gym environment wrapper.
         
@@ -56,6 +54,10 @@ class VectorizedGymWrapper(BaseEnvironment):
                 - render_mode: Rendering mode (None for vectorized envs)
                 - env_kwargs: Additional environment-specific kwargs
         """
+        config = dict(config or {})
+        if kwargs:
+            config.update(kwargs)
+
         self.env_name = config['name']
         self.num_envs = config.get('num_envs', 8)
         self.vectorization = config.get('vectorization', 'auto')
@@ -340,40 +342,80 @@ class VectorizedGymWrapper(BaseEnvironment):
             
             # Step vectorized environment
             observations, rewards, terminateds, truncateds, infos = self.vec_env.step(actions)
-            
-            # Apply per-environment transforms
-            observations = self._apply_per_env_transforms(observations)
-            
+
             # Handle done flags (terminated OR truncated)
             dones = terminateds | truncateds
-            
+
+            reset_indices = np.nonzero(dones)[0]
+            reset_infos: List[Dict[str, Any]] = []
+            if reset_indices.size > 0:
+                reset_obs, raw_reset_infos = self.vec_env.reset_done(reset_indices.tolist())
+
+                # Reset per-environment transform state
+                if hasattr(self, "_transform_pipelines") and self._transform_pipelines:
+                    for env_idx in reset_indices:
+                        pipeline = self._transform_pipelines[env_idx]
+                        if pipeline is not None:
+                            pipeline.reset_states()
+
+                if reset_obs is not None:
+                    reset_obs = np.asarray(reset_obs, dtype=np.float32)
+                    observations[reset_indices] = reset_obs
+
+                if raw_reset_infos is None:
+                    reset_infos = [{} for _ in range(len(reset_indices))]
+                elif isinstance(raw_reset_infos, list):
+                    reset_infos = [
+                        info if isinstance(info, dict) else {}
+                        for info in raw_reset_infos
+                    ]
+                elif isinstance(raw_reset_infos, dict):
+                    reset_infos = [{} for _ in range(len(reset_indices))]
+                    for key, values in raw_reset_infos.items():
+                        try:
+                            values_seq = list(values)
+                        except TypeError:
+                            values_seq = [values] * len(reset_indices)
+                        for offset, env_idx in enumerate(reset_indices):
+                            if offset < len(values_seq):
+                                reset_infos[offset][key] = values_seq[offset]
+                else:
+                    reset_infos = [{} for _ in range(len(reset_indices))]
+
+            # Apply per-environment transforms after potential resets
+            observations = self._apply_per_env_transforms(observations)
+
             # Normalize infos to list-of-dicts format
-            # Gymnasium vectorized envs can return dict-of-arrays or list-of-dicts
             infos = self._normalize_infos(infos)
-            
+
+            if reset_indices.size > 0:
+                for offset, env_idx in enumerate(reset_indices):
+                    info_update = reset_infos[offset] if offset < len(reset_infos) else {}
+                    if info_update:
+                        infos[env_idx].update(info_update)
+                    infos[env_idx].setdefault("reset", True)
+
             # Update episode tracking
             self._episode_returns += rewards
             self._episode_lengths += 1
-            
+
             # Handle episode completion
             for i, done in enumerate(dones):
                 if done:
                     self._episode_counts[i] += 1
-                    
-                    # Add episode info (infos is guaranteed to be proper list-of-dicts now)
-                    infos[i]['episode_return'] = float(self._episode_returns[i])
-                    infos[i]['episode_length'] = int(self._episode_lengths[i])
-                    infos[i]['episode_count'] = int(self._episode_counts[i])
-                    
-                    # Reset tracking for this environment
+
+                    infos[i]["episode_return"] = float(self._episode_returns[i])
+                    infos[i]["episode_length"] = int(self._episode_lengths[i])
+                    infos[i]["episode_count"] = int(self._episode_counts[i])
+
                     self._episode_returns[i] = 0.0
                     self._episode_lengths[i] = 0
-            
+
             return (
                 np.array(observations, dtype=np.float32),
                 np.array(rewards, dtype=np.float32),
                 np.array(dones, dtype=bool),
-                infos
+                infos,
             )
         
         except Exception as e:
@@ -436,7 +478,7 @@ class VectorizedGymWrapper(BaseEnvironment):
             logger.warning(f"Unknown infos format: {type(infos)}, using empty dicts")
             return [{} for _ in range(self.num_envs)]
     
-    def reset(self, seed: Optional[int] = None) -> torch.Tensor:
+    def reset(self, seed: Optional[int] = None) -> np.ndarray:
         """
         Reset all environments and return initial observations.
         
@@ -444,7 +486,7 @@ class VectorizedGymWrapper(BaseEnvironment):
             seed: Random seed for reproducibility
             
         Returns:
-            Initial observations as PyTorch tensor with shape (num_envs, obs_dim)
+            Initial observations as numpy array with shape (num_envs, obs_dim)
         """
         # Reset underlying environments
         obs = self._reset_environment(seed)
@@ -453,9 +495,9 @@ class VectorizedGymWrapper(BaseEnvironment):
         if self.normalize_obs:
             obs = self._normalize_observation_batch(obs)
         
-        return torch.tensor(obs, dtype=torch.float32)
+        return np.asarray(obs, dtype=np.float32)
     
-    def step(self, actions: Union[torch.Tensor, np.ndarray]) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, List[Dict[str, Any]]]:
+    def step(self, actions: Union[torch.Tensor, np.ndarray]) -> Tuple[np.ndarray, np.ndarray, np.ndarray, List[Dict[str, Any]]]:
         """
         Execute batched actions and return results.
         
@@ -464,9 +506,9 @@ class VectorizedGymWrapper(BaseEnvironment):
             
         Returns:
             Tuple of (observations, rewards, dones, infos) where:
-            - observations: PyTorch tensor (num_envs, obs_dim)
-            - rewards: PyTorch tensor (num_envs,)
-            - dones: PyTorch tensor (num_envs,)
+            - observations: numpy array (num_envs, obs_dim)
+            - rewards: numpy array (num_envs,)
+            - dones: numpy array (num_envs,)
             - infos: List of info dictionaries, one per environment
         """
         # Convert actions to numpy if needed
@@ -484,12 +526,10 @@ class VectorizedGymWrapper(BaseEnvironment):
         if self.normalize_reward:
             rewards = self._normalize_reward_batch(rewards)
         
-        return (
-            torch.tensor(obs, dtype=torch.float32),
-            torch.tensor(rewards, dtype=torch.float32),
-            torch.tensor(dones, dtype=torch.bool),
-            infos
-        )
+        obs_out = np.asarray(obs, dtype=np.float32)
+        rewards_out = np.asarray(rewards, dtype=np.float32)
+        dones_out = np.asarray(dones, dtype=bool)
+        return obs_out, rewards_out, dones_out, infos
     
     def _normalize_observation_batch(self, obs_batch: np.ndarray) -> np.ndarray:
         """Apply observation normalization to a batch of observations"""

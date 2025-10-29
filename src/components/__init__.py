@@ -17,4 +17,7 @@ Each component is registered using decorators and can be instantiated
 via configuration files, enabling plug-and-play experimentation.
 """
 
-# Import statements will be added as components are implemented
+# Ensure world-model specific components register with the global registry
+from .world_models import (  # noqa: F401
+    RSSMRepresentationLearner,
+)

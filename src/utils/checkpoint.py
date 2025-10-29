@@ -109,6 +109,9 @@ class CheckpointManager:
             }
         }
 
+        if 'world_model_updates' in trainer_state:
+            checkpoint_data['world_model_updates'] = int(trainer_state['world_model_updates'])
+
         # Add any additional state from trainer (using generic interface)
         for key, value in trainer_state.items():
             if key not in ['algorithm', 'buffer'] and hasattr(value, 'get_state'):
@@ -234,6 +237,8 @@ class CheckpointManager:
             # Update trainer state with checkpoint training progress
             trainer_state['step'] = step
             trainer_state['metrics'] = checkpoint_data.get('metrics', {})
+            if 'world_model_updates' in checkpoint_data:
+                trainer_state['world_model_updates'] = checkpoint_data['world_model_updates']
 
             logger.info(f"Training state restored to step {step}")
 

@@ -1,0 +1,78 @@
+# @package _global_
+
+defaults:
+  - /workflow: dreamer
+  - /components/encoder: mlp
+  - /components/representation_learner: rssm
+  - /components/dynamics_model: rssm
+  - /components/reward_predictor: mlp
+  - /components/observation_decoder: mlp
+  - /controller@controllers.actor: dreamer_actor
+  - /controller@controllers.critic: dreamer_critic
+  - /training: default
+  - /buffer: world_model_sequence
+  - /logging: tensorboard
+  - /environment: cartpole
+  - _self_
+
+experiment:
+  name: dreamer_cartpole
+  seed: 42
+  device: auto
+  paradigm: world_model
+
+_dims:
+  observation: 4
+  action: 2
+  encoder_output: 128
+  deterministic: 200
+  stochastic: 32
+  representation: ${add:${_dims.deterministic},${_dims.stochastic}}
+
+algorithm:
+  world_model_lr: 2.0e-4
+  actor_lr: 3.0e-4
+  critic_lr: 3.0e-4
+  imagination_horizon: 15
+  gamma: 0.99
+  lambda_return: 0.95
+  entropy_coef: 0.01
+  max_grad_norm: 1.0
+
+components:
+  encoder:
+    input_dim: ${_dims.observation}
+    hidden_dims: [128, 128]
+    activation: elu
+  representation_learner:
+    feature_dim: ${_dims.encoder_output}
+    deterministic_dim: ${_dims.deterministic}
+    stochastic_dim: ${_dims.stochastic}
+    action_dim: ${_dims.action}
+  dynamics_model:
+    feature_dim: ${_dims.encoder_output}
+    deterministic_dim: ${_dims.deterministic}
+    stochastic_dim: ${_dims.stochastic}
+    action_dim: ${_dims.action}
+  reward_predictor:
+    representation_dim: ${_dims.representation}
+    output_dim: 1
+  observation_decoder:
+    representation_dim: ${_dims.representation}
+    output_dim: ${_dims.observation}
+
+controllers:
+  actor:
+    representation_dim: ${_dims.representation}
+    action_dim: ${_dims.action}
+    discrete_actions: true
+  critic:
+    representation_dim: ${_dims.representation}
+
+buffer:
+  num_envs: ${environment.num_envs}
+
+training:
+  eval_frequency: 25000
+  checkpoint_frequency: 100000
+  total_timesteps: 500000

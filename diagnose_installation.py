@@ -173,29 +173,11 @@ def check_framework_components():
         sys.path.insert(0, str(current_dir))
     
     try:
-        # Test component imports
-        from src.utils.registry import auto_import_modules, list_registered_components
-        print_success("Registry system importable")
-        
-        # Test auto-import
-        auto_import_modules()
-        components = list_registered_components()
-        
-        print_info(f"Registered algorithms: {len(components['algorithms'])}")
-        print_info(f"Registered networks: {len(components['networks'])}")  
-        print_info(f"Registered environments: {len(components['environments'])}")
-        print_info(f"Registered buffers: {len(components['buffers'])}")
-        
-        total_components = sum(len(v) for v in components.values())
-        if total_components > 0:
-            print_success(f"Framework components loaded ({total_components} total)")
-            return True
-        else:
-            print_warning("No framework components registered")
-            return False
-            
+        from hydra.utils import instantiate  # noqa: F401
+        print_success("Hydra available for component instantiation")
+        return True
     except Exception as e:
-        print_error(f"Framework import failed: {e}")
+        print_error(f"Hydra import failed: {e}")
         return False
 
 

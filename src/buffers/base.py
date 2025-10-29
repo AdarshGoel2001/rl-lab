@@ -13,7 +13,7 @@ Key benefits:
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import torch
 from collections import deque, namedtuple
@@ -50,11 +50,11 @@ class BaseBuffer(ABC):
                 - device: PyTorch device
                 - Buffer-specific parameters
         """
-        self.config = config
+        self.config = dict(config)
         self.capacity = config.get('capacity', 100000)
         self.batch_size = config.get('batch_size', 64)
         self.device = torch.device(config.get('device', 'cpu'))
-        
+        self._device_override = self.config.get("device")
         self._size = 0
         self._position = 0
         
@@ -127,6 +127,10 @@ class BaseBuffer(ABC):
             True if buffer is ready for sampling
         """
         return self._size >= self.batch_size
+
+    def initialize(self, context: Any = None) -> None:
+        """Optional hook for context-dependent setup."""
+        del context
     
     def to_tensor(self, data: np.ndarray, dtype: Optional[torch.dtype] = None) -> torch.Tensor:
         """
@@ -224,5 +228,4 @@ class BaseBuffer(ABC):
             'empty': self.is_empty(),
             'full': self.is_full(),
         }
-
 

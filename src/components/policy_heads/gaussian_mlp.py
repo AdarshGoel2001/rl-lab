@@ -12,10 +12,8 @@ import numpy as np
 from torch.distributions import Normal
 
 from .base import BasePolicyHead
-from ...utils.registry import register_policy_head
 
 
-@register_policy_head("continuous_actor")
 class ContinuousActorPolicyHead(BasePolicyHead):
     """
     Continuous actor policy head based on original ContinuousActorMLP.
@@ -172,7 +170,6 @@ class ContinuousActorPolicyHead(BasePolicyHead):
         return log_prob
 
 
-@register_policy_head("gaussian_mlp")
 class GaussianMLPPolicyHead(BasePolicyHead):
     """
     Simple Gaussian MLP policy head for basic continuous control.

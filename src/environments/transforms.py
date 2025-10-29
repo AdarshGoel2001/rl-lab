@@ -114,7 +114,6 @@ def get_transform(name: str, **kwargs) -> BaseTransform:
 # Image Processing Transforms
 # ============================================================================
 
-@register_transform("to_grayscale", stateful=False)
 class ToGrayscale(StatelessTransform):
     """Convert RGB/RGBA image to grayscale"""
     
@@ -133,7 +132,6 @@ class ToGrayscale(StatelessTransform):
             return obs
 
 
-@register_transform("resize", stateful=False)
 class Resize(StatelessTransform):
     """Resize image to specified dimensions"""
     
@@ -160,7 +158,6 @@ class Resize(StatelessTransform):
             return obs
 
 
-@register_transform("scale_to_float", stateful=False)
 class ScaleToFloat(StatelessTransform):
     """Scale uint8 pixel values to [0, 1] float range"""
     
@@ -181,7 +178,6 @@ class ScaleToFloat(StatelessTransform):
             return obs.astype(np.float32)
 
 
-@register_transform("normalize", stateful=False)
 class Normalize(StatelessTransform):
     """Normalize observations by mean and std"""
     
@@ -199,7 +195,6 @@ class Normalize(StatelessTransform):
 # Temporal Transforms (Stateful)
 # ============================================================================
 
-@register_transform("frame_stack", stateful=True)
 class FrameStack(StatefulTransform):
     """Stack multiple consecutive frames along channel dimension"""
     
@@ -234,7 +229,6 @@ class FrameStack(StatefulTransform):
         self.frames.clear()
 
 
-@register_transform("frame_skip", stateful=True)
 class FrameSkip(StatefulTransform):
     """Skip frames by returning every nth frame"""
     
@@ -263,7 +257,6 @@ class FrameSkip(StatefulTransform):
 # Atari-Specific Transforms
 # ============================================================================
 
-@register_transform("atari_preprocessing", stateful=True)
 class AtariPreprocessing(StatefulTransform):
     """
     Standard Atari preprocessing including noop actions, life loss handling, and frame skipping.
@@ -292,7 +285,6 @@ class AtariPreprocessing(StatefulTransform):
 # Clipping and Reward Transforms
 # ============================================================================
 
-@register_transform("clip", stateful=False)
 class Clip(StatelessTransform):
     """Clip observation values to specified range"""
     

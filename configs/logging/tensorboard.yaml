@@ -1,0 +1,4 @@
+tensorboard: true
+terminal: true
+wandb_enabled: false
+log_frequency: 2000

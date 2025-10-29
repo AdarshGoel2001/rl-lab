@@ -1,0 +1,12 @@
+total_timesteps: 500000
+checkpoint_frequency: 100000
+eval_frequency: 25000
+num_eval_episodes: 10
+phases:
+  - name: online_training
+    type: online
+    data_source: replay
+    workflow_hooks:
+      - collect
+      - update_world_model
+      - update_controller

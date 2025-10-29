@@ -15,10 +15,8 @@ import minigrid
 from minigrid.wrappers import ImgObsWrapper, FlatObsWrapper
 
 from .base import BaseEnvironment, SpaceSpec
-from ..utils.registry import register_environment
 
 
-@register_environment("minigrid")
 class MiniGridWrapper(BaseEnvironment):
     """
     Wrapper for MiniGrid environments with configurable observation processing.
@@ -30,7 +28,7 @@ class MiniGridWrapper(BaseEnvironment):
     - 'flat': Concatenated image + direction vector
     """
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Optional[Dict[str, Any]] = None, **kwargs: Any):
         """
         Initialize MiniGrid environment wrapper.
         
@@ -41,6 +39,10 @@ class MiniGridWrapper(BaseEnvironment):
                 - max_steps: Maximum steps per episode (overrides env default)
                 - render_mode: Rendering mode ('human', 'rgb_array', None)
         """
+        config = dict(config or {})
+        if kwargs:
+            config.update(kwargs)
+
         self.obs_mode = config.get('obs_mode', 'image')
         self.render_mode = config.get('render_mode', None)
         

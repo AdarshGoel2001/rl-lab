@@ -45,6 +45,7 @@ venv.bak/
 # Experiment outputs (if you want to ignore them)
 experiments/
 runs/
+reports/
 # logs/
 # outputs/
 

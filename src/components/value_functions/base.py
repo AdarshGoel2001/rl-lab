@@ -19,7 +19,7 @@ class BaseValueFunction(nn.Module, ABC):
     They are used for policy evaluation and improvement in RL algorithms.
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any] | None = None, **kwargs: Any):
         """
         Initialize value function with configuration.
 
@@ -27,10 +27,15 @@ class BaseValueFunction(nn.Module, ABC):
             config: Dictionary containing hyperparameters and settings
         """
         super().__init__()
-        self.config = config
-        self.device = torch.device(config.get('device', 'cpu'))
-        self.representation_dim = config.get('representation_dim')
-        self.action_dim = config.get('action_dim', None)  # None for state-value functions
+        merged_config: Dict[str, Any] = {}
+        if config is not None:
+            merged_config.update(config)
+        if kwargs:
+            merged_config.update(kwargs)
+        self.config = merged_config
+        self.device = torch.device(self.config.get('device', 'cpu'))
+        self.representation_dim = self.config.get('representation_dim')
+        self.action_dim = self.config.get('action_dim', None)  # None for state-value functions
         self._build_value_function()
 
     @abstractmethod

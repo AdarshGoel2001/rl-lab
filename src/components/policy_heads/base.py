@@ -6,7 +6,7 @@ Policy heads convert representations to action distributions.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 import torch
 import torch.nn as nn
 from torch.distributions import Distribution
@@ -20,7 +20,7 @@ class BasePolicyHead(nn.Module, ABC):
     They handle the final stage of action generation in the modular architecture.
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any] | None = None, **kwargs: Any):
         """
         Initialize policy head with configuration.
 
@@ -28,11 +28,16 @@ class BasePolicyHead(nn.Module, ABC):
             config: Dictionary containing hyperparameters and settings
         """
         super().__init__()
-        self.config = config
-        self.device = torch.device(config.get('device', 'cpu'))
-        self.representation_dim = config.get('representation_dim')
-        self.action_dim = config.get('action_dim')
-        self.discrete_actions = config.get('discrete_actions', False)
+        merged_config: Dict[str, Any] = {}
+        if config is not None:
+            merged_config.update(config)
+        if kwargs:
+            merged_config.update(kwargs)
+        self.config = merged_config
+        self.device = torch.device(self.config.get('device', 'cpu'))
+        self.representation_dim = self.config.get('representation_dim')
+        self.action_dim = self.config.get('action_dim')
+        self.discrete_actions = self.config.get('discrete_actions', False)
         self._build_head()
 
     @abstractmethod

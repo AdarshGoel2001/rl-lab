@@ -1,577 +1,335 @@
-"""
-Configuration Loading and Validation System
+from __future__ import annotations
 
-This module handles loading, validating, and managing experiment configurations.
-It supports YAML configs with environment variable substitution, config inheritance,
-and automatic validation.
-
-Key benefits for researchers:
-- YAML-based configs are human readable and version controllable
-- Environment variable substitution for sensitive data
-- Config inheritance for shared settings
-- Automatic validation prevents configuration errors
-- Hash-based config tracking for reproducibility
-"""
-
-import os
-import yaml
+import copy
 import hashlib
 import json
-from pathlib import Path
-from typing import Dict, Any, Optional, Union, List
-from dataclasses import dataclass, asdict, field
 import logging
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
+
+import yaml
 
 logger = logging.getLogger(__name__)
 
 
-def resolve_device(device: str) -> str:
-    """
-    Resolve device string to actual device, handling 'auto' selection.
-    
-    Auto selection priority:
-    1. MPS (Metal Performance Shaders) on M1/M2 Macs
-    2. CUDA if available
-    3. CPU as fallback
-    
-    Args:
-        device: Device string ('auto', 'cpu', 'cuda', 'mps')
-        
-    Returns:
-        Resolved device string
-    """
-    if device != 'auto':
-        return device
-        
-    try:
-        import torch
-        
-        # Check for MPS (Apple Silicon)
-        if torch.backends.mps.is_available():
-            logger.info("Auto-detected device: MPS (Apple Silicon GPU)")
-            return 'mps'
-            
-        # Check for CUDA
-        elif torch.cuda.is_available():
-            logger.info("Auto-detected device: CUDA")
-            return 'cuda'
-            
-        # Fallback to CPU
-        else:
-            logger.info("Auto-detected device: CPU")
-            return 'cpu'
-            
-    except (ImportError, AttributeError):
-        logger.warning("PyTorch not available for device detection, using CPU")
-        return 'cpu'
-
-
 class ConfigError(Exception):
-    """Raised when configuration is invalid"""
-    pass
+    """Raised when configuration is invalid or cannot be loaded."""
 
 
-@dataclass
-class ExperimentConfig:
-    """Structured experiment configuration"""
-    name: str
-    seed: int = 42
-    device: str = 'cpu'
-    debug: bool = False
-    paradigm: str = 'model_free'
+class ConfigNode:
+    """Lightweight namespace with recursive conversion helpers."""
 
-    def __post_init__(self):
-        # Validate device
-        if self.device not in ['cpu', 'cuda', 'mps', 'auto']:
-            logger.warning(f"Unusual device specified: {self.device}")
-        # Default paradigm to model_free if unspecified
-        if not self.paradigm:
-            self.paradigm = 'model_free'
+    __slots__ = ("__dict__",)
 
+    def __init__(self, **entries: Any) -> None:
+        for key, value in entries.items():
+            object.__setattr__(self, key, self._wrap(value))
 
-@dataclass 
-class AlgorithmConfig:
-    """Algorithm configuration"""
-    name: str
-    lr: float = 3e-4
-    
-    def __init__(self, **kwargs):
-        # Allow arbitrary algorithm-specific parameters
-        for key, value in kwargs.items():
-            setattr(self, key, value)
-        
-        # Validate required fields
-        if not hasattr(self, 'name'):
-            raise ConfigError("Algorithm name is required")
-        if not hasattr(self, 'lr'):
-            self.lr = 3e-4
-        
-        if hasattr(self, 'lr') and isinstance(self.lr, (int, float)) and self.lr <= 0:
-            raise ConfigError(f"Learning rate must be positive, got {self.lr}")
+    def _wrap(self, value: Any) -> Any:
+        if isinstance(value, ConfigNode):
+            return value
+        if isinstance(value, dict):
+            return ConfigNode(**value)
+        if isinstance(value, list):
+            return [self._wrap(item) for item in value]
+        return value
 
+    def to_dict(self) -> Dict[str, Any]:
+        return {key: _unwrap(value) for key, value in self.__dict__.items()}
 
-@dataclass
-class EnvironmentConfig:
-    """Environment configuration (flexible)"""
-    name: str = ''
-    wrapper: str = 'gym'
-    normalize_obs: bool = False
-    normalize_reward: bool = False
-    max_episode_steps: Optional[int] = None
-    
-    def __init__(self, **kwargs):
-        # Accept arbitrary environment-specific parameters
-        for key, value in kwargs.items():
-            setattr(self, key, value)
-        # Defaults
-        if not hasattr(self, 'wrapper'):
-            self.wrapper = 'gym'
-        if not hasattr(self, 'normalize_obs'):
-            self.normalize_obs = False
-        if not hasattr(self, 'normalize_reward'):
-            self.normalize_reward = False
+    def update(self, other: Optional[Dict[str, Any]] = None, **kwargs: Any) -> None:
+        data = dict(other or {})
+        data.update(kwargs)
+        for key, value in data.items():
+            object.__setattr__(self, key, self._wrap(value))
 
-
-@dataclass
-class NetworkConfig:
-    """Network configuration with flexible extras"""
-    # Common fields
-    type: str = ''
-    input_dim: Optional[Union[int, tuple]] = None
-    output_dim: Optional[int] = None
-    hidden_dims: Optional[list] = None
-    activation: str = 'relu'
-    output_activation: str = 'linear'
-    initialization: str = 'xavier_uniform'
-    
-    def __init__(self, **kwargs):
-        # Accept arbitrary network-specific parameters and set as attributes
-        for key, value in kwargs.items():
-            setattr(self, key, value)
-        # Defaults for common fields
-        if not hasattr(self, 'hidden_dims') or self.hidden_dims is None:
-            self.hidden_dims = [64, 64]
-        if not hasattr(self, 'activation'):
-            self.activation = 'relu'
-        if not hasattr(self, 'output_activation'):
-            self.output_activation = 'linear'
-        if not hasattr(self, 'initialization'):
-            self.initialization = 'xavier_uniform'
-
-
-@dataclass
-class BufferConfig:
-    """Buffer configuration"""
-    type: str = 'trajectory'
-    capacity: int = 100000
-    batch_size: int = 64
-    
-    def __init__(self, **kwargs):
-        # Allow arbitrary buffer-specific parameters
-        for key, value in kwargs.items():
-            setattr(self, key, value)
-        
-        # Set defaults for required fields
-        if not hasattr(self, 'type'):
-            self.type = 'trajectory'
-        if not hasattr(self, 'capacity'):
-            self.capacity = 100000
-        if not hasattr(self, 'batch_size'):
-            self.batch_size = 64
-        
-        if hasattr(self, 'capacity') and isinstance(self.capacity, int) and self.capacity <= 0:
-            raise ConfigError(f"Buffer capacity must be positive, got {self.capacity}")
-        if hasattr(self, 'batch_size') and isinstance(self.batch_size, int) and self.batch_size <= 0:
-            raise ConfigError(f"Batch size must be positive, got {self.batch_size}")
-
-
-@dataclass
-class TrainingConfig:
-    """Training configuration"""
-    total_timesteps: int = 1000000
-    eval_frequency: int = 10000
-    checkpoint_frequency: int = 50000
-    num_eval_episodes: int = 10
-    
-    def __init__(self, **kwargs):
-        # Allow arbitrary training-specific parameters
-        for key, value in kwargs.items():
-            setattr(self, key, value)
-        
-        # Set defaults for required fields
-        if not hasattr(self, 'total_timesteps'):
-            self.total_timesteps = 1000000
-        if not hasattr(self, 'eval_frequency'):
-            self.eval_frequency = 10000
-        if not hasattr(self, 'checkpoint_frequency'):
-            self.checkpoint_frequency = 50000
-        if not hasattr(self, 'num_eval_episodes'):
-            self.num_eval_episodes = 10
-        
-        if hasattr(self, 'total_timesteps') and isinstance(self.total_timesteps, int) and self.total_timesteps <= 0:
-            raise ConfigError(f"Total timesteps must be positive, got {self.total_timesteps}")
-
-
-@dataclass
-class LoggingConfig:
-    """Logging configuration"""
-    terminal: bool = True
-    tensorboard: bool = False
-    wandb_enabled: bool = False
-    wandb_project: Optional[str] = None
-    wandb_tags: list = None
-    log_frequency: int = 1000
-    
-    def __init__(self, **kwargs):
-        # Allow arbitrary logging-specific parameters
-        for key, value in kwargs.items():
-            setattr(self, key, value)
-        
-        # Set defaults for required fields
-        if not hasattr(self, 'terminal'):
-            self.terminal = True
-        if not hasattr(self, 'tensorboard'):
-            self.tensorboard = False
-        if not hasattr(self, 'wandb_enabled'):
-            self.wandb_enabled = False
-        if not hasattr(self, 'wandb_project'):
-            self.wandb_project = None
-        if not hasattr(self, 'wandb_tags'):
-            self.wandb_tags = []
-        if not hasattr(self, 'log_frequency'):
-            self.log_frequency = 1000
-        
-        if hasattr(self, 'wandb_tags') and self.wandb_tags is None:
-            self.wandb_tags = []
+    def copy(self) -> "ConfigNode":
+        return ConfigNode(**self.to_dict())
 
 
 @dataclass
 class Config:
-    """Main configuration container"""
-    experiment: ExperimentConfig
-    algorithm: AlgorithmConfig  
-    environment: EnvironmentConfig
-    network: Union[NetworkConfig, Dict[str, NetworkConfig]]
-    buffer: BufferConfig
-    training: TrainingConfig
-    logging: LoggingConfig
-    components: Dict[str, Any] = field(default_factory=dict)
-    evaluation: Optional[EnvironmentConfig] = None
-    
+    experiment: ConfigNode
+    algorithm: ConfigNode
+    environment: ConfigNode
+    network: Union[ConfigNode, Dict[str, ConfigNode]]
+    buffer: ConfigNode
+    training: ConfigNode
+    logging: ConfigNode
+    components: Dict[str, Any]
+    paradigm_config: Dict[str, Any]
+    controllers: Dict[str, Any] = field(default_factory=dict)
+    buffers: Dict[str, Any] = field(default_factory=dict)
+    evaluation: Optional[ConfigNode] = None
+
     @classmethod
-    def from_dict(cls, config_dict: Dict[str, Any]) -> 'Config':
-        """Create Config from dictionary"""
-        try:
-            # Handle networks - can be single network or multiple networks
-            network_config = config_dict.get('network', {})
-            if isinstance(network_config, dict) and any(
-                k in network_config for k in ['actor', 'critic', 'encoder', 'decoder']
-            ):
-                # Multiple networks
-                networks = {}
-                for net_name, net_config in network_config.items():
-                    networks[net_name] = NetworkConfig(**net_config)
-                network = networks
-            else:
-                # Single network
-                network = NetworkConfig(**network_config)
-            
-            # Handle optional evaluation environment config
-            evaluation_config = config_dict.get('evaluation')
-            evaluation = EnvironmentConfig(**evaluation_config) if evaluation_config else None
-            
-            return cls(
-                experiment=ExperimentConfig(**config_dict.get('experiment', {})),
-                algorithm=AlgorithmConfig(**config_dict.get('algorithm', {})),
-                environment=EnvironmentConfig(**config_dict.get('environment', {})),
-                network=network,
-                buffer=BufferConfig(**config_dict.get('buffer', {})),
-                training=TrainingConfig(**config_dict.get('training', {})),
-                logging=LoggingConfig(**config_dict.get('logging', {})),
-                components=config_dict.get('components', {}),
-                evaluation=evaluation
-            )
-        except TypeError as e:
-            raise ConfigError(f"Invalid configuration: {e}")
-    
+    def from_dict(cls, config_dict: Dict[str, Any]) -> "Config":
+        data = copy.deepcopy(config_dict)
+
+        experiment = ConfigNode(**data.get("experiment", {}))
+        algorithm = ConfigNode(**data.get("algorithm", {}))
+        environment = ConfigNode(**data.get("environment", {}))
+        network = _build_network(data.get("network", {}))
+        buffer = ConfigNode(**data.get("buffer", {}))
+        training = ConfigNode(**data.get("training", {}))
+        logging_cfg = ConfigNode(**data.get("logging", {}))
+        components = copy.deepcopy(data.get("components", {}))
+        paradigm_cfg = copy.deepcopy(data.get("paradigm_config", {}))
+        controllers = copy.deepcopy(data.get("controllers", {})) or {}
+        buffers = copy.deepcopy(data.get("buffers", {})) or {}
+        evaluation_cfg = data.get("evaluation")
+        evaluation = ConfigNode(**evaluation_cfg) if evaluation_cfg else None
+
+        return cls(
+            experiment=experiment,
+            algorithm=algorithm,
+            environment=environment,
+            network=network,
+            buffer=buffer,
+            training=training,
+            logging=logging_cfg,
+            components=components,
+            paradigm_config=paradigm_cfg,
+            controllers=controllers,
+            buffers=buffers,
+            evaluation=evaluation,
+        )
+
     def to_dict(self) -> Dict[str, Any]:
-        """Convert Config to dictionary"""
-        config_dict = asdict(self)
-        
-        # Handle network conversion
-        if isinstance(self.network, dict):
-            config_dict['network'] = {k: asdict(v) for k, v in self.network.items()}
-        else:
-            config_dict['network'] = asdict(self.network)
-            
-        return config_dict
-    
+        return {
+            "experiment": self.experiment.to_dict(),
+            "algorithm": self.algorithm.to_dict(),
+            "environment": self.environment.to_dict(),
+            "network": _network_to_dict(self.network),
+            "buffer": self.buffer.to_dict(),
+            "training": self.training.to_dict(),
+            "logging": self.logging.to_dict(),
+            "components": copy.deepcopy(self.components),
+            "paradigm_config": copy.deepcopy(self.paradigm_config),
+            "controllers": copy.deepcopy(self.controllers),
+            "buffers": copy.deepcopy(self.buffers),
+            "evaluation": self.evaluation.to_dict() if self.evaluation else None,
+        }
+
     def get_hash(self) -> str:
-        """Get deterministic hash of configuration for reproducibility tracking"""
-        config_str = json.dumps(self.to_dict(), sort_keys=True)
-        return hashlib.md5(config_str.encode()).hexdigest()[:8]
+        serialised = json.dumps(self.to_dict(), sort_keys=True)
+        return hashlib.md5(serialised.encode()).hexdigest()[:8]
 
 
-def expand_environment_variables(config_dict: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Recursively expand environment variables in config dictionary.
-    
-    Supports ${VAR} and ${VAR:default} syntax.
-    
-    Args:
-        config_dict: Configuration dictionary
-        
-    Returns:
-        Dictionary with environment variables expanded
-    """
-    import re
-    
-    def expand_value(value):
-        if isinstance(value, str):
-            # Pattern matches ${VAR} or ${VAR:default}  
-            pattern = r'\$\{([^:}]+)(?::([^}]*))?\}'
-            
-            def replace_var(match):
-                var_name = match.group(1)
-                default_value = match.group(2) if match.group(2) is not None else ''
-                return os.environ.get(var_name, default_value)
-            
-            return re.sub(pattern, replace_var, value)
-        elif isinstance(value, dict):
-            return {k: expand_value(v) for k, v in value.items()}
-        elif isinstance(value, list):
-            return [expand_value(v) for v in value]
-        else:
-            return value
-    
-    return expand_value(config_dict)
+def resolve_device(device: str) -> str:
+    if device != "auto":
+        return device
+    try:
+        import torch
+
+        if torch.backends.mps.is_available():
+            logger.info("Auto-detected device: MPS (Apple Silicon GPU)")
+            return "mps"
+        if torch.cuda.is_available():
+            logger.info("Auto-detected device: CUDA")
+            return "cuda"
+        logger.info("Auto-detected device: CPU")
+        return "cpu"
+    except (ImportError, AttributeError):
+        logger.warning("PyTorch not available for device detection, falling back to CPU")
+        return "cpu"
 
 
 def load_yaml_config(config_path: Union[str, Path]) -> Dict[str, Any]:
-    """
-    Load YAML configuration file with environment variable expansion.
-    
-    Args:
-        config_path: Path to YAML configuration file
-        
-    Returns:
-        Configuration dictionary
-    """
     config_path = Path(config_path)
-    
     if not config_path.exists():
         raise ConfigError(f"Configuration file not found: {config_path}")
-    
+
     try:
-        with open(config_path, 'r') as f:
-            config_dict = yaml.safe_load(f)
-    except yaml.YAMLError as e:
-        raise ConfigError(f"Error parsing YAML file {config_path}: {e}")
-    
+        with open(config_path, "r", encoding="utf-8") as handle:
+            config_dict = yaml.safe_load(handle)
+    except yaml.YAMLError as exc:
+        raise ConfigError(f"Error parsing YAML file {config_path}: {exc}") from exc
+
     if config_dict is None:
         raise ConfigError(f"Configuration file is empty: {config_path}")
-    
-    # Expand environment variables
+
     config_dict = expand_environment_variables(config_dict)
-    
-    # Handle config inheritance
-    if 'base_config' in config_dict:
-        base_config_path = config_path.parent / config_dict.pop('base_config')
-        base_config = load_yaml_config(base_config_path)
+
+    base_ref = config_dict.pop("base_config", None)
+    if base_ref:
+        base_config = load_yaml_config(config_path.parent / base_ref)
         config_dict = merge_configs(base_config, config_dict)
-    
-    logger.info(f"Loaded configuration from {config_path}")
+
     return config_dict
 
 
-def merge_configs(base_config: Dict[str, Any], override_config: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Recursively merge two configuration dictionaries.
-    
-    Args:
-        base_config: Base configuration
-        override_config: Override configuration (takes precedence)
-        
-    Returns:
-        Merged configuration dictionary
-    """
-    result = base_config.copy()
-    
-    for key, value in override_config.items():
-        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+def merge_configs(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    result = copy.deepcopy(base)
+    for key, value in override.items():
+        if (
+            key in result
+            and isinstance(result[key], dict)
+            and isinstance(value, dict)
+        ):
             result[key] = merge_configs(result[key], value)
         else:
-            result[key] = value
-    
+            result[key] = copy.deepcopy(value)
     return result
 
 
 def apply_config_overrides(config: Config, overrides: Dict[str, Any]) -> Config:
-    """
-    Apply overrides to an existing Config object using dot notation.
-    
-    Args:
-        config: Base configuration object
-        overrides: Dictionary of overrides using dot notation (e.g., 'algorithm.lr': 0.001)
-        
-    Returns:
-        New Config object with overrides applied
-    """
-    config_dict = config.to_dict()
-    
-    # Convert dot notation overrides to nested dictionary
-    nested_overrides = {}
-    for key, value in overrides.items():
-        parts = key.split('.')
-        current = nested_overrides
-        for part in parts[:-1]:
-            if part not in current:
-                current[part] = {}
-            current = current[part]
-        current[parts[-1]] = value
-    
-    # Merge the nested overrides
-    updated_config_dict = merge_configs(config_dict, nested_overrides)
-    
-    # Create new config object
-    return Config.from_dict(updated_config_dict)
-
-
-def load_config(config_path: Union[str, Path], 
-                overrides: Optional[Dict[str, Any]] = None) -> Config:
-    """
-    Load and validate complete configuration.
-    
-    Args:
-        config_path: Path to configuration file
-        overrides: Optional dictionary of configuration overrides
-        
-    Returns:
-        Validated Config object
-    """
-    # Load base config
-    config_dict = load_yaml_config(config_path)
-    
-    # Apply overrides
-    if overrides:
-        config_dict = merge_configs(config_dict, overrides)
-    
-    # Create and validate config object
-    try:
-        config = Config.from_dict(config_dict)
-        logger.info(f"Configuration loaded successfully (hash: {config.get_hash()})")
+    if not overrides:
         return config
-    except Exception as e:
-        raise ConfigError(f"Configuration validation failed: {e}")
+
+    nested = {}
+    for dotted_key, value in overrides.items():
+        current = nested
+        parts = dotted_key.split(".")
+        for part in parts[:-1]:
+            current = current.setdefault(part, {})
+        current[parts[-1]] = value
+
+    merged = merge_configs(config.to_dict(), nested)
+    return Config.from_dict(merged)
 
 
-def save_config(config: Config, save_path: Union[str, Path]):
-    """
-    Save configuration to YAML file.
-    
-    Args:
-        config: Configuration object to save
-        save_path: Path to save configuration
-    """
+def load_config(
+    config_path: Union[str, Path], overrides: Optional[Dict[str, Any]] = None
+) -> Config:
+    data = load_yaml_config(config_path)
+    if overrides:
+        data = merge_configs(data, overrides)
+    try:
+        config = Config.from_dict(data)
+    except Exception as exc:
+        raise ConfigError(f"Configuration validation failed: {exc}") from exc
+
+    logger.info("Configuration loaded successfully (hash: %s)", config.get_hash())
+    return config
+
+
+def save_config(config: Config, save_path: Union[str, Path]) -> None:
     save_path = Path(save_path)
     save_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    config_dict = config.to_dict()
-    
-    with open(save_path, 'w') as f:
-        yaml.dump(config_dict, f, default_flow_style=False, indent=2)
-    
-    logger.info(f"Configuration saved to {save_path}")
+
+    with open(save_path, "w", encoding="utf-8") as handle:
+        yaml.safe_dump(config.to_dict(), handle, default_flow_style=False, indent=2)
+
+    logger.info("Configuration saved to %s", save_path)
 
 
 def validate_config_compatibility(config: Config) -> List[str]:
-    """
-    Validate that configuration components are compatible.
-    
-    Args:
-        config: Configuration to validate
-        
-    Returns:
-        List of warning messages (empty if no issues)
-    """
-    warnings = []
-    
-    # Check algorithm-buffer compatibility
-    if config.algorithm.name in ['ppo', 'a2c'] and config.buffer.type != 'trajectory':
-        warnings.append(f"Algorithm {config.algorithm.name} typically uses trajectory buffer, "
-                       f"but {config.buffer.type} buffer configured")
-    
-    if config.algorithm.name in ['dqn', 'sac'] and config.buffer.type == 'trajectory':
-        warnings.append(f"Algorithm {config.algorithm.name} typically uses replay buffer, "
-                       f"but trajectory buffer configured")
-    
-    # Check device availability
-    if config.experiment.device in ['cuda', 'mps']:
+    warnings: List[str] = []
+
+    algo_name = getattr(config.algorithm, "name", None)
+    buffer_type = getattr(config.buffer, "type", None)
+
+    if algo_name in {"ppo", "a2c"} and buffer_type != "trajectory":
+        warnings.append(
+            f"Algorithm {algo_name} typically uses trajectory buffer, but {buffer_type} configured"
+        )
+    if algo_name in {"dqn", "sac"} and buffer_type == "trajectory":
+        warnings.append(
+            f"Algorithm {algo_name} typically uses replay buffer, but trajectory buffer configured"
+        )
+
+    device = getattr(config.experiment, "device", "cpu")
+    if device in {"cuda", "mps"}:
         try:
             import torch
-            if config.experiment.device == 'cuda' and not torch.cuda.is_available():
+
+            if device == "cuda" and not torch.cuda.is_available():
                 warnings.append("CUDA device requested but not available")
-            elif config.experiment.device == 'mps' and not torch.backends.mps.is_available():
+            if device == "mps" and not torch.backends.mps.is_available():
                 warnings.append("MPS device requested but not available")
         except ImportError:
             warnings.append("PyTorch not available for device validation")
-    
-    # Check wandb configuration
-    if config.logging.wandb_enabled and not config.logging.wandb_project:
+
+    if getattr(config.logging, "wandb_enabled", False) and not getattr(
+        config.logging, "wandb_project", None
+    ):
         warnings.append("WandB enabled but no project specified")
-    
+
     return warnings
 
 
 class ConfigManager:
-    """
-    Utility class for managing configurations during experiments.
-    
-    Handles config loading, validation, saving, and tracking.
-    """
-    
-    def __init__(self, config_path: Optional[Union[str, Path]] = None):
+    def __init__(self, config_path: Optional[Union[str, Path]] = None) -> None:
         self.config_path = Path(config_path) if config_path else None
         self.config: Optional[Config] = None
-        
         if self.config_path:
             self.load_config()
-    
-    def load_config(self, config_path: Optional[Union[str, Path]] = None, 
-                   overrides: Optional[Dict[str, Any]] = None):
-        """Load configuration from file"""
+
+    def load_config(
+        self,
+        config_path: Optional[Union[str, Path]] = None,
+        overrides: Optional[Dict[str, Any]] = None,
+    ) -> None:
         if config_path:
             self.config_path = Path(config_path)
-        
         if not self.config_path:
             raise ConfigError("No configuration path specified")
-        
+
         self.config = load_config(self.config_path, overrides)
-        
-        # Validate compatibility
-        warnings = validate_config_compatibility(self.config)
-        for warning in warnings:
-            logger.warning(f"Config validation warning: {warning}")
-    
-    def save_config(self, save_path: Union[str, Path]):
-        """Save current configuration"""
+        for warning in validate_config_compatibility(self.config):
+            logger.warning("Config validation warning: %s", warning)
+
+    def save_config(self, save_path: Union[str, Path]) -> None:
         if not self.config:
             raise ConfigError("No configuration loaded")
-        
         save_config(self.config, save_path)
-    
+
     def get_config_hash(self) -> str:
-        """Get hash of current configuration"""
         if not self.config:
             raise ConfigError("No configuration loaded")
-        
         return self.config.get_hash()
-    
-    def update_config(self, updates: Dict[str, Any]):
-        """Update configuration with new values"""
+
+    def update_config(self, updates: Dict[str, Any]) -> None:
         if not self.config:
             raise ConfigError("No configuration loaded")
-        
-        config_dict = self.config.to_dict()
-        updated_config_dict = merge_configs(config_dict, updates)
-        self.config = Config.from_dict(updated_config_dict)
+        merged = merge_configs(self.config.to_dict(), updates)
+        self.config = Config.from_dict(merged)
+
+
+def expand_environment_variables(config: Any) -> Any:
+    if isinstance(config, str):
+        return _expand_env_string(config)
+    if isinstance(config, dict):
+        return {key: expand_environment_variables(value) for key, value in config.items()}
+    if isinstance(config, list):
+        return [expand_environment_variables(value) for value in config]
+    return config
+
+
+def _expand_env_string(value: str) -> str:
+    import re
+
+    pattern = re.compile(r"\$\{([^:}]+)(?::([^}]*))?\}")
+
+    def replacer(match: re.Match[str]) -> str:
+        var, default = match.group(1), match.group(2) or ""
+        return os.environ.get(var, default)
+
+    return pattern.sub(replacer, value)
+
+
+def _unwrap(value: Any) -> Any:
+    if isinstance(value, ConfigNode):
+        return value.to_dict()
+    if isinstance(value, list):
+        return [_unwrap(item) for item in value]
+    return copy.deepcopy(value)
+
+
+def _build_network(raw: Dict[str, Any]) -> Union[ConfigNode, Dict[str, ConfigNode]]:
+    if not raw:
+        return ConfigNode()
+
+    multi_network_keys = {"actor", "critic", "encoder", "decoder"}
+    if any(key in raw for key in multi_network_keys):
+        return {name: ConfigNode(**cfg) for name, cfg in raw.items()}
+    return ConfigNode(**raw)
+
+
+def _network_to_dict(network: Union[ConfigNode, Dict[str, ConfigNode]]) -> Dict[str, Any]:
+    if isinstance(network, dict):
+        return {name: node.to_dict() if isinstance(node, ConfigNode) else copy.deepcopy(node) for name, node in network.items()}
+    return network.to_dict()

@@ -1,0 +1,7 @@
+_target_: src.environments.vectorized_gym_wrapper.VectorizedGymWrapper
+name: CartPole-v1
+num_envs: 2
+vectorization: sync
+normalize_obs: false
+normalize_reward: false
+max_episode_steps: 500

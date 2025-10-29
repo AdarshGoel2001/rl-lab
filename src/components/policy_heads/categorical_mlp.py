@@ -11,10 +11,8 @@ import torch.nn as nn
 from torch.distributions import Categorical
 
 from .base import BasePolicyHead
-from ...utils.registry import register_policy_head
 
 
-@register_policy_head("categorical_mlp")
 class CategoricalMLPPolicyHead(BasePolicyHead):
     """
     MLP-based policy head for discrete action spaces.
@@ -27,6 +25,8 @@ class CategoricalMLPPolicyHead(BasePolicyHead):
         """Build the categorical policy head architecture."""
         hidden_dims = self.config.get('hidden_dims', [64])
         activation = self.config.get('activation', 'tanh')
+
+        self.discrete_actions = True
 
         layers = []
         current_dim = self.representation_dim

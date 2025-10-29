@@ -24,7 +24,7 @@ class BaseEncoder(nn.Module, ABC):
         device: PyTorch device (cuda/cpu)
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any] | None = None, **kwargs: Any):
         """
         Initialize encoder with configuration.
 
@@ -32,8 +32,13 @@ class BaseEncoder(nn.Module, ABC):
             config: Dictionary containing encoder hyperparameters and settings
         """
         super().__init__()
-        self.config = config
-        self.device = torch.device(config.get('device', 'cpu'))
+        merged_config: Dict[str, Any] = {}
+        if config is not None:
+            merged_config.update(config)
+        if kwargs:
+            merged_config.update(kwargs)
+        self.config = merged_config
+        self.device = torch.device(self.config.get('device', 'cpu'))
         self._build_encoder()
 
     @abstractmethod

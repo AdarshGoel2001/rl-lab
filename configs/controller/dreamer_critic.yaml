@@ -1,0 +1,5 @@
+_target_: src.components.world_models.controllers.dreamer.DreamerCriticController
+representation_dim: ???
+hidden_dims: [256, 256]
+activation: elu
+lr: 3.0e-4
