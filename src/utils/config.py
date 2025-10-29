@@ -61,7 +61,7 @@ class Config:
     components: Dict[str, Any]
     paradigm_config: Dict[str, Any]
     controllers: Dict[str, Any] = field(default_factory=dict)
-    data_sources: Dict[str, Any] = field(default_factory=dict)
+    buffers: Dict[str, Any] = field(default_factory=dict)
     evaluation: Optional[ConfigNode] = None
 
     @classmethod
@@ -78,7 +78,7 @@ class Config:
         components = copy.deepcopy(data.get("components", {}))
         paradigm_cfg = copy.deepcopy(data.get("paradigm_config", {}))
         controllers = copy.deepcopy(data.get("controllers", {})) or {}
-        data_sources = copy.deepcopy(data.get("data_sources", {})) or {}
+        buffers = copy.deepcopy(data.get("buffers", {})) or {}
         evaluation_cfg = data.get("evaluation")
         evaluation = ConfigNode(**evaluation_cfg) if evaluation_cfg else None
 
@@ -93,7 +93,7 @@ class Config:
             components=components,
             paradigm_config=paradigm_cfg,
             controllers=controllers,
-            data_sources=data_sources,
+            buffers=buffers,
             evaluation=evaluation,
         )
 
@@ -109,7 +109,7 @@ class Config:
             "components": copy.deepcopy(self.components),
             "paradigm_config": copy.deepcopy(self.paradigm_config),
             "controllers": copy.deepcopy(self.controllers),
-            "data_sources": copy.deepcopy(self.data_sources),
+            "buffers": copy.deepcopy(self.buffers),
             "evaluation": self.evaluation.to_dict() if self.evaluation else None,
         }
 

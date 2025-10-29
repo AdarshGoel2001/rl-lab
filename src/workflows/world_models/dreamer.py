@@ -31,11 +31,9 @@ class DreamerWorkflow(WorldModelWorkflow):
     def __init__(self, *, config: Optional[Config] = None) -> None:
         super().__init__()
         self._override_config = config
-
-        self.context: Optional[WorkflowContext] = None
+        self._bound_config: Optional[Config] = None
         self.device: Optional[str] = None
-        self.components: Optional[WorldModelComponents] = None
-        self.buffer = None
+        self.buffers: Dict[str, Any] = {}
         self.environment = None
         self.eval_environment = None
         self.controller_manager: Optional[ControllerManager] = None
@@ -76,9 +74,9 @@ class DreamerWorkflow(WorldModelWorkflow):
     def config(self) -> Config:
         if self._override_config is not None:
             return self._override_config
-        if self.context is None:
+        if self._bound_config is None:
             raise RuntimeError("DreamerWorkflow accessed config before initialization.")
-        return self.context.config
+        return self._bound_config
 
     def initialize(self, context: WorkflowContext) -> None:
         logger.info("Initializing Dreamer workflow from orchestrator context")
@@ -116,18 +114,19 @@ class DreamerWorkflow(WorldModelWorkflow):
     # Internal setup helpers
     # ------------------------------------------------------------------
     def _bind_context(self, context: WorkflowContext) -> None:
-        self.context = context
+        self._bound_config = context.config
         self.device = context.device
-        self.components = context.components
-        self.buffer = context.buffer
+        self.buffers = dict(context.buffers)
         self.environment = context.train_environment
         self.eval_environment = context.eval_environment
 
-        self.encoder = self.components.encoder
-        self.rssm = self.components.representation_learner
-        self.dynamics_model = self.components.dynamics_model
-        self.reward_predictor = self.components.reward_predictor
-        self.observation_decoder = self.components.observation_decoder
+        components = context.components
+
+        self.encoder = components.encoder
+        self.rssm = components.representation_learner
+        self.dynamics_model = components.dynamics_model
+        self.reward_predictor = components.reward_predictor
+        self.observation_decoder = components.observation_decoder
 
         if context.controller_manager is None:
             raise RuntimeError("DreamerWorkflow requires a controller manager in the workflow context.")
@@ -137,11 +136,21 @@ class DreamerWorkflow(WorldModelWorkflow):
         if self.actor_controller is None or self.critic_controller is None:
             raise RuntimeError("DreamerWorkflow requires 'actor' and 'critic' controllers in the workflow context.")
 
-        specs = getattr(self.components, "specs", {}) or {}
-        if "action_dim" not in specs:
-            raise RuntimeError("World-model components missing 'action_dim' spec; ensure the factory populates it.")
-        self.action_dim = int(specs["action_dim"])
-        self.discrete_actions = bool(specs.get("discrete_actions", False))
+        dims_cfg = getattr(self.config, "_dims", None)
+        action_dim = getattr(dims_cfg, "action", None) if dims_cfg is not None else None
+        if action_dim is None:
+            raise RuntimeError("Workflow config missing '_dims.action'; cannot infer action dimension.")
+        self.action_dim = int(action_dim)
+
+        controllers_cfg = getattr(self.config, "controllers", None)
+        actor_cfg = getattr(controllers_cfg, "actor", None) if controllers_cfg is not None else None
+        discrete_actions = False
+        if actor_cfg is not None:
+            if isinstance(actor_cfg, Mapping):
+                discrete_actions = bool(actor_cfg.get("discrete_actions", False))
+            else:
+                discrete_actions = bool(getattr(actor_cfg, "discrete_actions", False))
+        self.discrete_actions = discrete_actions
 
         self.is_vectorized = getattr(self.environment, "is_vectorized", False)
         self.num_envs = int(getattr(self.environment, "num_envs", 1) or 1)

@@ -1,0 +1,9 @@
+_target_: src.components.world_models.controllers.dreamer.DreamerActorController
+representation_dim: ???
+action_dim: ???
+hidden_dims: [256, 256]
+activation: elu
+lr: 3.0e-4
+entropy_coef: 0.01
+reparameterized: true
+discrete_actions: true

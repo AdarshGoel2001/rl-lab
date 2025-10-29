@@ -11,10 +11,8 @@ import torch.nn as nn
 import numpy as np
 
 from .base import BaseEncoder
-from ...utils.registry import register_encoder
 
 
-@register_encoder("minigrid_cnn")
 class MiniGridCNNEncoder(BaseEncoder):
     """
     MiniGrid CNN encoder based on the original MiniGridCNN design.
@@ -129,7 +127,6 @@ class MiniGridCNNEncoder(BaseEncoder):
         return self._output_dim
 
 
-@register_encoder("nature_cnn")
 class NatureCNNEncoder(BaseEncoder):
     """
     Nature CNN encoder based on the original NatureCNN design.
@@ -210,7 +207,6 @@ class NatureCNNEncoder(BaseEncoder):
         return self._output_dim
 
 
-@register_encoder("impala_cnn")
 class IMPALACNNEncoder(BaseEncoder):
     """
     IMPALA CNN encoder based on the original IMPALACNN design.

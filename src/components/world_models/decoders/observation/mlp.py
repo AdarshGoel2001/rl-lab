@@ -7,11 +7,9 @@ from typing import Any, Dict
 import torch
 import torch.nn as nn
 
-from .....utils.registry import register_observation_decoder
 from .base import BaseObservationDecoder
 
 
-@register_observation_decoder("mlp")
 class MLPObservationDecoder(BaseObservationDecoder):
     """Projects latent vectors back to flat observation space via MLP."""
 

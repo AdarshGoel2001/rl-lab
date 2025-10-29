@@ -15,7 +15,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Categorical, Distribution, Independent, Normal
 
-from ....utils.registry import register_controller
 from .base import BaseController
 
 
@@ -70,7 +69,12 @@ class _ControllerSpecs:
     discrete_actions: bool
 
 
-def _infer_specs(config: Dict[str, Any], components: Optional[Any]) -> _ControllerSpecs:
+def _infer_specs(
+    config: Dict[str, Any],
+    components: Optional[Any],
+    *,
+    require_action_dim: bool = True,
+) -> _ControllerSpecs:
     """Infer latent/action specifications from controller config or component bundle."""
     rep_dim = config.get("representation_dim")
     action_dim = config.get("action_dim")
@@ -101,12 +105,12 @@ def _infer_specs(config: Dict[str, Any], components: Optional[Any]) -> _Controll
 
     if rep_dim is None:
         raise ValueError("Dreamer controller requires 'representation_dim' in config or component bundle.")
-    if action_dim is None:
+    if require_action_dim and action_dim is None:
         raise ValueError("Dreamer controller requires 'action_dim' in config or component bundle.")
 
     return _ControllerSpecs(
         representation_dim=int(rep_dim),
-        action_dim=int(action_dim),
+        action_dim=int(action_dim) if action_dim is not None else 0,
         discrete_actions=discrete,
     )
 
@@ -140,18 +144,19 @@ class _ActorBackbone(nn.Module):
         return self.model(inputs)
 
 
-@register_controller("dreamer_actor")
 class DreamerActorController(BaseController):
     """Dreamer policy controller that owns the action head and optimizer."""
 
-    def __init__(self, config: Dict[str, Any]) -> None:
-        cfg = dict(config)
+    def __init__(self, config: Dict[str, Any] | None = None, **kwargs: Any) -> None:
+        cfg = dict(config or {})
+        if kwargs:
+            cfg.update(kwargs)
         components = cfg.pop("components", None)
         self.role = cfg.get("role", "actor")
 
         super().__init__()
         self.device = torch.device(cfg.get("device", "cpu"))
-        specs = _infer_specs(cfg, components)
+        specs = _infer_specs(cfg, components, require_action_dim=True)
         self.representation_dim = specs.representation_dim
         self.action_dim = specs.action_dim
         self.discrete_actions = specs.discrete_actions
@@ -394,18 +399,19 @@ class DreamerActorController(BaseController):
             super().load_state_dict(state_dict, strict=strict)
 
 
-@register_controller("dreamer_critic")
 class DreamerCriticController(BaseController):
     """Dreamer critic that predicts value estimates from latent states."""
 
-    def __init__(self, config: Dict[str, Any]) -> None:
-        cfg = dict(config)
+    def __init__(self, config: Dict[str, Any] | None = None, **kwargs: Any) -> None:
+        cfg = dict(config or {})
+        if kwargs:
+            cfg.update(kwargs)
         components = cfg.pop("components", None)
         self.role = cfg.get("role", "critic")
 
         super().__init__()
         self.device = torch.device(cfg.get("device", "cpu"))
-        specs = _infer_specs(cfg, components)
+        specs = _infer_specs(cfg, components, require_action_dim=False)
         self.representation_dim = specs.representation_dim
 
         hidden_dims = tuple(cfg.get("hidden_dims", (512, 512)))

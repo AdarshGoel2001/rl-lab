@@ -11,10 +11,8 @@ import torch.nn as nn
 from torch.distributions import Categorical
 
 from .base import BasePolicyHead
-from ...utils.registry import register_policy_head
 
 
-@register_policy_head("categorical_mlp")
 class CategoricalMLPPolicyHead(BasePolicyHead):
     """
     MLP-based policy head for discrete action spaces.

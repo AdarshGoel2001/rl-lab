@@ -7,10 +7,8 @@ from typing import Any, Dict, Optional
 import numpy as np
 
 from .base import BaseReturnComputer
-from ....utils.registry import register_return_computer
 
 
-@register_return_computer("none")
 class NoReturnComputer(BaseReturnComputer):
     """Return computer that returns None - for algorithms that train only on imagined rollouts.
 

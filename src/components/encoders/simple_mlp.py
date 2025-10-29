@@ -11,10 +11,8 @@ import torch.nn as nn
 import numpy as np
 
 from .base import BaseEncoder
-from ...utils.registry import register_encoder
 
 
-@register_encoder("mlp")
 class MLPEncoder(BaseEncoder):
     """
     MLP encoder based on the existing MLP network design.

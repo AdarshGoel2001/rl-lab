@@ -1,0 +1,9 @@
+defaults:
+  - _self_
+  # Experiment must be provided: e.g. experiment=dreamer_cartpole
+
+hydra:
+  run:
+    dir: experiments/${experiment.name}-${now:%Y%m%d_%H%M%S}
+  job:
+    chdir: true

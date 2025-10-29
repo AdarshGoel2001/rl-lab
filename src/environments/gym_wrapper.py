@@ -18,12 +18,10 @@ import logging
 from typing import Dict, Any, Tuple, Optional, Union
 
 from src.environments.base import BaseEnvironment, SpaceSpec
-from src.utils.registry import register_environment
 
 logger = logging.getLogger(__name__)
 
 
-@register_environment("gym")
 class GymWrapper(BaseEnvironment):
     """
     Wrapper for OpenAI Gym environments.
@@ -36,7 +34,7 @@ class GymWrapper(BaseEnvironment):
         env_name: Name of the Gym environment
     """
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Optional[Dict[str, Any]] = None, **kwargs: Any):
         """
         Initialize Gym environment wrapper.
         
@@ -49,6 +47,10 @@ class GymWrapper(BaseEnvironment):
                 - render_mode: Rendering mode ('human', 'rgb_array', None)
                 - Additional environment-specific kwargs
         """
+        config = dict(config or {})
+        if kwargs:
+            config.update(kwargs)
+
         self.env_name = config['name']
         self.render_mode = config.get('render_mode', None)
         self.env_kwargs = config.get('env_kwargs', {})

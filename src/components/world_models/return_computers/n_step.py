@@ -7,10 +7,8 @@ from typing import Any, Dict, Optional
 import numpy as np
 
 from .base import BaseReturnComputer
-from ....utils.registry import register_return_computer
 
 
-@register_return_computer("n_step")
 class NStepReturnComputer(BaseReturnComputer):
     """Computes n-step bootstrapped returns as used in MuZero.
 

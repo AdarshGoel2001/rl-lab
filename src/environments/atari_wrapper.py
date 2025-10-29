@@ -33,7 +33,6 @@ from collections import deque
 import cv2
 
 from .base import BaseEnvironment, SpaceSpec
-from ..utils.registry import register_environment
 
 
 class NoOpResetEnv(gym.Wrapper):
@@ -175,7 +174,6 @@ class EpisodicLifeEnv(gym.Wrapper):
         return obs, info
 
 
-@register_environment("atari")
 class AtariEnvironment(BaseEnvironment):
     """
     Comprehensive Atari environment wrapper with standard preprocessing.
@@ -201,10 +199,14 @@ class AtariEnvironment(BaseEnvironment):
     - full_action_space: Use full 18 actions vs reduced set (default: False)
     """
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Optional[Dict[str, Any]] = None, **kwargs: Any):
+        config = dict(config or {})
+        if kwargs:
+            config.update(kwargs)
+
         self.game = config.get('game', 'PongNoFrameskip-v4')
         self.frame_skip = config.get('frame_skip', 4)
-        self.frame_stack = config.get('frame_stack', 4)  
+        self.frame_stack = config.get('frame_stack', 4)
         self.sticky_actions = config.get('sticky_actions', 0.25)
         self.noop_max = config.get('noop_max', 30)
         self.terminal_on_life_loss = config.get('terminal_on_life_loss', True)

@@ -1,0 +1,7 @@
+_target_: src.components.encoders.simple_mlp.MLPEncoder
+input_dim: ???
+hidden_dims: [128, 128]
+activation: elu
+batch_norm: false
+dropout: 0.0
+layer_norm: false

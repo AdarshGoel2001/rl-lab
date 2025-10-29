@@ -3,40 +3,29 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Any, Dict, Optional, TYPE_CHECKING
+from typing import Any, Dict, Optional
 
 from ...utils.checkpoint import CheckpointManager
 from ...utils.config import Config
 from .controllers import ControllerManager
 
-if TYPE_CHECKING:
-    from ...data_sources.base import DataSource
-
 
 @dataclass(frozen=True)
 class WorldModelComponents:
-    """Container holding instantiated world-model modules."""
+    """Dynamic container holding instantiated world-model modules."""
 
-    encoder: Any
-    representation_learner: Any
-    dynamics_model: Any
-    reward_predictor: Optional[Any] = None
-    observation_decoder: Optional[Any] = None
-    planner: Optional[Any] = None
+    components: Dict[str, Any]
     config: Dict[str, Any] = field(default_factory=dict)
-    specs: Dict[str, Any] = field(default_factory=dict)
+
+    def __getattr__(self, name: str) -> Any:
+        components = super().__getattribute__("components")
+        if name in components:
+            return components[name]
+        raise AttributeError(f"No component named '{name}'")
 
     def to(self, device: Any) -> "WorldModelComponents":
         """Move all components to the specified device."""
-        targets = [
-            self.encoder,
-            self.representation_learner,
-            self.dynamics_model,
-            self.reward_predictor,
-            self.observation_decoder,
-            self.planner,
-        ]
-        for module in targets:
+        for module in self.components.values():
             if module is None:
                 continue
             mover = getattr(module, "to", None)
@@ -47,14 +36,8 @@ class WorldModelComponents:
     def as_dict(self) -> Dict[str, Any]:
         """Return dictionary view of the component bundle."""
         return {
-            "encoder": self.encoder,
-            "representation_learner": self.representation_learner,
-            "dynamics_model": self.dynamics_model,
-            "reward_predictor": self.reward_predictor,
-            "observation_decoder": self.observation_decoder,
-            "planner": self.planner,
-            "config": self.config,
-            "specs": self.specs,
+            "components": dict(self.components),
+            "config": dict(self.config),
         }
 
 
@@ -67,12 +50,11 @@ class WorkflowContext:
     train_environment: Any
     eval_environment: Any
     components: WorldModelComponents
-    buffer: Any
     checkpoint_manager: CheckpointManager
     experiment_logger: Any
+    buffers: Dict[str, Any] = field(default_factory=dict)
     controllers: Optional[Dict[str, Any]] = None
     controller_manager: Optional[ControllerManager] = None
-    data_sources: Optional[Dict[str, "DataSource"]] = None
     simulator_service: Optional[Any] = None
     optimizers: Optional[Dict[str, Any]] = None
     initial_observation: Optional[Any] = None

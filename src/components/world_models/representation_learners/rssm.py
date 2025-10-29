@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.utils.registry import register_representation_learner
 
 from .base import BaseRepresentationLearner, LatentSequence, LatentStep, RSSMState
 
@@ -35,12 +34,11 @@ def _split_stats(stats: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     return mean, std_param
 
 
-@register_representation_learner("rssm")
 class RSSMRepresentationLearner(BaseRepresentationLearner):
     """Dreamer-style RSSM with stochastic + deterministic latent components."""
 
-    def __init__(self, config: Dict[str, int | float | bool]) -> None:
-        super().__init__(config)
+    def __init__(self, config: Dict[str, int | float | bool] | None = None, **kwargs: Any) -> None:
+        super().__init__(config, **kwargs)
 
         self.stochastic_dim = int(self.config.get("stochastic_dim", self.config.get("latent_dim", 32)))
         self.deterministic_dim = int(self.config.get("deterministic_dim", self.config.get("hidden_dim", 200)))
@@ -88,16 +86,6 @@ class RSSMRepresentationLearner(BaseRepresentationLearner):
     @property
     def representation_dim(self) -> int:
         return self.deterministic_dim + self.stochastic_dim
-
-    def export_specs(self) -> Dict[str, Any]:
-        specs = super().export_specs()
-        specs.update(
-            {
-                "deterministic_state_dim": self.deterministic_dim,
-                "stochastic_state_dim": self.stochastic_dim,
-            }
-        )
-        return specs
 
     def initial_state(self, batch_size: int) -> RSSMState:
         zeros_det = torch.zeros(batch_size, self.deterministic_dim, device=self.device)

@@ -11,10 +11,8 @@ import torch.nn as nn
 import numpy as np
 
 from .base import BaseValueFunction
-from ...utils.registry import register_value_function
 
 
-@register_value_function("critic_mlp")
 class CriticMLPValueFunction(BaseValueFunction):
     """
     MLP-based value function based on original CriticMLP.
@@ -162,7 +160,6 @@ class CriticMLPValueFunction(BaseValueFunction):
 
 
 # Also create a simple MLP critic for backwards compatibility
-@register_value_function("mlp_critic")
 class MLPCritic(BaseValueFunction):
     """Simple MLP critic (alias for CriticMLPValueFunction)."""
 

@@ -7,10 +7,8 @@ from typing import Any, Dict, Optional
 import numpy as np
 
 from .base import BaseReturnComputer
-from ....utils.registry import register_return_computer
 
 
-@register_return_computer("td_lambda")
 class TDLambdaReturnComputer(BaseReturnComputer):
     """Computes TD(λ) returns (also known as λ-returns or eligibility traces).
 

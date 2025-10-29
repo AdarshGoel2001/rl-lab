@@ -46,7 +46,7 @@ class BaseEnvironment(ABC):
         _action_space: Specification of action space
     """
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Optional[Dict[str, Any]] = None, **kwargs: Any):
         """
         Initialize environment wrapper.
         
@@ -59,7 +59,10 @@ class BaseEnvironment(ABC):
                 - observation_transforms: List of transform configurations
                 - Any environment-specific parameters
         """
-        self.config = config
+        merged_config: Dict[str, Any] = dict(config or {})
+        if kwargs:
+            merged_config.update(kwargs)
+        self.config = merged_config
         self.name = config.get('name', 'unknown')
         self.normalize_obs = config.get('normalize_obs', False)
         self.normalize_reward = config.get('normalize_reward', False)

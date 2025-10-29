@@ -1,0 +1,9 @@
+_target_: src.components.world_models.representation_learners.rssm.RSSMRepresentationLearner
+feature_dim: ???
+deterministic_dim: 200
+stochastic_dim: 32
+hidden_dim: 200
+min_std: 0.1
+activation: elu
+sample_prior: true
+sample_posterior: true

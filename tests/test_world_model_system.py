@@ -12,83 +12,75 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.orchestration.factory import ComponentFactory
-from src.utils.registry import auto_import_modules
+from omegaconf import OmegaConf
+
+from scripts.train import build_world_model_components, build_optimizers
 
 
 def _dreamer_cartpole_config():
-    return {
-        "encoder": {
-            "type": "mlp",
-            "config": {
-                "input_dim": 4,
-                "hidden_dims": [64, 64],
-                "activation": "elu",
+    return OmegaConf.create(
+        {
+            "_dims": {
+                "observation": 4,
+                "action": 2,
+                "encoder_output": 64,
+                "deterministic": 32,
+                "stochastic": 16,
+                "representation": 48,
             },
-        },
-        "representation_learner": {
-            "type": "rssm",
-            "config": {
-                "feature_dim": 64,
-                "latent_dim": 16,
-                "hidden_dim": 64,
-                "min_std": 0.1,
+            "components": {
+                "encoder": {
+                    "_target_": "src.components.encoders.simple_mlp.MLPEncoder",
+                    "input_dim": 4,
+                    "hidden_dims": [64, 64],
+                    "activation": "elu",
+                },
+                "representation_learner": {
+                    "_target_": "src.components.world_models.representation_learners.rssm.RSSMRepresentationLearner",
+                    "feature_dim": 64,
+                    "latent_dim": 16,
+                    "deterministic_dim": 32,
+                    "stochastic_dim": 16,
+                    "hidden_dim": 64,
+                    "min_std": 0.1,
+                    "action_dim": 2,
+                },
+                "dynamics_model": {
+                    "_target_": "src.components.world_models.representation_learners.rssm.RSSMRepresentationLearner",
+                    "feature_dim": 64,
+                    "latent_dim": 16,
+                    "deterministic_dim": 32,
+                    "stochastic_dim": 16,
+                    "hidden_dim": 64,
+                    "min_std": 0.1,
+                    "action_dim": 2,
+                },
             },
-        },
-        "dynamics_model": {
-            "type": "rssm",
-            "config": {
-                "hidden_dim": 64,
-                "min_std": 0.1,
+            "algorithm": {
+                "world_model_lr": 2e-4,
             },
-        },
-        "reward_predictor": {
-            "type": "mlp",
-            "config": {
-                "hidden_dims": [64, 64],
-                "activation": "elu",
+            "controllers": {
+                "actor": {
+                    "discrete_actions": True,
+                }
             },
-        },
-        "observation_decoder": {
-            "type": "mlp",
-            "config": {
-                "hidden_dims": [64, 64],
-                "activation": "elu",
-                "output_dim": 4,
-            },
-        },
-        "policy_head": {
-            "type": "categorical_mlp",
-            "config": {
-                "representation_dim": 64,
-                "hidden_dims": [64, 64],
-                "activation": "elu",
-                "discrete_actions": True,
-                "action_dim": 2,
-            },
-        },
-        "value_function": {
-            "type": "critic_mlp",
-            "config": {
-                "representation_dim": 64,
-                "hidden_dims": [64, 64],
-                "activation": "elu",
-            },
-        },
-    }
+        }
+    )
 
 
 def test_world_model_components_smoke():
-    auto_import_modules()
-    bundle = ComponentFactory.create_world_model_components(_dreamer_cartpole_config(), device="cpu")
-    components = bundle.as_dict()
+    cfg = _dreamer_cartpole_config()
+    components = build_world_model_components(cfg, device="cpu")
+    optimizers = build_optimizers(cfg, components, controllers={})
+    component_dict = components.as_dict()["components"]
 
-    assert components["encoder"] is not None
-    assert components["representation_learner"] is not None
-    assert components["dynamics_model"] is not None
+    assert component_dict["encoder"] is not None
+    assert component_dict["representation_learner"] is not None
+    assert component_dict["dynamics_model"] is not None
+    assert "world_model" in optimizers
 
     observations = torch.randn(4, 4)
-    encoder = components["encoder"]
+    encoder = component_dict["encoder"]
     with torch.no_grad():
         features = encoder(observations)
     assert isinstance(features, torch.Tensor)

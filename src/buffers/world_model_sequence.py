@@ -10,15 +10,18 @@ import numpy as np
 import torch
 
 from .base import BaseBuffer
-from ..utils.registry import register_buffer, get_return_computer
+
+from ..components.world_models.return_computers.base import BaseReturnComputer
 
 
-@register_buffer("world_model_sequence")
 class WorldModelSequenceBuffer(BaseBuffer):
     """Stores vectorised experience and returns contiguous sequences on demand."""
 
-    def __init__(self, config: Dict[str, Any]):
-        config = dict(config)
+    def __init__(self, config: Optional[Dict[str, Any]] = None, **kwargs: Any):
+        merged_config: Dict[str, Any] = dict(config or {})
+        if kwargs:
+            merged_config.update(kwargs)
+        config = merged_config
         config.setdefault("gamma", 0.99)
         config.setdefault("sequence_length", 16)
         config.setdefault("sequence_stride", None)
@@ -42,20 +45,7 @@ class WorldModelSequenceBuffer(BaseBuffer):
         self.pad_end_of_episode = bool(config.get("pad_end_of_episode", False))
 
         # Return computer setup (optional, for MuZero/TD-MPC style algorithms)
-        return_computer_config = config.get("return_computer")
-        self.return_computer = None
-        if return_computer_config is not None:
-            if isinstance(return_computer_config, dict):
-                rc_type = return_computer_config.get("type", "none")
-                rc_config = return_computer_config.get("config", {})
-                rc_config.setdefault("gamma", self.gamma)
-                return_computer_cls = get_return_computer(rc_type)
-                self.return_computer = return_computer_cls(rc_config)
-            elif isinstance(return_computer_config, str):
-                # Support simple string specification: "n_step", "td_lambda", etc.
-                rc_config = {"gamma": self.gamma}
-                return_computer_cls = get_return_computer(return_computer_config)
-                self.return_computer = return_computer_cls(rc_config)
+        self.return_computer = self._resolve_return_computer(config.get("return_computer"))
 
         capacity = int(config.get("capacity", 10000))
         config["capacity"] = max(capacity, self.sequence_length * self.num_envs)
@@ -346,3 +336,13 @@ class WorldModelSequenceBuffer(BaseBuffer):
                 )
             return array[t, env_idx]
         raise ValueError(f"Unsupported array shape {array.shape}")
+
+    def _resolve_return_computer(self, config_value: Any) -> Optional[BaseReturnComputer]:
+        if config_value is None:
+            return None
+        if isinstance(config_value, BaseReturnComputer):
+            return config_value
+        raise TypeError(
+            "return_computer must be None or a pre-instantiated BaseReturnComputer. "
+            "Use Hydra to instantiate return computers before passing them to the buffer."
+        )

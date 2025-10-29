@@ -1,66 +1,84 @@
-"""Offline dataset adapter exposing the data source interface."""
+"""Offline dataset buffer that serves batches from a fixed dataset."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Iterable, Mapping, Optional
+from typing import Any, Dict, Mapping, Optional
 
 import numpy as np
 import torch
 
-from . import register_data_source
-from .base import DataSource
-from ..workflows.world_models.context import WorkflowContext
+from .base import BaseBuffer
 
 
-@register_data_source("offline_tensor")
-@register_data_source("offline_dataset")
-class OfflineDatasetSource(DataSource):
-    """Loads fixed datasets from disk and samples mini-batches for updates."""
+class OfflineDatasetBuffer(BaseBuffer):
+    """Loads a static dataset from disk and exposes a buffer interface."""
 
-    def __init__(
-        self,
-        path: Optional[str] = None,
-        *,
-        format: Optional[str] = None,
-        batch_size: Optional[int] = None,
-        device: Optional[str] = None,
-        shuffle: bool = True,
-        replace: bool = True,
-        seed: Optional[int] = None,
-    ) -> None:
-        self.path = Path(path) if path else None
-        self.explicit_format = format
-        self.batch_size_config = batch_size
-        self.device_override = device
-        self.shuffle = shuffle
-        self.replace = replace
-        self.seed = seed
+    def __init__(self, config: Optional[Dict[str, Any]] = None, **kwargs: Any) -> None:
+        merged: Dict[str, Any] = dict(config or {})
+        if kwargs:
+            merged.update(kwargs)
+
+        self.path = Path(merged.pop("path", "")) if "path" in merged else None
+        self.explicit_format = merged.pop("format", None)
+        self.shuffle = bool(merged.pop("shuffle", True))
+        self.replace = bool(merged.pop("replace", True))
+        self.seed = merged.pop("seed", None)
+        self.device_override = merged.get("device")
+        self._batch_size_override = merged.get("batch_size")
+
+        merged.setdefault("capacity", 0)
+        merged.setdefault("batch_size", 64)
+        merged.setdefault("device", "cpu")
+
+        super().__init__(merged)
 
         self._rng: Optional[np.random.Generator] = None
         self._data_arrays: Optional[Dict[str, np.ndarray]] = None
         self._size = 0
-        self._device: Optional[str] = None
-        self._fallback_batch_size: Optional[int] = None
+        self._sample_device: Optional[torch.device] = None
 
-    def initialize(self, context: WorkflowContext) -> None:
-        self._device = self.device_override or context.device
+    # ------------------------------------------------------------------
+    # BaseBuffer interface
+    # ------------------------------------------------------------------
+    def _setup_storage(self) -> None:
+        self._data_arrays = None
+        self._size = 0
+
+    def initialize(self, context: Any = None) -> None:
+        device_hint = None
+        if context is not None:
+            device_hint = getattr(context, "device", None)
+        if self.device_override is not None:
+            self._sample_device = torch.device(self.device_override)
+        elif device_hint is not None:
+            self._sample_device = torch.device(device_hint)
+        else:
+            self._sample_device = self.device
+
         self._rng = np.random.default_rng(self.seed)
-        self._fallback_batch_size = getattr(context.buffer, "batch_size", None)
-        if self.path is None:
-            raise ValueError("offline data source requires 'path' configuration.")
-        self._data_arrays = self._load_dataset(self.path, format_hint=self.explicit_format)
-        self._size = self._infer_size(self._data_arrays)
+
+        if self.path is None or not str(self.path):
+            raise ValueError("OfflineDatasetBuffer requires a 'path' configuration.")
+
+        arrays = self._load_dataset(self.path, format_hint=self.explicit_format)
+        self._data_arrays = arrays
+        self._size = self._infer_size(arrays)
 
     def add(self, **kwargs: Any) -> None:
-        raise RuntimeError("OfflineDatasetSource is read-only; cannot add new samples.")
+        del kwargs
+        raise RuntimeError("OfflineDatasetBuffer is read-only; cannot add new samples.")
 
     def sample(self, batch_size: Optional[int] = None) -> Dict[str, torch.Tensor]:
         if self._data_arrays is None or self._size == 0:
             raise RuntimeError("Offline dataset not initialised or empty.")
 
-        effective_batch = batch_size or self.batch_size_config or self._fallback_batch_size
+        effective_batch = (
+            batch_size
+            or self._batch_size_override
+            or self.batch_size
+        )
         if effective_batch is None:
             raise ValueError("Offline dataset sampling requires 'batch_size' to be specified.")
 
@@ -69,49 +87,41 @@ class OfflineDatasetSource(DataSource):
                 f"Cannot sample {effective_batch} items without replacement from dataset of size {self._size}."
             )
 
-        indices = (
-            self._sequential_indices(effective_batch)
-            if not self.shuffle
-            else self._random_indices(effective_batch)
-        )
+        indices = self._sequential_indices(effective_batch) if not self.shuffle else self._random_indices(effective_batch)
 
         batch: Dict[str, torch.Tensor] = {}
         for key, array in self._data_arrays.items():
             slice_ = array[indices]
             tensor = torch.as_tensor(slice_)
-            if self._device:
-                tensor = tensor.to(self._device)
+            if self._sample_device is not None:
+                tensor = tensor.to(self._sample_device)
             batch[key] = tensor
         return batch
+
+    def clear(self) -> None:
+        self._data_arrays = None
+        self._size = 0
 
     def ready(self) -> bool:
         return self._size > 0
 
-    def state_dict(self, *, mode: str = "checkpoint") -> Mapping[str, Any]:
-        if mode == "metrics":
-            metrics: Dict[str, float] = {
-                "offline/size": float(self._size),
-            }
-            if self.path is not None:
-                metrics["offline/has_path"] = 1.0
-            return metrics
-        if mode != "checkpoint":
-            raise ValueError(f"OfflineDatasetSource does not support state_dict mode '{mode}'.")
+    def _save_buffer_state(self) -> Dict[str, Any]:
         return {}
 
-    def load_state_dict(self, state: Mapping[str, Any]) -> None:
-        _ = state
+    def _load_buffer_state(self, state: Dict[str, Any]) -> None:
+        del state
 
     # ------------------------------------------------------------------
-    # Internal helpers
+    # Helpers
     # ------------------------------------------------------------------
-
     def _random_indices(self, batch_size: int) -> np.ndarray:
-        assert self._rng is not None
+        if self._rng is None:
+            raise RuntimeError("OfflineDatasetBuffer RNG not initialised.")
         return self._rng.choice(self._size, size=batch_size, replace=self.replace)
 
     def _sequential_indices(self, batch_size: int) -> np.ndarray:
-        assert self._rng is not None
+        if self._rng is None:
+            raise RuntimeError("OfflineDatasetBuffer RNG not initialised.")
         start = int(self._rng.integers(0, max(1, self._size)))
         end = start + batch_size
         if end <= self._size:
@@ -129,7 +139,7 @@ class OfflineDatasetSource(DataSource):
         elif fmt in {"npz", "numpy"}:
             loaded = np.load(path, allow_pickle=True)
             data = {key: loaded[key] for key in loaded.files}
-        elif fmt in {"json"}:
+        elif fmt == "json":
             with open(path, "r", encoding="utf-8") as handle:
                 data = json.load(handle)
         else:
@@ -147,7 +157,7 @@ class OfflineDatasetSource(DataSource):
             if not isinstance(first, Mapping):
                 raise TypeError("Offline dataset list entries must be dict-like.")
             keys = list(first.keys())
-            stacked: Dict[str, Iterable[np.ndarray]] = {key: [] for key in keys}
+            stacked: Dict[str, list[np.ndarray]] = {key: [] for key in keys}
             for item in data:
                 for key in keys:
                     stacked[key].append(self._to_numpy(item[key]))

@@ -20,12 +20,10 @@ from typing import Dict, Any, Tuple, Optional, Union, Callable, List
 import torch
 
 from src.environments.base import BaseEnvironment, SpaceSpec
-from src.utils.registry import register_environment
 
 logger = logging.getLogger(__name__)
 
 
-@register_environment("vectorized_gym")
 class VectorizedGymWrapper(BaseEnvironment):
     """
     Vectorized wrapper for OpenAI Gym environments using Gymnasium's vector environments.
@@ -41,7 +39,7 @@ class VectorizedGymWrapper(BaseEnvironment):
         vectorization_type: Type of vectorization used ('sync' or 'async')
     """
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Optional[Dict[str, Any]] = None, **kwargs: Any):
         """
         Initialize vectorized Gym environment wrapper.
         
@@ -56,6 +54,10 @@ class VectorizedGymWrapper(BaseEnvironment):
                 - render_mode: Rendering mode (None for vectorized envs)
                 - env_kwargs: Additional environment-specific kwargs
         """
+        config = dict(config or {})
+        if kwargs:
+            config.update(kwargs)
+
         self.env_name = config['name']
         self.num_envs = config.get('num_envs', 8)
         self.vectorization = config.get('vectorization', 'auto')

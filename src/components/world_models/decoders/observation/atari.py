@@ -7,11 +7,9 @@ from typing import Tuple
 import torch
 import torch.nn as nn
 
-from .....utils.registry import register_observation_decoder
 from .base import BaseObservationDecoder
 
 
-@register_observation_decoder("atari_conv")
 class AtariConvObservationDecoder(BaseObservationDecoder):
     """Transposed-convolution decoder tuned for Atari 84x84 frame stacks."""
 

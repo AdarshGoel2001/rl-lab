@@ -147,9 +147,14 @@ class LatentSequence:
 class BaseRepresentationLearner(nn.Module, metaclass=abc.ABCMeta):
     """Common contract for modules that maintain latent state across time."""
 
-    def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self, config: Dict[str, Any] | None = None, **kwargs: Any) -> None:
         super().__init__()
-        self.config = dict(config or {})
+        merged_config: Dict[str, Any] = {}
+        if config is not None:
+            merged_config.update(config)
+        if kwargs:
+            merged_config.update(kwargs)
+        self.config = merged_config
         self.device = torch.device(self.config.get("device", "cpu"))
 
     # ------------------------------------------------------------------
@@ -182,15 +187,6 @@ class BaseRepresentationLearner(nn.Module, metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def set_state(self, state: LatentState) -> None:
         """Load cached online posterior state."""
-
-    def export_specs(self) -> Dict[str, Any]:
-        """Return metadata describing the latent representation.
-
-        Subclasses can extend this payload with additional keys used by other
-        components (e.g., deterministic/stochastic dims for RSSM). By default we
-        expose the flattened representation dimensionality.
-        """
-        return {"representation_dim": self.representation_dim}
 
     # ------------------------------------------------------------------
     # Online usage

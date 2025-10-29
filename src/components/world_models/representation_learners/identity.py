@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 import torch
 
-from src.utils.registry import register_representation_learner
 
 from .base import BaseRepresentationLearner, LatentSequence, LatentStep, RSSMState
 
@@ -22,12 +21,11 @@ def _infer_feature_dim(config: Dict[str, Any]) -> int:
     )
 
 
-@register_representation_learner("identity")
 class IdentityRepresentationLearner(BaseRepresentationLearner):
     """Fallback learner that treats encoder outputs as latent states."""
 
-    def __init__(self, config: Dict[str, Any]) -> None:
-        super().__init__(config)
+    def __init__(self, config: Dict[str, Any] | None = None, **kwargs: Any) -> None:
+        super().__init__(config, **kwargs)
         self.feature_dim = _infer_feature_dim(self.config)
         self._min_std = float(self.config.get("min_std", 1e-3))
         self._state: Optional[RSSMState] = None
