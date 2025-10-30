@@ -24,7 +24,7 @@ experiment:
 _dims:
   observation: 4
   action: 2
-  encoder_output: 128
+  encoder_output: 4
   deterministic: 200
   stochastic: 32
   representation: ${add:${_dims.deterministic},${_dims.stochastic}}
@@ -37,12 +37,15 @@ algorithm:
   gamma: 0.99
   lambda_return: 0.95
   entropy_coef: 0.01
+  free_nats: 3.0
   max_grad_norm: 1.0
 
 components:
   encoder:
     input_dim: ${_dims.observation}
-    hidden_dims: [128, 128]
+    hidden_dims:
+      - 128
+      - ${_dims.encoder_output}
     activation: elu
   representation_learner:
     feature_dim: ${_dims.encoder_output}
@@ -76,3 +79,19 @@ training:
   eval_frequency: 25000
   checkpoint_frequency: 100000
   total_timesteps: 500000
+  phases:
+    - name: warmup
+      type: online
+      steps: 20000
+      buffer: replay
+      workflow_hooks:
+        - collect
+        - update_world_model
+
+    - name: joint_training
+      type: online
+      buffer: replay
+      workflow_hooks:
+        - collect
+        - update_world_model
+        - update_controller

@@ -1,9 +1,9 @@
 _target_: src.components.world_models.representation_learners.rssm.RSSMRepresentationLearner
-feature_dim: ???
+feature_dim: ${_dims.encoder_output}
 deterministic_dim: 200
 stochastic_dim: 32
 hidden_dim: 200
-action_dim: ???
+action_dim: ${_dims.action}
 min_std: 0.1
 discrete_actions: false
 activation: elu

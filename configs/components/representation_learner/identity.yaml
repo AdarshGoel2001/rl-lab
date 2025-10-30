@@ -1,0 +1,4 @@
+_target_: src.components.world_models.representation_learners.identity.IdentityRepresentationLearner
+feature_dim: ${_dims.representation}
+deterministic_dim: ${_dims.representation}
+stochastic_dim: 0
