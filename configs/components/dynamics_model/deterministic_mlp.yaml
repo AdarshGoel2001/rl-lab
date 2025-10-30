@@ -1,0 +1,5 @@
+_target_: src.components.world_models.dynamics.deterministic_mlp.DeterministicMLPDynamics
+latent_dim: ${_dims.representation}
+action_dim: ${_dims.action}
+hidden_dims: [512, 512]
+activation: elu

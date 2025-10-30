@@ -150,10 +150,32 @@ class RSSMRepresentationLearner(BaseRepresentationLearner):
             self.reset_state(batch_size=batch_size)
 
         if reset_mask is not None:
-            self.reset_state(indices=reset_mask)
+            idx = self._indices_from_mask(reset_mask, self._state.deterministic.shape[0])
+            if idx is not None:
+                idx = idx.to(self._state.deterministic.device)
+                self._state.deterministic[idx] = 0.0
+                self._state.stochastic[idx] = 0.0
+                self._state.mean[idx] = 0.0
+                self._state.std[idx] = self.min_std
+                if self._prior_state is not None:
+                    self._prior_state.deterministic[idx] = 0.0
+                    self._prior_state.stochastic[idx] = 0.0
+                    self._prior_state.mean[idx] = 0.0
+                    self._prior_state.std[idx] = self.min_std
 
         prev_state = self._state.clone()
-        prior = self._compute_prior(prev_state, prev_action)
+
+        if self.action_dim > 0:
+            action_tensor = self._prepare_action(prev_action, batch_size)
+            if action_tensor is not None and reset_mask is not None:
+                idx = self._indices_from_mask(reset_mask, batch_size)
+                if idx is not None:
+                    action_tensor = action_tensor.clone()
+                    action_tensor[idx] = 0.0
+        else:
+            action_tensor = None
+
+        prior = self._compute_prior(prev_state, action_tensor)
         posterior = self._compute_posterior(prior.deterministic, features)
 
         self._state = posterior.clone()

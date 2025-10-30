@@ -1,0 +1,79 @@
+# @package _global_
+
+defaults:
+  - /workflow: tdmpc
+  - /components/encoder: mlp
+  - /components/dynamics_model: deterministic_mlp
+  - /components/reward_predictor: mlp
+  - /controller@controllers.planner: mpc_planner
+  - /controller@controllers.critic: dreamer_critic
+  - /training: default
+  - /buffer: world_model_sequence
+  - /logging: tensorboard
+  - /environment: cartpole
+  - _self_
+
+experiment:
+  name: tdmpc_cartpole
+  seed: 42
+  device: auto
+  paradigm: world_model
+
+_dims:
+  observation: 4
+  action: 2
+  encoder_output: 256
+  deterministic: 256
+  stochastic: 0
+  representation: ${add:${_dims.deterministic},${_dims.stochastic}}
+
+algorithm:
+  world_model_lr: 1.0e-3
+  value_lr: 1.0e-3
+  plan_horizon: 12
+  gamma: 0.99
+  collect_length: 1
+
+components:
+  encoder:
+    input_dim: ${_dims.observation}
+    hidden_dims: [256, 256]
+    activation: elu
+  dynamics_model:
+    latent_dim: ${_dims.representation}
+    action_dim: ${_dims.action}
+  reward_predictor:
+    representation_dim: ${_dims.representation}
+    output_dim: 1
+
+controllers:
+  planner:
+    representation_dim: ${_dims.representation}
+    action_dim: ${_dims.action}
+    horizon: ${algorithm.plan_horizon}
+  critic:
+    representation_dim: ${_dims.representation}
+
+optimizers:
+  world_model:
+    _target_: torch.optim.Adam
+    _partial_: true
+    lr: ${algorithm.world_model_lr}
+  critic:
+    _target_: torch.optim.Adam
+    _partial_: true
+    lr: ${algorithm.value_lr}
+
+buffer:
+  sequence_length: 1
+  sequence_stride: 1
+
+training:
+  phases:
+    - name: online_training
+      type: online
+      buffer: replay
+      workflow_hooks:
+        - collect
+        - update_world_model
+        - update_controller

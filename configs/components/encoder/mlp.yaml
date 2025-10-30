@@ -1,5 +1,5 @@
 _target_: src.components.encoders.simple_mlp.MLPEncoder
-input_dim: ???
+input_dim: ${_dims.observation}
 hidden_dims: [128, 128]
 activation: elu
 batch_norm: false

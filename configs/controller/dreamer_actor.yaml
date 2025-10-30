@@ -1,6 +1,6 @@
 _target_: src.components.world_models.controllers.dreamer.DreamerActorController
-representation_dim: ???
-action_dim: ???
+representation_dim: ${_dims.representation}
+action_dim: ${_dims.action}
 hidden_dims: [256, 256]
 activation: elu
 lr: 3.0e-4

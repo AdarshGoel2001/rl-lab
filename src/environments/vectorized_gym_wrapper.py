@@ -346,54 +346,11 @@ class VectorizedGymWrapper(BaseEnvironment):
             # Handle done flags (terminated OR truncated)
             dones = terminateds | truncateds
 
-            reset_indices = np.nonzero(dones)[0]
-            reset_infos: List[Dict[str, Any]] = []
-            if reset_indices.size > 0:
-                reset_obs, raw_reset_infos = self.vec_env.reset_done(reset_indices.tolist())
-
-                # Reset per-environment transform state
-                if hasattr(self, "_transform_pipelines") and self._transform_pipelines:
-                    for env_idx in reset_indices:
-                        pipeline = self._transform_pipelines[env_idx]
-                        if pipeline is not None:
-                            pipeline.reset_states()
-
-                if reset_obs is not None:
-                    reset_obs = np.asarray(reset_obs, dtype=np.float32)
-                    observations[reset_indices] = reset_obs
-
-                if raw_reset_infos is None:
-                    reset_infos = [{} for _ in range(len(reset_indices))]
-                elif isinstance(raw_reset_infos, list):
-                    reset_infos = [
-                        info if isinstance(info, dict) else {}
-                        for info in raw_reset_infos
-                    ]
-                elif isinstance(raw_reset_infos, dict):
-                    reset_infos = [{} for _ in range(len(reset_indices))]
-                    for key, values in raw_reset_infos.items():
-                        try:
-                            values_seq = list(values)
-                        except TypeError:
-                            values_seq = [values] * len(reset_indices)
-                        for offset, env_idx in enumerate(reset_indices):
-                            if offset < len(values_seq):
-                                reset_infos[offset][key] = values_seq[offset]
-                else:
-                    reset_infos = [{} for _ in range(len(reset_indices))]
-
-            # Apply per-environment transforms after potential resets
+            # Apply optional per-environment transforms
             observations = self._apply_per_env_transforms(observations)
 
             # Normalize infos to list-of-dicts format
             infos = self._normalize_infos(infos)
-
-            if reset_indices.size > 0:
-                for offset, env_idx in enumerate(reset_indices):
-                    info_update = reset_infos[offset] if offset < len(reset_infos) else {}
-                    if info_update:
-                        infos[env_idx].update(info_update)
-                    infos[env_idx].setdefault("reset", True)
 
             # Update episode tracking
             self._episode_returns += rewards

@@ -296,12 +296,25 @@ class DreamerWorkflow(WorldModelWorkflow):
             latent_tensor = latent_step.posterior.to_tensor()
 
             actor_dist: Distribution = self.actor_controller.forward(latent_tensor)
-            action_tensor = actor_dist.mean if deterministic else actor_dist.rsample()
+
+            if self.discrete_actions:
+                if deterministic:
+                    action_indices = torch.argmax(actor_dist.probs, dim=-1)
+                else:
+                    action_indices = actor_dist.sample()
+                action_tensor = F.one_hot(action_indices, num_classes=self.action_dim).to(
+                    dtype=torch.float32
+                )
+                env_actions = action_indices.detach().cpu().numpy()
+                log_prob = actor_dist.log_prob(action_indices)
+            else:
+                action_tensor = actor_dist.mean if deterministic else actor_dist.rsample()
+                env_actions = action_tensor.detach().cpu().numpy()
+                log_prob = actor_dist.log_prob(action_tensor)
 
             value_pred = self.critic_controller.forward(latent_tensor).detach()
-            log_prob = actor_dist.log_prob(action_tensor)
 
-            next_obs, reward, done, infos = self.environment.step(action_tensor)
+            next_obs, reward, done, infos = self.environment.step(env_actions)
 
             self._update_episode_stats(reward, done, infos)
 
@@ -542,11 +555,21 @@ class DreamerWorkflow(WorldModelWorkflow):
         for _ in range(horizon):
             latent_tensor = state.to_tensor()
             actor_dist: Distribution = self.actor_controller.forward(latent_tensor)
-            action = actor_dist.mean if deterministic else actor_dist.rsample()
+            if self.discrete_actions:
+                if deterministic:
+                    action_indices = torch.argmax(actor_dist.probs, dim=-1)
+                else:
+                    action_indices = actor_dist.sample()
+                action = F.one_hot(action_indices, num_classes=self.action_dim).to(
+                    dtype=torch.float32
+                )
+                log_probs.append(actor_dist.log_prob(action_indices))
+            else:
+                action = actor_dist.mean if deterministic else actor_dist.rsample()
+                log_probs.append(actor_dist.log_prob(action))
 
             critic_value = self.critic_controller.forward(latent_tensor)
             values.append(critic_value)
-            log_probs.append(actor_dist.log_prob(action))
             entropy = actor_dist.entropy()
             if entropy.dim() > 1:
                 entropy = entropy.sum(dim=-1)

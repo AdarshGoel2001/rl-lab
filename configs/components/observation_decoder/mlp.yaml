@@ -1,5 +1,5 @@
 _target_: src.components.world_models.decoders.observation.mlp.MLPObservationDecoder
-representation_dim: ???
+representation_dim: ${_dims.representation}
 hidden_dims: [128, 128]
 activation: elu
-output_dim: ???
+output_dim: ${_dims.observation}
