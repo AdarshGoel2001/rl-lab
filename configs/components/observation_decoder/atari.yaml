@@ -1,0 +1,27 @@
+# Atari Observation Decoder Configuration
+# Transposed convolution decoder for reconstructing 84x84 frame stacks
+
+_target_: src.components.world_models.decoders.observation.atari.AtariConvObservationDecoder
+
+# Input from RSSM latent representation
+representation_dim: ${_dims.representation}
+
+# Output shape: 84x84x4 stacked grayscale frames (HWC format)
+output_shape: [84, 84, 4]
+
+# Decoder architecture settings
+initial_size: 21        # Starting spatial size (21 -> 42 -> 84 via 2x upsampling)
+base_channels: 32       # Initial channel count after projection
+mid_channels: 16        # Middle layer channels
+
+# Activation functions
+activation: elu         # Hidden layer activation
+output_activation: sigmoid  # Final activation - outputs in [0, 1] to match normalized observations
+
+# Architecture:
+# Linear: representation_dim -> base_channels * 21 * 21
+# Reshape: (batch, base_channels, 21, 21)
+# ConvTranspose2d: 21x21 -> 42x42 (kernel=4, stride=2, padding=1)
+# ConvTranspose2d: 42x42 -> 84x84 (kernel=4, stride=2, padding=1)
+# Conv2d: 84x84 -> 84x84 (kernel=3, stride=1, padding=1) - refinement
+# Output: (batch, 84, 84, 4)

@@ -1,0 +1,26 @@
+# Atari Pong Environment Configuration
+# Uses standard Atari preprocessing from AtariEnvironment wrapper
+
+_target_: src.environments.atari_wrapper.AtariEnvironment
+
+# Game configuration
+game: ALE/Pong-v5
+
+# Vectorization for faster data collection
+num_envs: 4
+parallel_backend: sync  # Use 'async' for true parallelism (requires more RAM)
+
+# Standard Atari preprocessing settings
+frame_skip: 4           # Repeat action for 4 frames, accumulate rewards
+frame_stack: 4          # Stack 4 consecutive frames
+noop_max: 30            # Random 0-30 no-ops on reset for stochastic starts
+clip_rewards: true      # Clip rewards to {-1, 0, 1}
+full_action_space: false  # Use reduced action space (6 actions for Pong)
+
+# Pong-specific settings
+terminal_on_life_loss: false  # Pong has no lives, only game over matters
+
+# Output specs (for reference, computed automatically)
+# Observation shape: (84, 84, 4) - grayscale stacked frames, HWC format
+# Observation dtype: float32, range [0.0, 1.0]
+# Action space: Discrete(6) for Pong reduced action set

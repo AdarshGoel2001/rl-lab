@@ -1,0 +1,139 @@
+# @package _global_
+# Dreamer on Atari Pong Experiment Configuration
+
+defaults:
+  - /workflow: dreamer
+  - /components/encoder: nature_cnn
+  - /components/representation_learner: rssm
+  - /components/dynamics_model: rssm
+  - /components/reward_predictor: mlp
+  - /components/observation_decoder: atari
+  - /controller@controllers.actor: dreamer_actor
+  - /controller@controllers.critic: dreamer_critic
+  - /training: default
+  - /buffer: world_model_sequence
+  - /logging: tensorboard
+  - /environment: atari_pong
+  - _self_
+
+experiment:
+  name: dreamer_ataripong
+  seed: 42
+  device: auto
+  paradigm: world_model
+
+# Dimension specifications for Atari
+_dims:
+  observation: [84, 84, 4]  # 84x84 grayscale, 4 frames stacked
+  action: 6                 # Pong reduced action space
+  encoder_output: 512       # Nature CNN output dimension
+  deterministic: 200        # RSSM deterministic state size
+  stochastic: 32            # RSSM stochastic state size (32 classes)
+  representation: ${add:${_dims.deterministic},${_dims.stochastic}}  # 232 total
+
+# Dreamer hyperparameters (Atari-tuned)
+algorithm:
+  world_model_lr: 6.0e-4     # Slightly higher for Atari
+  actor_lr: 8.0e-5           # Lower actor LR for stability
+  critic_lr: 8.0e-5          # Lower critic LR for stability
+  imagination_horizon: 15    # Imagination rollout length
+  gamma: 0.99                # Discount factor
+  lambda_return: 0.95        # Lambda for TD(λ) returns
+  entropy_coef: 0.001        # Lower entropy for Atari (sharper policies)
+  free_nats: 3.0             # KL divergence free nats
+  max_grad_norm: 100.0       # Gradient clipping (higher for Atari)
+
+# Component configurations
+components:
+  encoder:
+    # NatureCNN config (defined in nature_cnn.yaml)
+    channels: [32, 64, 64]
+    hidden_dim: ${_dims.encoder_output}
+    activation: relu
+
+  representation_learner:
+    feature_dim: ${_dims.encoder_output}
+    deterministic_dim: ${_dims.deterministic}
+    stochastic_dim: ${_dims.stochastic}
+    action_dim: ${_dims.action}
+    hidden_dim: 200           # RSSM hidden layer size
+
+  dynamics_model:
+    feature_dim: ${_dims.encoder_output}
+    deterministic_dim: ${_dims.deterministic}
+    stochastic_dim: ${_dims.stochastic}
+    action_dim: ${_dims.action}
+    hidden_dim: 200
+
+  reward_predictor:
+    representation_dim: ${_dims.representation}
+    hidden_dims: [400, 400]   # Larger reward predictor for Atari
+    activation: elu
+    output_dim: 1
+
+  observation_decoder:
+    representation_dim: ${_dims.representation}
+    output_shape: ${_dims.observation}
+    initial_size: 21
+    base_channels: 32
+    mid_channels: 16
+    activation: elu
+    output_activation: sigmoid
+
+# Controller configurations
+controllers:
+  actor:
+    representation_dim: ${_dims.representation}
+    action_dim: ${_dims.action}
+    hidden_dims: [400, 400]   # Larger actor for Atari
+    activation: elu
+    discrete_actions: true    # Pong has discrete actions
+    min_std: 0.1
+    init_std: 5.0
+
+  critic:
+    representation_dim: ${_dims.representation}
+    hidden_dims: [400, 400]   # Larger critic for Atari
+    activation: elu
+
+# Buffer configuration
+buffer:
+  capacity: 1000000           # 1M transitions (larger for Atari)
+  batch_size: 50              # Batch size for training
+  sequence_length: 50         # Sequence length for world model training
+  num_envs: ${environment.num_envs}
+
+# Training configuration
+training:
+  total_timesteps: 10000000   # 10M timesteps for Atari
+  eval_frequency: 0           # Disabled - eval code might be broken
+  checkpoint_frequency: 250000  # Checkpoint every 250k steps
+
+  phases:
+    # Warmup phase: Train world model only (no policy)
+    - name: warmup
+      type: online
+      steps: 100000            # 100k warmup steps for Atari
+      buffer: replay
+      workflow_hooks:
+        - collect
+        - update_world_model
+
+    # Joint training phase: Train both world model and policy
+    - name: joint_training
+      type: online
+      buffer: replay
+      workflow_hooks:
+        - collect
+        - update_world_model
+        - update_controller
+
+# Logging configuration
+logging:
+  log_frequency: 1000         # Log every 1k steps
+  video_frequency: 50000      # Save video every 50k steps (if enabled)
+
+# Environment is loaded from atari_pong.yaml
+# Observation shape: (84, 84, 4)
+# Action space: Discrete(6)
+# Num envs: 4
