@@ -287,8 +287,11 @@ class DreamerWorkflow(WorldModelWorkflow):
             if self.current_dones is not None:
                 reset_mask = torch.as_tensor(self.current_dones, device=self.device, dtype=torch.bool)
 
+            # Encode observations to features before passing to RSSM
+            features = self.encoder(obs_tensor)
+
             latent_step: LatentStep = self.rssm.observe(
-                obs_tensor,
+                features,
                 prev_action=self._prev_actions_model,
                 reset_mask=reset_mask,
                 detach_posteriors=True,
@@ -401,7 +404,7 @@ class DreamerWorkflow(WorldModelWorkflow):
         losses: Dict[str, torch.Tensor] = {}
 
         if self.observation_decoder is not None:
-            target = obs_flat.reshape(batch_size * horizon, -1)
+            target = obs_flat
             recon = self.observation_decoder(latent_flat)
             losses["reconstruction"] = F.mse_loss(recon, target)
 

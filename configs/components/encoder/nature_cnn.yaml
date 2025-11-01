@@ -1,0 +1,20 @@
+# Nature CNN Encoder Configuration
+# Based on DQN Nature paper (Mnih et al., 2015)
+# Designed for 84x84x4 Atari frame stacks
+
+_target_: src.components.encoders.cnn.NatureCNNEncoder
+
+# Architecture settings
+# Conv1: 84x84x4 -> 20x20x32 (8x8 kernel, stride 4)
+# Conv2: 20x20x32 -> 9x9x64 (4x4 kernel, stride 2)
+# Conv3: 9x9x64 -> 7x7x64 (3x3 kernel, stride 1)
+# FC: 7*7*64=3136 -> 512
+channels: [32, 64, 64]
+hidden_dim: 512
+
+# Activation function
+activation: relu
+
+# Input/Output specs (for reference)
+# Input: (84, 84, 4) in HWC format - automatically converted to CHW internally
+# Output: 512-dim feature vector
