@@ -11,7 +11,7 @@ defaults:
   - /controller@controllers.actor: dreamer_actor
   - /controller@controllers.critic: dreamer_critic
   - /training: default
-  - /buffer: world_model_sequence
+  - /buffer: episode_replay
   - /logging: tensorboard
   - /environment: atari_pong
   - _self_
@@ -98,8 +98,8 @@ controllers:
 
 # Buffer configuration
 buffer:
-  capacity: 1000000           # 1M transitions (larger for Atari)
-  batch_size: 50              # Batch size for training
+  capacity: 50000             # 50k transitions (reduced for memory)
+  batch_size: 16              # 16 sequences per batch (reduced for memory)
   sequence_length: 50         # Sequence length for world model training
   num_envs: ${environment.num_envs}
 

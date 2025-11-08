@@ -1,0 +1,18 @@
+_target_: src.buffers.episode_replay.EpisodeReplayBuffer
+
+# Capacity in timesteps across all episodes
+capacity: 50000
+
+# Sampling
+batch_size: 16
+sequence_length: 50    # burn_in + train_len
+burn_in_length: 5
+recent_ratio: 0.8
+
+# Device is forwarded to BaseBuffer for tensor creation
+device: ${experiment.device}
+
+# Buffer will infer num_envs from environment at runtime when instantiated
+# but you can override here if needed
+# num_envs: ${environment.num_envs}
+

@@ -7,7 +7,7 @@ _target_: src.environments.atari_wrapper.AtariEnvironment
 game: ALE/Pong-v5
 
 # Vectorization for faster data collection
-num_envs: 4
+num_envs: 2             # Reduced from 4 to avoid OOM
 parallel_backend: sync  # Use 'async' for true parallelism (requires more RAM)
 
 # Standard Atari preprocessing settings
