@@ -372,22 +372,23 @@ class EpisodeReplayBuffer(BaseBuffer):
         # Convert observations once and transfer to torch
         obs_float = (obs_uint8.astype(np.float32) / 255.0)
 
-        # Transfer tensors to device (single transfer per key)
-        device = self.device
+        # Build CPU tensors that own their storage (no numpy sharing, no device transfer here)
+        # torch.from_numpy() shares memory with numpy arrays; torch.tensor(..., copy=True) creates independent storage.
+        # Use numpy copies to break sharing, then from_numpy for efficiency
         batch: Dict[str, torch.Tensor] = {
-            "observations": torch.from_numpy(obs_float).to(device, non_blocking=True),
-            "actions": torch.from_numpy(actions_np).to(device, non_blocking=True),
-            "rewards": torch.from_numpy(rewards_np).to(device, non_blocking=True),
-            "dones": torch.from_numpy(dones_np).to(device, non_blocking=True),
-            "is_first": torch.from_numpy(is_first_np).to(device, non_blocking=True),
+            "observations": torch.from_numpy(obs_float.copy()),
+            "actions": torch.from_numpy(actions_np.copy()),
+            "rewards": torch.from_numpy(rewards_np.copy()),
+            "dones": torch.from_numpy(dones_np.copy()),
+            "is_first": torch.from_numpy(is_first_np.copy()),
         }
 
-        # For compatibility with existing workflows
-        batch["sequence_length"] = torch.tensor(L, device=device)
+        # For compatibility with existing workflows (keep these on CPU)
+        batch["sequence_length"] = torch.tensor(L)
         # Stride is conceptually 1 for enumerated contiguous windows in this implementation
-        batch["sequence_stride"] = torch.tensor(1, device=device)
+        batch["sequence_stride"] = torch.tensor(1)
 
-        # Masks if configured (on same device)
+        # Masks if configured (CPU tensors)
         if self.burn_in_length > 0:
             B = actions_np.shape[0]
             burn_in_mask, train_mask = self._make_masks(L, B)
@@ -451,9 +452,9 @@ class EpisodeReplayBuffer(BaseBuffer):
 
         TODO (Phase 6): Compute real stats.
         """
-        # NOTE: Rough memory estimate based on stored observation arrays only.
-        # Actions/rewards/dones are comparatively tiny for Atari-scale frames.
+        # Estimate memory from stored arrays (obs + aux arrays) and active buffers
         obs_bytes = 0
+        aux_bytes = 0
         newest = 0.0
         oldest = 0.0
         mean_len = 0.0
@@ -466,17 +467,23 @@ class EpisodeReplayBuffer(BaseBuffer):
                 obs = ep.get("obs")
                 if isinstance(obs, np.ndarray):
                     obs_bytes += obs.nbytes
+                for k in ("actions", "rewards", "dones", "is_first"):
+                    arr = ep.get(k)
+                    if isinstance(arr, np.ndarray):
+                        aux_bytes += arr.nbytes
         # Include active obs rough size
         if hasattr(self, "_active_obs"):
             for env_list in self._active_obs:
                 for frame in env_list:
                     if isinstance(frame, np.ndarray):
                         obs_bytes += frame.nbytes
-        mem_gb = obs_bytes / (1024 ** 3)
+        mem_gb = (obs_bytes + aux_bytes) / (1024 ** 3)
         return {
             "total_steps": int(self.__len__()),
             "num_episodes": int(self.num_episodes()),
             "memory_gb": float(mem_gb),
+            "obs_bytes": int(obs_bytes),
+            "aux_bytes": int(aux_bytes),
             "oldest_timestamp": float(oldest),
             "newest_timestamp": float(newest),
             "mean_episode_length": float(mean_len),
@@ -695,9 +702,9 @@ class EpisodeReplayBuffer(BaseBuffer):
 
         TODO (Phase 5): Implement using `burn_in_length` and device.
         """
-        device = self.device if isinstance(self.device, torch.device) else torch.device(self.device)
-        burn_in = torch.zeros((L, B), dtype=torch.bool, device=device)
-        train = torch.ones((L, B), dtype=torch.bool, device=device)
+        # Keep masks on CPU; workflows move them to the right device as needed.
+        burn_in = torch.zeros((L, B), dtype=torch.bool)
+        train = torch.ones((L, B), dtype=torch.bool)
         b = max(0, min(self.burn_in_length, L))
         if b > 0:
             burn_in[:b] = True

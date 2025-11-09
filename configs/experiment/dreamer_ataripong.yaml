@@ -113,7 +113,7 @@ training:
     # Warmup phase: Train world model only (no policy)
     - name: warmup
       type: online
-      steps: 100000            # 100k warmup steps for Atari
+      steps: 25000             # 25k warmup steps for testing
       buffer: replay
       workflow_hooks:
         - collect

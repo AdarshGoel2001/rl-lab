@@ -22,6 +22,7 @@ from ..workflows.world_models.base import CollectResult, WorldModelWorkflow
 from ..workflows.world_models.context import WorkflowContext, WorldModelComponents
 from ..workflows.world_models.controllers import ControllerManager
 from .phase_scheduler import PhaseScheduler, PhaseDefinition
+from ..utils.memory import process_rss_mb, gpu_memory_stats
 
 logger = logging.getLogger(__name__)
 
@@ -338,6 +339,44 @@ class WorldModelOrchestrator:
                 workflow_metrics = self.workflow.state_dict(mode="metrics")
                 if workflow_metrics:
                     self.experiment_logger.log_metrics(workflow_metrics, self.global_step, prefix="workflow")
+                # Memory diagnostics (low overhead)
+                mem = gpu_memory_stats()
+                if mem:
+                    self.experiment_logger.log_metrics(mem, self.global_step, prefix="debug")
+                rss = process_rss_mb()
+                if rss >= 0:
+                    self.experiment_logger.log_metrics({"cpu/rss_mb": rss}, self.global_step, prefix="debug")
+                # Buffer stats if present
+                try:
+                    for name, buf in (self.buffers or {}).items():
+                        if hasattr(buf, "stats"):
+                            st = buf.stats()
+                            # keep only lightweight, numeric fields
+                            numeric = {k: float(v) for k, v in st.items() if isinstance(v, (int, float))}
+                            if numeric:
+                                self.experiment_logger.log_metrics(numeric, self.global_step, prefix=f"buffer/{name}")
+                            # Also write a single CSV line for post-mortem without TB
+                            try:
+                                logs_dir = self.experiment_dir / "logs"
+                                logs_dir.mkdir(parents=True, exist_ok=True)
+                                csv_path = logs_dir / "memory_metrics.csv"
+                                with open(csv_path, "a", encoding="utf-8") as f:
+                                    row = {
+                                        "step": self.global_step,
+                                        "gpu_alloc_mb": mem.get("gpu/alloc_mb", -1.0),
+                                        "gpu_reserved_mb": mem.get("gpu/reserved_mb", -1.0),
+                                        "cpu_rss_mb": rss,
+                                        "buffer_total_steps": numeric.get("total_steps", -1.0),
+                                        "buffer_obs_bytes": numeric.get("obs_bytes", 0.0),
+                                        "buffer_aux_bytes": numeric.get("aux_bytes", 0.0),
+                                    }
+                                    f.write(
+                                        f"{int(row['step'])},{row['gpu_alloc_mb']:.3f},{row['gpu_reserved_mb']:.3f},{row['cpu_rss_mb']:.3f},{int(row['buffer_total_steps'])},{int(row['buffer_obs_bytes'])},{int(row['buffer_aux_bytes'])}\n"
+                                    )
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
                 last_log = self.global_step
 
             if ckpt_freq > 0 and (self.global_step - last_ckpt) >= ckpt_freq:

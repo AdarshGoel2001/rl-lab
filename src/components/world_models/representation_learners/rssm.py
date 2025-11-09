@@ -178,8 +178,14 @@ class RSSMRepresentationLearner(BaseRepresentationLearner):
         prior = self._compute_prior(prev_state, action_tensor)
         posterior = self._compute_posterior(prior.deterministic, features)
 
-        self._state = posterior.clone()
-        self._prior_state = prior.clone()
+        # Cache online state. If caller requests detachment, ensure cached state
+        # does not retain autograd graphs across environment steps.
+        if detach_posteriors:
+            self._state = posterior.detach()
+            self._prior_state = prior.detach() if prior is not None else None
+        else:
+            self._state = posterior.clone()
+            self._prior_state = prior.clone() if prior is not None else None
 
         result = LatentStep(posterior=posterior, prior=prior)
         return result.detach() if detach_posteriors else result

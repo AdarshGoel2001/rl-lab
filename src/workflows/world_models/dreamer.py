@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 import time
 from typing import Any, Dict, Mapping, Optional, TYPE_CHECKING
 
@@ -37,6 +38,8 @@ class DreamerWorkflow(WorldModelWorkflow):
         self.environment = None
         self.eval_environment = None
         self.controller_manager: Optional[ControllerManager] = None
+        self.experiment_logger = None
+        self._mem_probe_path: Optional[Path] = None
         self.actor_controller: Optional[torch.nn.Module] = None
         self.critic_controller: Optional[torch.nn.Module] = None
 
@@ -69,6 +72,13 @@ class DreamerWorkflow(WorldModelWorkflow):
         self.imagination_horizon = 15
         self.free_nats = 0.0
         self.kl_scale = 1.0
+
+        # Debug: leak bisection + mem slope
+        self._mem_prev_update: Optional[int] = None
+        self._mem_prev_alloc_mb: Optional[float] = None
+        self._dbg_disable_decoder: bool = False
+        self._dbg_disable_reward: bool = False
+        self._dbg_disable_kl: bool = False
 
     @property
     def config(self) -> Config:
@@ -109,6 +119,10 @@ class DreamerWorkflow(WorldModelWorkflow):
         self.imagination_horizon = int(getattr(algo_cfg, "imagination_horizon", 15))
         self.free_nats = float(getattr(algo_cfg, "free_nats", 0.0))
         self.kl_scale = float(getattr(algo_cfg, "kl_scale", 1.0))
+        # Debug toggles loaded from config
+        self._dbg_disable_decoder = bool(getattr(algo_cfg, "dbg_disable_decoder", False))
+        self._dbg_disable_reward = bool(getattr(algo_cfg, "dbg_disable_reward", False))
+        self._dbg_disable_kl = bool(getattr(algo_cfg, "dbg_disable_kl", False))
 
     # ------------------------------------------------------------------
     # Internal setup helpers
@@ -131,6 +145,17 @@ class DreamerWorkflow(WorldModelWorkflow):
         if context.controller_manager is None:
             raise RuntimeError("DreamerWorkflow requires a controller manager in the workflow context.")
         self.controller_manager = context.controller_manager
+        self.experiment_logger = context.experiment_logger
+        try:
+            # Prefer the orchestrator logs directory for probe CSVs
+            logs_dir = Path(getattr(self.experiment_logger, "log_dir", Path(".")))
+            logs_dir.mkdir(parents=True, exist_ok=True)
+            self._mem_probe_path = logs_dir / "wm_mem_probes.csv"
+            if not self._mem_probe_path.exists():
+                with open(self._mem_probe_path, "w", encoding="utf-8") as f:
+                    f.write("update,phase,gpu_alloc_mb,gpu_reserved_mb\n")
+        except Exception:
+            self._mem_probe_path = None
         self.actor_controller = self.controller_manager.get("actor")
         self.critic_controller = self.controller_manager.get("critic")
         if self.actor_controller is None or self.critic_controller is None:
@@ -282,40 +307,41 @@ class DreamerWorkflow(WorldModelWorkflow):
             obs_np = np.asarray(self.current_obs, dtype=np.float32)
             obs_list.append(obs_np.copy())
 
-            obs_tensor = torch.as_tensor(obs_np, device=self.device, dtype=torch.float32)
-            reset_mask = None
-            if self.current_dones is not None:
-                reset_mask = torch.as_tensor(self.current_dones, device=self.device, dtype=torch.bool)
+            with torch.no_grad():
+                obs_tensor = torch.as_tensor(obs_np, device=self.device, dtype=torch.float32)
+                reset_mask = None
+                if self.current_dones is not None:
+                    reset_mask = torch.as_tensor(self.current_dones, device=self.device, dtype=torch.bool)
 
-            # Encode observations to features before passing to RSSM
-            features = self.encoder(obs_tensor)
+                # Encode observations to features before passing to RSSM
+                features = self.encoder(obs_tensor)
 
-            latent_step: LatentStep = self.rssm.observe(
-                features,
-                prev_action=self._prev_actions_model,
-                reset_mask=reset_mask,
-                detach_posteriors=True,
-            )
-            latent_tensor = latent_step.posterior.to_tensor()
-
-            actor_dist: Distribution = self.actor_controller.forward(latent_tensor)
-
-            if self.discrete_actions:
-                if deterministic:
-                    action_indices = torch.argmax(actor_dist.probs, dim=-1)
-                else:
-                    action_indices = actor_dist.sample()
-                action_tensor = F.one_hot(action_indices, num_classes=self.action_dim).to(
-                    dtype=torch.float32
+                latent_step: LatentStep = self.rssm.observe(
+                    features,
+                    prev_action=self._prev_actions_model,
+                    reset_mask=reset_mask,
+                    detach_posteriors=True,
                 )
-                env_actions = action_indices.detach().cpu().numpy()
-                log_prob = actor_dist.log_prob(action_indices)
-            else:
-                action_tensor = actor_dist.mean if deterministic else actor_dist.rsample()
-                env_actions = action_tensor.detach().cpu().numpy()
-                log_prob = actor_dist.log_prob(action_tensor)
+                latent_tensor = latent_step.posterior.to_tensor()
 
-            value_pred = self.critic_controller.forward(latent_tensor).detach()
+                actor_dist: Distribution = self.actor_controller.forward(latent_tensor)
+
+                if self.discrete_actions:
+                    if deterministic:
+                        action_indices = torch.argmax(actor_dist.probs, dim=-1)
+                    else:
+                        action_indices = actor_dist.sample()
+                    action_tensor = F.one_hot(action_indices, num_classes=self.action_dim).to(
+                        dtype=torch.float32
+                    )
+                    env_actions = action_indices.detach().cpu().numpy()
+                    log_prob = actor_dist.log_prob(action_indices)
+                else:
+                    action_tensor = actor_dist.mean if deterministic else actor_dist.rsample()
+                    env_actions = action_tensor.detach().cpu().numpy()
+                    log_prob = actor_dist.log_prob(action_tensor)
+
+                value_pred = self.critic_controller.forward(latent_tensor).detach()
 
             next_obs, reward, done, infos = self.environment.step(env_actions)
 
@@ -403,12 +429,15 @@ class DreamerWorkflow(WorldModelWorkflow):
 
         losses: Dict[str, torch.Tensor] = {}
 
-        if self.observation_decoder is not None:
+        if self.observation_decoder is not None and not self._dbg_disable_decoder:
+            self._mem_probe("pre_decoder")
             target = obs_flat
             recon = self.observation_decoder(latent_flat)
+            self._mem_probe("post_decoder_fwd")
             losses["reconstruction"] = F.mse_loss(recon, target)
+            self._mem_probe("post_recon_loss")
 
-        if self.reward_predictor is not None and "rewards" in tensor_batch:
+        if self.reward_predictor is not None and "rewards" in tensor_batch and not self._dbg_disable_reward:
             rewards = tensor_batch["rewards"].to(torch.float32).reshape(batch_size * horizon, -1)
             pred_rewards = self.reward_predictor(latent_flat)
             losses["reward"] = F.mse_loss(pred_rewards, rewards)
@@ -417,19 +446,25 @@ class DreamerWorkflow(WorldModelWorkflow):
         posterior_dist = sequence.posterior_dist
         if prior_dist is None:
             raise RuntimeError("RSSM observe_sequence did not return prior states.")
-        kl_values = kl_divergence(posterior_dist, prior_dist)
-        if self.free_nats > 0.0:
-            kl_values = torch.clamp(kl_values - self.free_nats, min=0.0)
-        kl_loss = kl_values.mean()
-        losses["kl"] = kl_loss * self.kl_scale
+        if not self._dbg_disable_kl:
+            kl_values = kl_divergence(posterior_dist, prior_dist)
+            if self.free_nats > 0.0:
+                kl_values = torch.clamp(kl_values - self.free_nats, min=0.0)
+            kl_loss = kl_values.mean()
+            losses["kl"] = kl_loss * self.kl_scale
+        else:
+            kl_loss = torch.zeros((), device=device)
 
         total_loss = sum(losses.values())
 
         self.world_model_optimizer.zero_grad()
+        self._mem_probe("pre_backward")
         total_loss.backward()
+        self._mem_probe("post_backward")
         if self.max_grad_norm is not None:
             clip_grad_norm_(self.world_model_optimizer.param_groups[0]["params"], self.max_grad_norm)
         self.world_model_optimizer.step()
+        self._mem_probe("post_step")
         self.world_model_updates += 1
 
         metrics = {
@@ -440,7 +475,50 @@ class DreamerWorkflow(WorldModelWorkflow):
             metrics["world_model/recon_loss"] = float(losses["reconstruction"].item())
         if "reward" in losses:
             metrics["world_model/reward_loss"] = float(losses["reward"].item())
+        # Periodic GPU memory metrics for debugging long runs
+        try:
+            if torch.cuda.is_available() and (self.world_model_updates % 500 == 0):
+                torch.cuda.synchronize()
+                alloc = torch.cuda.memory_allocated() / (1024 ** 2)
+                reserved = torch.cuda.memory_reserved() / (1024 ** 2)
+                max_alloc = torch.cuda.max_memory_allocated() / (1024 ** 2)
+                max_reserved = torch.cuda.max_memory_reserved() / (1024 ** 2)
+                metrics.update(
+                    {
+                        "debug/gpu_alloc_mb": float(alloc),
+                        "debug/gpu_reserved_mb": float(reserved),
+                        "debug/gpu_max_alloc_mb": float(max_alloc),
+                        "debug/gpu_max_reserved_mb": float(max_reserved),
+                    }
+                )
+                # Slope (MB per update)
+                if self._mem_prev_update is not None and self._mem_prev_alloc_mb is not None:
+                    d_alloc = float(alloc - self._mem_prev_alloc_mb)
+                    d_upd = max(1, int(self.world_model_updates - self._mem_prev_update))
+                    metrics["debug/gpu_alloc_mb_per_update"] = float(d_alloc / d_upd)
+                self._mem_prev_update = int(self.world_model_updates)
+                self._mem_prev_alloc_mb = float(alloc)
+                try:
+                    torch.cuda.reset_peak_memory_stats()
+                except Exception:
+                    pass
+        except Exception:
+            pass
         return metrics
+
+    def _mem_probe(self, phase: str) -> None:
+        try:
+            if self._mem_probe_path is None:
+                return
+            if not torch.cuda.is_available():
+                return
+            torch.cuda.synchronize()
+            alloc = torch.cuda.memory_allocated() / (1024 ** 2)
+            reserved = torch.cuda.memory_reserved() / (1024 ** 2)
+            with open(self._mem_probe_path, "a", encoding="utf-8") as f:
+                f.write(f"{int(self.world_model_updates)},{phase},{alloc:.3f},{reserved:.3f}\n")
+        except Exception:
+            pass
 
     def update_controller(
         self,
