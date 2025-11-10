@@ -282,40 +282,41 @@ class DreamerWorkflow(WorldModelWorkflow):
             obs_np = np.asarray(self.current_obs, dtype=np.float32)
             obs_list.append(obs_np.copy())
 
-            obs_tensor = torch.as_tensor(obs_np, device=self.device, dtype=torch.float32)
-            reset_mask = None
-            if self.current_dones is not None:
-                reset_mask = torch.as_tensor(self.current_dones, device=self.device, dtype=torch.bool)
+            with torch.no_grad():
+                obs_tensor = torch.as_tensor(obs_np, device=self.device, dtype=torch.float32)
+                reset_mask = None
+                if self.current_dones is not None:
+                    reset_mask = torch.as_tensor(self.current_dones, device=self.device, dtype=torch.bool)
 
-            # Encode observations to features before passing to RSSM
-            features = self.encoder(obs_tensor)
+                # Encode observations to features before passing to RSSM
+                features = self.encoder(obs_tensor)
 
-            latent_step: LatentStep = self.rssm.observe(
-                features,
-                prev_action=self._prev_actions_model,
-                reset_mask=reset_mask,
-                detach_posteriors=True,
-            )
-            latent_tensor = latent_step.posterior.to_tensor()
-
-            actor_dist: Distribution = self.actor_controller.forward(latent_tensor)
-
-            if self.discrete_actions:
-                if deterministic:
-                    action_indices = torch.argmax(actor_dist.probs, dim=-1)
-                else:
-                    action_indices = actor_dist.sample()
-                action_tensor = F.one_hot(action_indices, num_classes=self.action_dim).to(
-                    dtype=torch.float32
+                latent_step: LatentStep = self.rssm.observe(
+                    features,
+                    prev_action=self._prev_actions_model,
+                    reset_mask=reset_mask,
+                    detach_posteriors=True,
                 )
-                env_actions = action_indices.detach().cpu().numpy()
-                log_prob = actor_dist.log_prob(action_indices)
-            else:
-                action_tensor = actor_dist.mean if deterministic else actor_dist.rsample()
-                env_actions = action_tensor.detach().cpu().numpy()
-                log_prob = actor_dist.log_prob(action_tensor)
+                latent_tensor = latent_step.posterior.to_tensor()
 
-            value_pred = self.critic_controller.forward(latent_tensor).detach()
+                actor_dist: Distribution = self.actor_controller.forward(latent_tensor)
+
+                if self.discrete_actions:
+                    if deterministic:
+                        action_indices = torch.argmax(actor_dist.probs, dim=-1)
+                    else:
+                        action_indices = actor_dist.sample()
+                    action_tensor = F.one_hot(action_indices, num_classes=self.action_dim).to(
+                        dtype=torch.float32
+                    )
+                    env_actions = action_indices.detach().cpu().numpy()
+                    log_prob = actor_dist.log_prob(action_indices)
+                else:
+                    action_tensor = actor_dist.mean if deterministic else actor_dist.rsample()
+                    env_actions = action_tensor.detach().cpu().numpy()
+                    log_prob = actor_dist.log_prob(action_tensor)
+
+                value_pred = self.critic_controller.forward(latent_tensor).detach()
 
             next_obs, reward, done, infos = self.environment.step(env_actions)
 

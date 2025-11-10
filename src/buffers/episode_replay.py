@@ -372,22 +372,21 @@ class EpisodeReplayBuffer(BaseBuffer):
         # Convert observations once and transfer to torch
         obs_float = (obs_uint8.astype(np.float32) / 255.0)
 
-        # Transfer tensors to device (single transfer per key)
-        device = self.device
+        # Build CPU tensors that own their storage (no numpy sharing, no device transfer here)
         batch: Dict[str, torch.Tensor] = {
-            "observations": torch.from_numpy(obs_float).to(device, non_blocking=True),
-            "actions": torch.from_numpy(actions_np).to(device, non_blocking=True),
-            "rewards": torch.from_numpy(rewards_np).to(device, non_blocking=True),
-            "dones": torch.from_numpy(dones_np).to(device, non_blocking=True),
-            "is_first": torch.from_numpy(is_first_np).to(device, non_blocking=True),
+            "observations": torch.from_numpy(obs_float.copy()),
+            "actions": torch.from_numpy(actions_np.copy()),
+            "rewards": torch.from_numpy(rewards_np.copy()),
+            "dones": torch.from_numpy(dones_np.copy()),
+            "is_first": torch.from_numpy(is_first_np.copy()),
         }
 
-        # For compatibility with existing workflows
-        batch["sequence_length"] = torch.tensor(L, device=device)
+        # For compatibility with existing workflows (keep on CPU)
+        batch["sequence_length"] = torch.tensor(L)
         # Stride is conceptually 1 for enumerated contiguous windows in this implementation
-        batch["sequence_stride"] = torch.tensor(1, device=device)
+        batch["sequence_stride"] = torch.tensor(1)
 
-        # Masks if configured (on same device)
+        # Masks if configured (CPU tensors)
         if self.burn_in_length > 0:
             B = actions_np.shape[0]
             burn_in_mask, train_mask = self._make_masks(L, B)
@@ -695,9 +694,8 @@ class EpisodeReplayBuffer(BaseBuffer):
 
         TODO (Phase 5): Implement using `burn_in_length` and device.
         """
-        device = self.device if isinstance(self.device, torch.device) else torch.device(self.device)
-        burn_in = torch.zeros((L, B), dtype=torch.bool, device=device)
-        train = torch.ones((L, B), dtype=torch.bool, device=device)
+        burn_in = torch.zeros((L, B), dtype=torch.bool)
+        train = torch.ones((L, B), dtype=torch.bool)
         b = max(0, min(self.burn_in_length, L))
         if b > 0:
             burn_in[:b] = True
