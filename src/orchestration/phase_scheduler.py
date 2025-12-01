@@ -27,11 +27,19 @@ class PhaseDefinition:
     duration_updates: Optional[int] = None
     duration_cycles: Optional[int] = None
 
-    def to_mapping(self) -> Dict[str, Any]:
-        payload = dict(self.config)
-        payload.setdefault("name", self.name)
-        payload.setdefault("type", self.type)
-        return payload
+    def to_mapping(self, *, progress: dict[str, int] | None = None) -> dict[str, Any]:
+          payload = dict(self.config)
+          payload["name"] = self.name
+          payload["type"] = self.type
+          if self.duration_steps is not None:
+              payload["duration_steps"] = self.duration_steps
+          if self.duration_updates is not None:
+              payload["duration_updates"] = self.duration_updates
+          if self.duration_cycles is not None:
+              payload["duration_cycles"] = self.duration_cycles
+          if progress:
+              payload.update(progress)  # e.g., steps_done/updates_done/cycles_done
+          return payload
 
 
 class PhaseScheduler:

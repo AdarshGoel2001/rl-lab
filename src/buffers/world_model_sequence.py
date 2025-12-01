@@ -11,7 +11,7 @@ import torch
 
 from .base import BaseBuffer
 
-from ..components.world_models.return_computers.base import BaseReturnComputer
+from ..components.return_computers.base import BaseReturnComputer
 
 
 class WorldModelSequenceBuffer(BaseBuffer):
@@ -65,10 +65,12 @@ class WorldModelSequenceBuffer(BaseBuffer):
             self._env_buffers.append(defaultdict(lambda: deque(maxlen=self.capacity_per_env)))
 
     def add(self, **kwargs: Any) -> None:
-        if "trajectory" not in kwargs:
-            raise ValueError("WorldModelSequenceBuffer expects trajectory additions")
+        if "trajectory" in kwargs:
+            trajectory = kwargs["trajectory"]
+        else:
+            # Allow workflows to pass trajectory fields directly as kwargs
+            trajectory = kwargs
 
-        trajectory = kwargs["trajectory"]
         if not isinstance(trajectory, dict):
             raise TypeError("trajectory must be a dict of numpy arrays")
 

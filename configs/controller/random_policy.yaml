@@ -1,0 +1,9 @@
+# Random policy controller for exploration
+# Used during initial data collection phase
+
+_target_: src.components.controllers.random_policy.RandomPolicyController
+
+action_dim: ???  # Must be provided by experiment config
+action_low: [-1.0, 0.0, 0.0]  # Will be overridden for specific environments
+action_high: [1.0, 1.0, 1.0]
+device: ${experiment.device}

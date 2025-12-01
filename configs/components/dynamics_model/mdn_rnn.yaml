@@ -1,0 +1,11 @@
+# MDN-RNN for World Models (M module)
+# Predicts next latent state given current latent + action
+
+_target_: src.components.dynamics.mdn_rnn.MDNRNNDynamics
+
+latent_dim: ${_dims.latent}
+action_dim: ${_dims.action}
+hidden_dim: ${_dims.hidden}
+num_gaussians: ${algorithm.num_gaussians}
+dropout: 0.0
+device: ${experiment.device}

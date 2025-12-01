@@ -1,0 +1,3 @@
+# Original World Models workflow configuration
+
+_target_: src.workflows.world_models.og_wm.OriginalWorldModelsWorkflow

@@ -1,0 +1,7 @@
+# Convolutional VAE for World Models (V module)
+# Encodes 64x64 grayscale images to 32-dim latent vectors
+
+_target_: src.components.representation_learners.conv_vae.ConvVAERepresentationLearner
+
+input_shape: ???  # Provided by experiment: [64, 64, 1] or [1, 64, 64]
+latent_dim: ${_dims.latent}

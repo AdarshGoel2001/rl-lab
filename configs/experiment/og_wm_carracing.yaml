@@ -1,0 +1,113 @@
+# @package _global_
+# Original World Models on CarRacing-v3
+# 2-phase training: (1) Collect data, (2) Train world model
+
+defaults:
+  - /workflow: og_wm
+  - /components/representation_learner@components.encoder: conv_vae
+  - /components/representation_learner@components.observation_decoder: conv_vae  # Uses same VAE for decode
+  - /components/dynamics_model@components.dynamics_model: mdn_rnn
+  - /controller@controllers.actor: random_policy
+  - /buffer: og_wm_buffer
+  - /environment: carracing
+  - _self_
+
+experiment:
+  name: og_wm_carracing
+  seed: 42
+  device: auto  # Will auto-detect cuda/cpu
+  paradigm: world_model
+
+# Dimension tracking (critical for consistency)
+_dims:
+  observation: [64, 64, 1]  # Grayscale 64x64 from CarRacing wrapper
+  action: 3  # [steering, gas, brake]
+  latent: 32  # VAE latent dimension (z-dim from paper)
+  hidden: 256  # MDN-RNN hidden dimension
+
+# Algorithm hyperparameters
+algorithm:
+  temperature: 1.0  # MDN sampling temperature
+  num_gaussians: 5  # Number of mixture components
+  beta: 0.7  # β-VAE KL weight
+  collect_length: 200  # Steps to collect per iteration
+  kl_free_bits: 0.05
+
+  # Learning rates
+  world_model_lr: 1.0e-4  # For VAE + MDN (will split later)
+
+# Optimizers (Hydra will instantiate these)
+optimizers:
+  world_model:
+    _target_: torch.optim.Adam
+    _partial_: true  # Create partial function, params added by train.py
+    lr: ${algorithm.world_model_lr}
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+
+# Override component configs with dimension info
+components:
+  encoder:
+    input_shape: ${_dims.observation}
+    latent_dim: ${_dims.latent}
+
+  observation_decoder:
+    input_shape: ${_dims.observation}
+    latent_dim: ${_dims.latent}
+
+  dynamics_model:
+    latent_dim: ${_dims.latent}
+    action_dim: ${_dims.action}
+    hidden_dim: ${_dims.hidden}
+    num_gaussians: ${algorithm.num_gaussians}
+
+# Override controller config
+controllers:
+  actor:
+    action_dim: ${_dims.action}
+    action_low: [-1.0, 0.0, 0.0]
+    action_high: [1.0, 1.0, 1.0]
+
+# Environment override
+environment:
+  num_envs: 6  # Vectorized environments for faster data collection
+
+# Buffer override
+buffer:
+  num_envs: ${environment.num_envs}
+
+# Logging
+logging:
+  use_tensorboard: true
+  log_interval: 100  # Log metrics every 100 steps
+
+# Training configuration (inlined for clarity)
+training:
+  total_timesteps: 1000000  # Large number to ensure phases complete (phases control actual duration)
+  checkpoint_frequency: 10000  # Save every 10k steps
+  eval_frequency: 0  # Disable evaluation for now
+
+  phases:
+    # Phase 1: Collect random rollouts to fill buffer
+    - name: data_collection
+      type: online
+      buffer: replay
+      duration_steps: 30000
+      workflow_hooks:
+        - collect  # Only collect, no training
+
+    # Phase 2: Converge VAE (encoder + decoder)
+    - name: converge_vae
+      type: online
+      buffer: replay
+      duration_updates: 50000  # 50k gradient updates for VAE
+      workflow_hooks:
+        - update_world_model  # Train VAE only
+
+    # Phase 3: Converge MDN-RNN (dynamics model)
+    - name: converge_mdn
+      type: online
+      buffer: replay
+      duration_updates: 50000  # 50k gradient updates for MDN
+      workflow_hooks:
+        - update_world_model  # Train MDN only

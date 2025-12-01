@@ -16,7 +16,7 @@ from ...utils.config import Config
 from .base import Batch, CollectResult, PhaseConfig, WorldModelWorkflow
 from .context import WorkflowContext, WorldModelComponents
 from .controllers import ControllerManager
-from ...components.world_models.representation_learners import (
+from ...components.representation_learners import (
     LatentState,
     LatentStep,
     LatentSequence,
@@ -361,7 +361,7 @@ class DreamerWorkflow(WorldModelWorkflow):
             episodes=0,
             steps=int(collect_len * self.num_envs),
             metrics=metrics,
-            extras={"replay": {"trajectory": trajectory}},
+            trajectory=trajectory,
         )
 
     def update_world_model(

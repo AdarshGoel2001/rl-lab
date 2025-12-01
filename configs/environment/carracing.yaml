@@ -1,0 +1,14 @@
+# CarRacing-v3 environment with World Models preprocessing
+# 96x96 RGB → 64x64 grayscale
+# Vectorized for parallel data collection
+
+_target_: src.environments.carracing_wrapper.CarRacingWorldModelWrapper
+
+name: CarRacing-v3
+num_envs: 4  # Vectorized environments for faster collection
+max_episode_steps: 1000
+render_mode: null  # No rendering during training
+domain_randomize: false  # Can enable for robustness
+continuous: true  # Continuous action space
+lap_complete_percent: 0.95  # Episode ends at 95% completion
+parallel_backend: sync  # Use 'sync' for deterministic behavior, 'async' for speed

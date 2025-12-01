@@ -1,0 +1,12 @@
+# Buffer configuration for World Models training
+
+_target_: src.buffers.world_model_sequence.WorldModelSequenceBuffer
+
+capacity: 100000  # Store up to 100k timesteps
+batch_size: 16  # Sample 16 sequences per batch
+sequence_length: 32  # Each sequence is 32 timesteps
+sequence_stride: 16  # 50% overlap between sequences
+num_envs: ${environment.num_envs}
+pad_end_of_episode: false
+gamma: 0.99
+device: ${experiment.device}

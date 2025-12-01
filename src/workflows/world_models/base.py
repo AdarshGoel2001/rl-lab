@@ -20,7 +20,7 @@ class CollectResult:
     episodes: int = 0
     steps: int = 0
     metrics: Dict[str, float] = field(default_factory=dict)
-    extras: Dict[str, Any] = field(default_factory=dict)
+    trajectory: Optional[Dict[str, Any]] = None
 
 
 class SupportsStateDict(Protocol):

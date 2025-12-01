@@ -271,7 +271,11 @@ class WorldModelOrchestrator:
                 scheduler.advance("noop")
                 continue
 
-            phase_config = phase_def.to_mapping()
+            phase_config = phase_def.to_mapping(progress={
+      "steps_done": scheduler._phase_steps,
+      "updates_done": scheduler._phase_updates,
+      "cycles_done": scheduler._phase_cycles,
+  })
 
             if action == "collect":
                 collect_result = self.workflow.collect_step(self.global_step, phase=phase_config)
@@ -279,7 +283,7 @@ class WorldModelOrchestrator:
                     logger.warning("Collect step returned no data for phase '%s'; stopping early.", phase_def.name)
                     break
 
-                self._route_collect_result(collect_result)
+                self._route_collect_result(collect_result, phase_config)
                 if collect_result.metrics:
                     self.experiment_logger.log_metrics(
                         collect_result.metrics,
@@ -385,25 +389,27 @@ class WorldModelOrchestrator:
             return {}
         return manager.state_dict(mode=mode)
 
-    def _route_collect_result(self, result: CollectResult) -> None:
-        extras = getattr(result, "extras", {}) or {}
-        for source_name, payload in extras.items():
-            buffer = self.buffers.get(source_name)
-            if buffer is None:
-                logger.debug("No buffer named '%s'; skipping payload.", source_name)
-                continue
-            items = payload if isinstance(payload, list) else [payload]
-            for item in items:
-                if isinstance(item, dict):
-                    buffer.add(**item)
-                else:
-                    buffer.add(trajectory=item)
+    def _route_collect_result(self, result: CollectResult, phase_config: Mapping[str, Any]) -> None:
+        """Route collected trajectory to the buffer specified in phase config.
+
+        Args:
+            result: CollectResult from workflow containing trajectory data
+            phase_config: Phase configuration containing buffer name
+        """
+        buffer = self._resolve_buffer(phase_config)
+        if buffer is None:
+            logger.debug("No buffer configured for phase '%s'; skipping collected data.", phase_config.get("name"))
+            return
+
+        if result.trajectory is not None:
+            buffer.add(trajectory=result.trajectory)
 
     def _resolve_buffer(self, phase_config: Mapping[str, Any]) -> Optional[Any]:
         buffer_name = phase_config.get("buffer", "replay")
         return self.buffers.get(buffer_name)
 
     def _run_evaluation_phase(self, phase_config: Mapping[str, Any]) -> Dict[str, float]:
+        raise NotImplementedError("Evaluation phase not implemented")
         context = self.ensure_context()
         eval_environment = context.eval_environment
         if eval_environment is None:
@@ -531,6 +537,7 @@ class WorldModelOrchestrator:
         return normalized
 
     def _prepare_evaluation_config(self, phase_config: Mapping[str, Any]) -> Dict[str, Any]:
+        raise NotImplementedError("Evaluation phase not implemented")
         payload = dict(phase_config or {})
         nested = payload.pop("evaluation", None)
         if isinstance(nested, Mapping):

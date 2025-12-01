@@ -5,7 +5,7 @@ from .context import WorkflowContext, WorldModelComponents
 from .controllers import ControllerManager
 from .dreamer import DreamerWorkflow
 from .tdmpc import TDMPCWorkflow
-from ...components.world_models.controllers import BaseController
+from .og_wm import OriginalWorldModelsWorkflow
 
 __all__ = [
     "WorldModelWorkflow",
@@ -16,6 +16,6 @@ __all__ = [
     "WorldModelComponents",
     "ControllerManager",
     "DreamerWorkflow",
-    "BaseController",
     "TDMPCWorkflow",
+    "OriginalWorldModelsWorkflow",
 ]

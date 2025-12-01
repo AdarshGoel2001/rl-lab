@@ -5,7 +5,7 @@
 # Core RL Framework
 torch>=2.0.0
 numpy>=1.24.0
-gymnasium>=0.28.0
+gymnasium[box2d]>=0.28.0
 pyyaml>=6.0
 tqdm>=4.65.0
 
@@ -38,9 +38,9 @@ scipy>=1.11.0
 minigrid>=2.3.1             # MiniGrid gridworld environments
 ale-py>=0.9.0               # Arcade Learning Environment for Atari (includes ROMs)
 gymnasium[atari]>=1.0.0     # Gymnasium with Atari support
+vizdoom>=1.2.4              # ViZDoom pixel-based FPS scenarios
 # dm-control>=1.0.14        # DeepMind Control Suite (requires MuJoCo)
 # mujoco>=2.3.0             # MuJoCo physics simulator
-# box2d-py>=2.3.5           # Box2D physics environments
 # pybullet>=3.2.5           # PyBullet physics simulator
 
 # Additional Utilities

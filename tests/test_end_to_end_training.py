@@ -27,12 +27,12 @@ from omegaconf import DictConfig, OmegaConf
 
 from src.buffers.world_model_sequence import WorldModelSequenceBuffer
 from src.components.encoders.simple_mlp import MLPEncoder
-from src.components.world_models.controllers.dreamer import (
+from src.components.controllers.dreamer import (
     DreamerActorController,
     DreamerCriticController,
 )
-from src.components.world_models.decoders.observation.mlp import MLPObservationDecoder
-from src.components.world_models.representation_learners.rssm import (
+from src.components.decoders.observation.mlp import MLPObservationDecoder
+from src.components.representation_learners.rssm import (
     RSSMRepresentationLearner,
 )
 from src.environments.gym_wrapper import GymWrapper
