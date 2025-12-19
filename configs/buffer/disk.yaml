@@ -1,0 +1,21 @@
+# Disk-based persistent buffer for world model training
+# Supports write, append, and read modes automatically
+
+_target_: src.buffers.disk_buffer.DiskBuffer
+
+# Path to dataset directory (optional - auto-generates if not provided)
+# Examples:
+#   dataset_path: datasets/carracing_100k  (explicit path)
+#   dataset_path: null  (auto-generates datasets/auto_<timestamp>)
+dataset_path: null
+
+# Sequence sampling parameters
+sequence_length: 16
+sequence_stride: 8
+batch_size: 32
+
+# Write buffer size (steps before flushing to disk)
+buffer_flush_size: 1000
+
+# Device for output tensors
+device: ${experiment.device}

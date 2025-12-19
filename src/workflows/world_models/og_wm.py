@@ -58,7 +58,7 @@ class OriginalWorldModelsWorkflow(WorldModelWorkflow):
           for _ in range(self.collect_length):
             obs_tensor = torch.as_tensor(self.current_obs, device=self.device, dtype=torch.float32) / 255.0
             obs_tensor_reshaped = obs_tensor.permute(0, 3, 1, 2)
-            features = self.encoder.observe(obs_tensor_reshaped)
+            features = self.vae.observe(obs_tensor_reshaped)
             action_tensor = self.controller.act(features["latent"], self.hidden_state) 
             #self.hidden_state is a tuple of (hidden, cell)
             self.prev_action = action_tensor.detach()
@@ -98,22 +98,17 @@ class OriginalWorldModelsWorkflow(WorldModelWorkflow):
         *,
         phase: PhaseConfig,
     ) -> Dict[str, float]:
-        #Add phasing to train mdn and encoder separately
         # Normalize observations to [0, 1] for BCE loss
-        phase_name = phase['name']  # phase is a dict from orchestrator
+        phase_name = phase['name']
         obs_normalized = batch["observations"].float() / 255.0
-        encoded_features = self.encoder.observe_sequence(obs_normalized)
+        encoded_features = self.vae.observe_sequence(obs_normalized)
         if phase_name == 'converge_vae':
-         decoded_features = self.decoder.decode(encoded_features["latent"])
-         # Use Binary Cross-Entropy for Bernoulli likelihood (paper uses this)
-         reconstruction_loss = F.binary_cross_entropy(decoded_features, obs_normalized, reduction='none')
+         decoded_features = self.vae.decode(encoded_features["latent"])
+         reconstruction_loss = F.binary_cross_entropy_with_logits(decoded_features, obs_normalized, reduction='none')
          reconstruction_loss = reconstruction_loss.sum(dim=[2,3,4]).mean()
-         # KL divergence with beta scaling (beta-VAE) 
-         #kl_loss = -0.5 * torch.sum(1 + encoded_features["logvar"] - encoded_features["mean"]**2 - encoded_features["logvar"].exp(), dim=-1)
-         #kl_loss = kl_loss.mean()
          kl_dim = 0.5 * (encoded_features["mean"]**2 + encoded_features["logvar"].exp() - 1.0 - encoded_features["logvar"])
-         kl_dim = torch.clamp(kl_dim, min = self.kl_free_bits)
-         kl_loss = kl_dim.sum(dim=-1).mean()
+         kl_sum = kl_dim.sum(dim=-1)
+         kl_loss = torch.clamp(kl_sum, min = self.kl_free_bits).mean()
          #kl_loss = torch.clamp(kl_loss, min = self.kl_free_bits)
          progress = min(1.0, phase['updates_done'] / phase['duration_updates'])
          beta = self.beta * progress
@@ -185,9 +180,8 @@ class OriginalWorldModelsWorkflow(WorldModelWorkflow):
         self.beta = float(getattr(self.config.algorithm, "beta", 1.0))  # Beta for KL loss scaling
         self.kl_free_bits = float(getattr(self.config.algorithm, "kl_free_bits", 0.0))
         components = context.components
-        # TODO: Replace these placeholders with actual ConvVAE + MDN-RNN modules once ready
-        self.encoder = getattr(components, "encoder", None)
-        self.decoder = getattr(components, "observation_decoder", None)
+        # Single VAE component for both encoding and decoding
+        self.vae = getattr(components, "vae", None)
         self.mdn_rnn = getattr(components, "dynamics_model", None)
         self.controller = (
             self.controller_manager.get("actor") if self.controller_manager and "actor" in self.controller_manager else None
@@ -202,8 +196,8 @@ class OriginalWorldModelsWorkflow(WorldModelWorkflow):
         self.z_dim = int(getattr(dims_cfg, "representation", 0) or 0)
         self.num_envs = int(getattr(self.environment, "num_envs", 1) or 1)
 
-        if self.encoder is None or self.decoder is None or self.mdn_rnn is None:
-            raise RuntimeError("OriginalWorldModelsWorkflow requires 'encoder', 'decoder', and 'mdn_rnn' components.")
+        if self.vae is None or self.mdn_rnn is None:
+            raise RuntimeError("OriginalWorldModelsWorkflow requires 'vae' and 'mdn_rnn' components.")
         if self.controller is None:
             raise RuntimeError("OriginalWorldModelsWorkflow requires 'actor' controller.")
         if self.world_model_optimizer is None:

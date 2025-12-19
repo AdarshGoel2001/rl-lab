@@ -241,127 +241,129 @@ class WorldModelOrchestrator:
     def run(self) -> Dict[str, float]:
         self.initialize()
         logger.info("Starting orchestrated world-model training loop")
+        try:
+            total_steps = int(self.config.training.total_timesteps)
+            log_freq = int(getattr(self.config.logging, "log_frequency", 0) or 0)
+            eval_freq = int(getattr(self.config.training, "eval_frequency", 0) or 0)
+            ckpt_freq = int(getattr(self.config.training, "checkpoint_frequency", 0) or 0)
 
-        total_steps = int(self.config.training.total_timesteps)
-        log_freq = int(getattr(self.config.logging, "log_frequency", 0) or 0)
-        eval_freq = int(getattr(self.config.training, "eval_frequency", 0) or 0)
-        ckpt_freq = int(getattr(self.config.training, "checkpoint_frequency", 0) or 0)
+            last_log = self.global_step
+            last_eval = self.global_step
+            last_ckpt = self.global_step
 
-        last_log = self.global_step
-        last_eval = self.global_step
-        last_ckpt = self.global_step
+            start_time = time.time()
+            last_update_metrics: Dict[str, float] = {}
+            last_batch: Optional[Any] = None
 
-        start_time = time.time()
-        last_update_metrics: Dict[str, float] = {}
-        last_batch: Optional[Any] = None
+            scheduler = self.scheduler
+            if scheduler is None:
+                scheduler = self._build_scheduler()
+                self.scheduler = scheduler
 
-        scheduler = self.scheduler
-        if scheduler is None:
-            scheduler = self._build_scheduler()
-            self.scheduler = scheduler
-
-        while (
-            self.global_step < total_steps
-            and not scheduler.is_finished()
-        ):
-            phase_def = scheduler.current_phase()
-            action = scheduler.next_action()
-            if action is None:
-                logger.debug("Phase '%s' has no scheduled actions; advancing.", phase_def.name)
-                scheduler.advance("noop")
-                continue
-
-            phase_config = phase_def.to_mapping(progress={
-      "steps_done": scheduler._phase_steps,
-      "updates_done": scheduler._phase_updates,
-      "cycles_done": scheduler._phase_cycles,
-  })
-
-            if action == "collect":
-                collect_result = self.workflow.collect_step(self.global_step, phase=phase_config)
-                if collect_result is None or getattr(collect_result, "steps", 0) == 0:
-                    logger.warning("Collect step returned no data for phase '%s'; stopping early.", phase_def.name)
-                    break
-
-                self._route_collect_result(collect_result, phase_config)
-                if collect_result.metrics:
-                    self.experiment_logger.log_metrics(
-                        collect_result.metrics,
-                        self.global_step,
-                        prefix="collect",
-                    )
-                self.global_step += int(collect_result.steps)
-                self._update_context(global_step=self.global_step)
-                scheduler.advance(action, steps=int(collect_result.steps))
-                last_batch = None
-
-            elif action == "update_world_model":
-                buffer = self._resolve_buffer(phase_config)
-                if buffer is None or not getattr(buffer, "ready", lambda: True)():
-                    logger.debug(
-                        "Skipping world-model update in phase '%s': buffer unavailable or not ready.",
-                        phase_def.name,
-                    )
-                    scheduler.advance(action)
+            while (
+                self.global_step < total_steps
+                and not scheduler.is_finished()
+            ):
+                phase_def = scheduler.current_phase()
+                action = scheduler.next_action()
+                if action is None:
+                    logger.debug("Phase '%s' has no scheduled actions; advancing.", phase_def.name)
+                    scheduler.advance("noop")
                     continue
 
-                batch = buffer.sample()
-                last_batch = batch
-                last_update_metrics = self.workflow.update_world_model(batch, phase=phase_config) or {}
-                if last_update_metrics:
-                    self.experiment_logger.log_metrics(last_update_metrics, self.global_step, prefix="train")
-                scheduler.advance(action, updates=1)
+                phase_config = phase_def.to_mapping(progress={
+        "steps_done": scheduler._phase_steps,
+        "updates_done": scheduler._phase_updates,
+        "cycles_done": scheduler._phase_cycles,
+    })
 
-            elif action == "update_controller":
-                buffer = self._resolve_buffer(phase_config)
-                if last_batch is None:
+                if action == "collect":
+                    collect_result = self.workflow.collect_step(self.global_step, phase=phase_config)
+                    if collect_result is None or getattr(collect_result, "steps", 0) == 0:
+                        logger.warning("Collect step returned no data for phase '%s'; stopping early.", phase_def.name)
+                        break
+
+                    self._route_collect_result(collect_result, phase_config)
+                    if collect_result.metrics:
+                        self.experiment_logger.log_metrics(
+                            collect_result.metrics,
+                            self.global_step,
+                            prefix="collect",
+                        )
+                    self.global_step += int(collect_result.steps)
+                    self._update_context(global_step=self.global_step)
+                    scheduler.advance(action, steps=int(collect_result.steps))
+                    last_batch = None
+
+                elif action == "update_world_model":
+                    buffer = self._resolve_buffer(phase_config)
                     if buffer is None or not getattr(buffer, "ready", lambda: True)():
                         logger.debug(
-                            "Skipping controller update in phase '%s': no batch available.",
+                            "Skipping world-model update in phase '%s': buffer unavailable or not ready.",
                             phase_def.name,
                         )
                         scheduler.advance(action)
                         continue
-                    last_batch = buffer.sample()
-                controller_metrics = self.workflow.update_controller(last_batch, phase=phase_config) or {}
-                if controller_metrics:
-                    self.experiment_logger.log_metrics(controller_metrics, self.global_step, prefix="controller")
-                scheduler.advance(action, updates=1)
 
-            elif action == "evaluate":
-                eval_metrics = self._run_evaluation_phase(phase_config)
-                if eval_metrics:
-                    self.experiment_logger.log_metrics(eval_metrics, self.global_step, prefix="eval")
-                scheduler.advance(action)
+                    batch = buffer.sample()
+                    last_batch = batch
+                    last_update_metrics = self.workflow.update_world_model(batch, phase=phase_config) or {}
+                    if last_update_metrics:
+                        self.experiment_logger.log_metrics(last_update_metrics, self.global_step, prefix="train")
+                    scheduler.advance(action, updates=1)
 
-            else:
-                logger.warning("Encountered unknown scheduler action '%s'; advancing.", action)
-                scheduler.advance(action)
+                elif action == "update_controller":
+                    buffer = self._resolve_buffer(phase_config)
+                    if last_batch is None:
+                        if buffer is None or not getattr(buffer, "ready", lambda: True)():
+                            logger.debug(
+                                "Skipping controller update in phase '%s': no batch available.",
+                                phase_def.name,
+                            )
+                            scheduler.advance(action)
+                            continue
+                        last_batch = buffer.sample()
+                    controller_metrics = self.workflow.update_controller(last_batch, phase=phase_config) or {}
+                    if controller_metrics:
+                        self.experiment_logger.log_metrics(controller_metrics, self.global_step, prefix="controller")
+                    scheduler.advance(action, updates=1)
 
-            if log_freq > 0 and (self.global_step - last_log) >= log_freq:
-                workflow_metrics = self.workflow.state_dict(mode="metrics")
-                if workflow_metrics:
-                    self.experiment_logger.log_metrics(workflow_metrics, self.global_step, prefix="workflow")
-                last_log = self.global_step
+                elif action == "evaluate":
+                    eval_metrics = self._run_evaluation_phase(phase_config)
+                    if eval_metrics:
+                        self.experiment_logger.log_metrics(eval_metrics, self.global_step, prefix="eval")
+                    scheduler.advance(action)
 
-            if ckpt_freq > 0 and (self.global_step - last_ckpt) >= ckpt_freq:
-                self._save_checkpoint()
-                last_ckpt = self.global_step
+                else:
+                    logger.warning("Encountered unknown scheduler action '%s'; advancing.", action)
+                    scheduler.advance(action)
 
-            if eval_freq > 0 and (self.global_step - last_eval) >= eval_freq:
-                eval_metrics = self._run_evaluation_phase({"type": "eval_only", "name": "scheduled_eval"})
-                if eval_metrics:
-                    self.experiment_logger.log_metrics(eval_metrics, self.global_step, prefix="eval")
-                last_eval = self.global_step
+                if log_freq > 0 and (self.global_step - last_log) >= log_freq:
+                    workflow_metrics = self.workflow.state_dict(mode="metrics")
+                    if workflow_metrics:
+                        self.experiment_logger.log_metrics(workflow_metrics, self.global_step, prefix="workflow")
+                    last_log = self.global_step
 
-        duration = max(time.time() - start_time, 1e-6)
-        final_metrics = dict(last_update_metrics)
-        final_metrics.setdefault("wall_time", duration)
-        workflow_metrics = self.workflow.state_dict(mode="metrics")
-        if workflow_metrics:
-            self.experiment_logger.log_metrics(workflow_metrics, self.global_step, prefix="workflow")
-        self._save_checkpoint(final=True)
-        self.experiment_logger.finish()
+                if ckpt_freq > 0 and (self.global_step - last_ckpt) >= ckpt_freq:
+                    self._save_checkpoint()
+                    last_ckpt = self.global_step
+
+                if eval_freq > 0 and (self.global_step - last_eval) >= eval_freq:
+                    eval_metrics = self._run_evaluation_phase({"type": "eval_only", "name": "scheduled_eval"})
+                    if eval_metrics:
+                        self.experiment_logger.log_metrics(eval_metrics, self.global_step, prefix="eval")
+                    last_eval = self.global_step
+
+            duration = max(time.time() - start_time, 1e-6)
+            final_metrics = dict(last_update_metrics)
+            final_metrics.setdefault("wall_time", duration)
+            workflow_metrics = self.workflow.state_dict(mode="metrics")
+            if workflow_metrics:
+                self.experiment_logger.log_metrics(workflow_metrics, self.global_step, prefix="workflow")
+            self._save_checkpoint(final=True)
+            self.experiment_logger.finish()
+        finally:
+            self.cleanup()
         return final_metrics
 
     def train(self) -> Dict[str, float]:
@@ -605,6 +607,16 @@ class WorldModelOrchestrator:
         context = self._context
         if context is None:
             return
+
+        # Finalize buffers (writes metadata for disk buffers)
+        if context.buffers:
+            for buffer in context.buffers.values():
+                if hasattr(buffer, "finalize") and callable(buffer.finalize):
+                    try:
+                        buffer.finalize()
+                    except Exception:
+                        pass
+
         try:
             context.train_environment.close()
         except Exception:

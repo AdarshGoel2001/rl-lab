@@ -4,11 +4,10 @@
 
 defaults:
   - /workflow: og_wm
-  - /components/representation_learner@components.encoder: conv_vae
-  - /components/representation_learner@components.observation_decoder: conv_vae  # Uses same VAE for decode
+  - /components/representation_learner@components.vae: conv_vae  # Single VAE for both encode/decode
   - /components/dynamics_model@components.dynamics_model: mdn_rnn
   - /controller@controllers.actor: random_policy
-  - /buffer: og_wm_buffer
+  - /buffer: disk  # Disk-based buffer - auto-generates path, persists data
   - /environment: carracing
   - _self_
 
@@ -29,9 +28,9 @@ _dims:
 algorithm:
   temperature: 1.0  # MDN sampling temperature
   num_gaussians: 5  # Number of mixture components
-  beta: 0.7  # β-VAE KL weight
+  beta: 0.9  # β-VAE KL weight
   collect_length: 200  # Steps to collect per iteration
-  kl_free_bits: 0.05
+  kl_free_bits: 2.0
 
   # Learning rates
   world_model_lr: 1.0e-4  # For VAE + MDN (will split later)
@@ -47,11 +46,7 @@ optimizers:
 
 # Override component configs with dimension info
 components:
-  encoder:
-    input_shape: ${_dims.observation}
-    latent_dim: ${_dims.latent}
-
-  observation_decoder:
+  vae:
     input_shape: ${_dims.observation}
     latent_dim: ${_dims.latent}
 
@@ -72,9 +67,11 @@ controllers:
 environment:
   num_envs: 6  # Vectorized environments for faster data collection
 
-# Buffer override
+# Buffer override - disk buffer will auto-generate path like datasets/auto_<timestamp>
 buffer:
-  num_envs: ${environment.num_envs}
+  sequence_length: 15
+  sequence_stride: 1
+  batch_size: 256
 
 # Logging
 logging:
@@ -100,7 +97,7 @@ training:
     - name: converge_vae
       type: online
       buffer: replay
-      duration_updates: 50000  # 50k gradient updates for VAE
+      duration_updates: 5000  # 5k gradient updates for VAE
       workflow_hooks:
         - update_world_model  # Train VAE only
 

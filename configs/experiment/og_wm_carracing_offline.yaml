@@ -1,0 +1,106 @@
+# @package _global_
+# Original World Models on CarRacing-v3 - OFFLINE TRAINING
+# Uses pre-collected dataset from disk instead of online collection
+#
+# USAGE: First run og_wm_carracing.yaml (with collect phase) to generate dataset.
+#        Note the auto-generated path (e.g., datasets/auto_20241218_143022).
+#        Then set that path below and run this config for offline training.
+
+defaults:
+  - /workflow: og_wm
+  - /components/representation_learner@components.vae: conv_vae
+  - /components/dynamics_model@components.dynamics_model: mdn_rnn
+  - /controller@controllers.actor: random_policy
+  - /buffer: disk
+  - /environment: carracing
+  - _self_
+
+experiment:
+  name: og_wm_carracing_offline
+  seed: 42
+  device: auto
+
+# Dimension tracking (same as online version)
+_dims:
+  observation: [64, 64, 1]
+  action: 3
+  latent: 32
+  hidden: 256
+
+# Algorithm hyperparameters (same as online version)
+algorithm:
+  temperature: 1.0
+  num_gaussians: 5
+  beta: 0.9
+  collect_length: 200  # Not used in offline mode, but workflow may reference it
+  kl_free_bits: 2.0
+  world_model_lr: 1.0e-4
+
+# Optimizers (same as online version)
+optimizers:
+  world_model:
+    _target_: torch.optim.Adam
+    _partial_: true
+    lr: ${algorithm.world_model_lr}
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+
+# Component configs (same as online version)
+components:
+  vae:
+    input_shape: ${_dims.observation}
+    latent_dim: ${_dims.latent}
+
+  dynamics_model:
+    latent_dim: ${_dims.latent}
+    action_dim: ${_dims.action}
+    hidden_dim: ${_dims.hidden}
+    num_gaussians: ${algorithm.num_gaussians}
+
+# Controller config (same as online version)
+controllers:
+  actor:
+    action_dim: ${_dims.action}
+    action_low: [-1.0, 0.0, 0.0]
+    action_high: [1.0, 1.0, 1.0]
+
+# Environment - still needed for initialization, but not for training data
+environment:
+  num_envs: 1  # Minimal since we're not collecting
+
+# Buffer - MUST set dataset_path to your pre-collected dataset
+buffer:
+  dataset_path: ???  # REQUIRED: Set to your dataset path, e.g., datasets/auto_20241218_143022
+  sequence_length: 15
+  sequence_stride: 1
+  batch_size: 256
+
+# Logging (same as online version)
+logging:
+  use_tensorboard: true
+  log_interval: 100
+
+# Training configuration - NO COLLECTION PHASE
+training:
+  total_timesteps: 1000000  # Large number, phases control actual duration
+  checkpoint_frequency: 10000
+  eval_frequency: 0
+
+  phases:
+    # NO data_collection phase - data already on disk
+
+    # Phase 1: Converge VAE (encoder + decoder)
+    - name: converge_vae
+      type: offline
+      buffer: replay
+      duration_updates: 5000
+      workflow_hooks:
+        - update_world_model
+
+    # Phase 2: Converge MDN-RNN (dynamics model)
+    - name: converge_mdn
+      type: offline
+      buffer: replay
+      duration_updates: 50000
+      workflow_hooks:
+        - update_world_model

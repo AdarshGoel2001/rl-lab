@@ -39,7 +39,7 @@ class ConvVAERepresentationLearner(nn.Module):
         self.latent_dim = int(self.config.get("latent_dim", 32))
 
         self.encoder_channels = [32, 64, 128, 256]
-        self.decoder_channels = [64, 32, 16]
+        self.decoder_channels = [128, 64, 32]
         kernel_size = 4
         stride = 2
         padding = 1
@@ -73,11 +73,9 @@ class ConvVAERepresentationLearner(nn.Module):
         flattened_dim = self.encoder_channels[-1] * self.conv_height * self.conv_width
 
         self.fc_mu = nn.Linear(flattened_dim, self.latent_dim)
-        # self.fc_logvar = nn.Linear(flattened_dim, self.latent_dim)
-        self.fc_logvar = nn.Sequential(
-            nn.Linear(flattened_dim, self.latent_dim),
-            nn.Tanh(),
-        )
+        # Let network learn logvar directly without Tanh constraint
+        # Soft clamp applied in forward pass to prevent numerical overflow
+        self.fc_logvar = nn.Linear(flattened_dim, self.latent_dim)
 
         self.fc_decode = nn.Linear(self.latent_dim, flattened_dim)
 
@@ -106,7 +104,6 @@ class ConvVAERepresentationLearner(nn.Module):
                 output_padding=0,
             )
         )
-        deconv_layers.append(nn.Sigmoid())
         self.decoder_backbone = nn.Sequential(*deconv_layers)
 
         self.encoder = self.encoder_backbone
@@ -120,9 +117,11 @@ class ConvVAERepresentationLearner(nn.Module):
         encoded_flat = encoded.reshape(encoded.shape[0], -1)
         mu = self.fc_mu(encoded_flat)
         logvar = self.fc_logvar(encoded_flat)
-        logvar_scaled = 3.0 * logvar
-        z = mu + torch.randn_like(mu) * torch.exp(0.5 * logvar_scaled)
-        VAEState = {"latent": z, "mean": mu, "logvar": logvar_scaled}
+        # Soft clamp to prevent numerical overflow (exp(10) ≈ 22000 is plenty)
+        # No minimum clamp allows network to learn precise reconstructions
+        logvar = torch.clamp(logvar, max=10)
+        z = mu + torch.randn_like(mu) * torch.exp(0.5 * logvar)
+        VAEState = {"latent": z, "mean": mu, "logvar": logvar}
         return VAEState
 
     def observe_sequence(
@@ -141,14 +140,15 @@ class ConvVAERepresentationLearner(nn.Module):
         encoded_flat = encoded.view(encoded.shape[0], -1)
         mu = self.fc_mu(encoded_flat)
         logvar = self.fc_logvar(encoded_flat)
-        logvar_scaled = 3.0 * logvar
-        std = torch.exp(0.5 * logvar_scaled)
+        # Soft clamp to prevent numerical overflow
+        logvar = torch.clamp(logvar, max=10)
+        std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
         z = mu + eps * std
         mu = mu.view(B, T, -1)
-        logvar_scaled = logvar_scaled.view(B, T, -1)
+        logvar = logvar.view(B, T, -1)
         z = z.view(B, T, -1)
-        VAEState = {"latent": z, "mean": mu, "logvar": logvar_scaled}
+        VAEState = {"latent": z, "mean": mu, "logvar": logvar}
         return VAEState    
 
     def decode(self, latent: torch.Tensor) -> torch.Tensor:

@@ -1,0 +1,41 @@
+{
+  "env_name": "collected",
+  "total_steps": 1400,
+  "num_envs": 4,
+  "shapes": {
+    "observations": [
+      64,
+      64,
+      1
+    ],
+    "actions": [
+      3
+    ],
+    "rewards": [],
+    "dones": []
+  },
+  "dtypes": {
+    "observations": "uint8",
+    "actions": "float32",
+    "rewards": "float32",
+    "dones": "bool"
+  },
+  "episode_boundaries": [
+    [
+      999
+    ],
+    [
+      999
+    ],
+    [
+      999
+    ],
+    [
+      999
+    ]
+  ],
+  "index_params": {
+    "sequence_length": 15,
+    "sequence_stride": 1
+  }
+}
