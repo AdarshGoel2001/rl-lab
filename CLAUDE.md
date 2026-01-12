@@ -1,615 +1,757 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) and other LLMs working on this repository. Read this entire file before making changes.
 
 ## Project Overview
 
-RL Lab is a modular reinforcement learning research framework designed for rapid experimentation with world model algorithms. The framework emphasizes:
+RL Lab is a modular reinforcement learning research framework for rapid experimentation with world model algorithms. The framework supports Dreamer, TD-MPC, Original World Models (Ha & Schmidhuber 2018), diffusion policies, and custom variants.
 
-- **Clean separation**: Infrastructure (training loops, logging, checkpointing) is completely separate from algorithm logic
-- **Component modularity**: Encoders, dynamics models, controllers, and decoders are pluggable via Hydra configs
-- **Multi-algorithm support**: Designed to support Dreamer, TD-MPC, MuZero, IRIS, and custom variants without code duplication
-- **Config-driven experiments**: Architecture and hyperparameters controlled via YAML, not hardcoded
+### Core Design Philosophy
+
+1. **Infrastructure is separate from algorithms** - The Orchestrator handles training loops, checkpointing, and logging. Workflows handle algorithm logic. They know nothing about each other's internals.
+
+2. **Phase-based training** - Complex training curricula (warmup, pretraining, joint training) are expressed declaratively in YAML, not hardcoded in workflows.
+
+3. **Components are loosely organized** - Component folders (`controllers/`, `dynamics/`, etc.) are for organization, NOT strict interfaces. Workflows know how to use their components; components don't need to follow rigid base classes.
+
+4. **Config-driven experiments** - Architecture and hyperparameters are controlled via Hydra YAML configs. Swapping components means changing config, not code.
+
+---
+
+## Architecture
+
+### The Three-Layer Design
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  scripts/train.py (Entry Point)                                 │
+│                                                                 │
+│  Responsibilities:                                              │
+│  • Load Hydra config                                            │
+│  • Instantiate components, controllers, optimizers, buffers     │
+│  • Create Orchestrator with all resources                       │
+│  • Call orchestrator.run()                                      │
+│                                                                 │
+│  This is the "experiment setup script". All wiring happens here.│
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Orchestrator (src/orchestration/orchestrator.py)               │
+│                                                                 │
+│  Responsibilities:                                              │
+│  • Own the training loop (run() method)                         │
+│  • Ask PhaseScheduler "what action next?"                       │
+│  • Call workflow methods: collect_step, update_world_model, etc │
+│  • Route collected data to appropriate buffer                   │
+│  • Handle checkpointing (save/load all state)                   │
+│  • Handle logging (metrics to TensorBoard/W&B)                  │
+│                                                                 │
+│  KNOWS NOTHING about algorithm internals.                       │
+│  Just calls workflow methods and handles infrastructure.        │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  PhaseScheduler (src/orchestration/phase_scheduler.py)          │
+│                                                                 │
+│  Responsibilities:                                              │
+│  • Track current training phase                                 │
+│  • Return next action: "collect", "update_world_model", etc     │
+│  • Advance phase when duration criteria met                     │
+│  • Provide phase context to workflows                           │
+│                                                                 │
+│  A finite state machine for training curricula.                 │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Workflow (src/workflows/*.py)                                  │
+│                                                                 │
+│  Responsibilities:                                              │
+│  • initialize(): Bind components from context, setup state      │
+│  • collect_step(): Interact with environment, return trajectory │
+│  • update_world_model(): Compute losses, backprop, return metrics│
+│  • update_controller(): Update policy/value networks            │
+│  • imagine(): Generate latent rollouts (optional)               │
+│                                                                 │
+│  PURE ALGORITHM LOGIC. No training loop, no checkpointing,      │
+│  no logging setup. Just: given batch, compute loss, update.     │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Information Flow
+
+```
+1. Orchestrator asks PhaseScheduler: "What's the next action?"
+2. PhaseScheduler returns: "collect" (or "update_world_model", etc.)
+3. Orchestrator calls: workflow.collect_step(step, phase=phase_config)
+4. Workflow does the work, returns: CollectResult(steps=N, trajectory={...})
+5. Orchestrator routes trajectory to buffer, logs metrics
+6. Orchestrator tells PhaseScheduler: "I did 'collect' with N steps"
+7. PhaseScheduler updates internal counters, may advance to next phase
+8. Loop continues...
+```
+
+### Why This Design?
+
+- **New algorithm = new workflow file only** - Orchestrator unchanged
+- **New training curriculum = YAML change only** - No code changes
+- **Testing is easy** - Inject mock components into Orchestrator
+- **Debugging is easy** - Clear boundaries, logs show exactly what's happening
+
+---
+
+## Directory Structure
+
+```
+rl-lab/
+├── scripts/
+│   └── train.py                 # Entry point - instantiates everything, runs training
+│
+├── src/
+│   ├── orchestration/           # Training infrastructure
+│   │   ├── orchestrator.py      # Main training loop, checkpointing, logging
+│   │   └── phase_scheduler.py   # Phase progression and hook scheduling
+│   │
+│   ├── workflows/               # Algorithm implementations
+│   │   ├── utils/               # Shared workflow utilities
+│   │   │   ├── base.py          # WorldModelWorkflow ABC, CollectResult
+│   │   │   ├── context.py       # WorkflowContext, WorldModelComponents
+│   │   │   └── controllers.py   # ControllerManager
+│   │   ├── dreamer.py           # Dreamer v1/v2/v3 workflow
+│   │   ├── tdmpc.py             # TD-MPC workflow
+│   │   ├── og_wm.py             # Original World Models (2018) workflow
+│   │   └── diffusion_policy_workflow.py  # Diffusion policy (WIP)
+│   │
+│   ├── components/              # Pluggable algorithm building blocks
+│   │   ├── controllers/         # Action selection (actors, critics, planners)
+│   │   │   ├── dreamer.py       # DreamerActorController, DreamerCriticController
+│   │   │   ├── mpc_planner.py   # MPC-based planning
+│   │   │   ├── cma_es.py        # CMA-ES evolutionary controller
+│   │   │   └── random_policy.py # Random action selection
+│   │   ├── dynamics/            # Next-state prediction models
+│   │   │   ├── deterministic_mlp.py
+│   │   │   └── mdn_rnn.py       # Mixture Density Network RNN
+│   │   ├── representation_learners/  # Latent state management
+│   │   │   ├── rssm.py          # Recurrent State-Space Model (Dreamer)
+│   │   │   ├── identity.py      # Pass-through (no learning)
+│   │   │   └── conv_vae.py      # Convolutional VAE
+│   │   └── return_computers/    # Return computation strategies
+│   │       ├── discounted.py    # Monte Carlo returns
+│   │       ├── n_step.py        # N-step returns
+│   │       └── td_lambda.py     # TD-lambda returns
+│   │
+│   ├── environments/            # Environment wrappers
+│   │   ├── base.py              # BaseEnvironment ABC
+│   │   ├── gym_wrapper.py       # Gymnasium environments
+│   │   ├── atari_wrapper.py     # Atari with preprocessing
+│   │   ├── carracing_wrapper.py # CarRacing-v3
+│   │   ├── dmc_wrapper.py       # DeepMind Control Suite
+│   │   └── minigrid_wrapper.py  # MiniGrid environments
+│   │
+│   ├── buffers/                 # Experience storage
+│   │   ├── base.py              # BaseBuffer ABC
+│   │   ├── world_model_sequence.py  # Main buffer for world models
+│   │   ├── disk_buffer.py       # Disk-backed buffer for large datasets
+│   │   └── offline.py           # Offline dataset loading
+│   │
+│   └── utils/                   # Utilities
+│       ├── checkpoint.py        # CheckpointManager
+│       ├── config.py            # Config helpers
+│       └── logger.py            # TensorBoard/W&B logging
+│
+├── configs/                     # Hydra YAML configurations
+│   ├── config.yaml              # Root config (minimal)
+│   ├── experiment/              # Complete experiment configs
+│   │   ├── og_wm_carracing.yaml
+│   │   └── dreamer_cartpole.yaml
+│   ├── workflow/                # Workflow selection (_target_ to class)
+│   ├── components/              # Component configs
+│   │   ├── representation_learner/
+│   │   └── dynamics_model/
+│   ├── controller/              # Controller configs
+│   ├── buffer/                  # Buffer configs
+│   └── environment/             # Environment configs
+│
+├── tests/                       # Test suite
+├── experiments/                 # Training outputs (gitignored)
+└── datasets/                    # Generated datasets (gitignored)
+```
+
+---
+
+## Key Abstractions
+
+### WorldModelWorkflow (src/workflows/utils/base.py)
+
+The base class all algorithms inherit from:
+
+```python
+class WorldModelWorkflow(ABC):
+    @abstractmethod
+    def initialize(self, context: WorkflowContext) -> None:
+        """Called once at start. Bind components, setup state."""
+
+    @abstractmethod
+    def update_world_model(self, batch: Batch, *, phase: PhaseConfig) -> Dict[str, float]:
+        """Train world model on batch. Return metrics dict."""
+
+    def collect_step(self, step: int, *, phase: PhaseConfig) -> Optional[CollectResult]:
+        """Interact with environment. Return trajectory and metrics."""
+
+    def update_controller(self, batch: Batch, *, phase: PhaseConfig) -> Dict[str, float]:
+        """Train controller/policy. Return metrics dict."""
+
+    def imagine(self, *, horizon: int, **kwargs) -> Dict[str, Any]:
+        """Generate imagined rollouts in latent space."""
+
+    def get_state(self) -> Dict[str, Any]:
+        """Return custom state for checkpointing."""
+
+    def set_state(self, state: Dict[str, Any]) -> None:
+        """Restore custom state from checkpoint."""
+```
+
+**Important**: The base class provides episode tracking utilities:
+- `_reset_episode_tracking(num_envs)` - Initialize tracking for vectorized envs
+- `_update_episode_stats(rewards, dones, infos)` - Update running stats
+- `_snapshot_episode_tracking()` / `_restore_episode_tracking()` - For checkpointing
+
+### WorkflowContext (src/workflows/utils/context.py)
+
+Immutable bundle of resources passed to workflow.initialize():
+
+```python
+@dataclass(frozen=True)
+class WorkflowContext:
+    config: DictConfig              # Full experiment config
+    device: str                     # "cuda" or "cpu"
+    train_environment: Any          # Training environment
+    eval_environment: Any           # Evaluation environment
+    components: WorldModelComponents # All instantiated components
+    buffers: Dict[str, Any]         # Named buffers
+    optimizers: Dict[str, Any]      # Named optimizers
+    controller_manager: ControllerManager
+    checkpoint_manager: CheckpointManager
+    experiment_logger: Any          # TensorBoard/W&B logger
+    initial_observation: Any        # First obs from env.reset()
+    initial_dones: Any              # Initial done flags
+    global_step: int                # Current training step
+```
+
+Access components via: `context.components.vae`, `context.components.dynamics_model`, etc.
+
+### PhaseScheduler (src/orchestration/phase_scheduler.py)
+
+Controls training curriculum. Each phase specifies:
+- **name**: Identifier for the phase
+- **type**: "online", "offline", or "eval_only"
+- **duration**: How long (steps, updates, or cycles)
+- **hooks**: Which workflow methods to call
+
+```python
+# PhaseScheduler provides:
+scheduler.current_phase()  # Returns PhaseDefinition
+scheduler.next_action()    # Returns "collect", "update_world_model", etc.
+scheduler.advance(action, steps=N)  # Update counters
+scheduler.get_state() / set_state()  # For checkpointing
+```
+
+### CollectResult (src/workflows/utils/base.py)
+
+Returned by workflow.collect_step():
+
+```python
+@dataclass
+class CollectResult:
+    steps: int                      # Environment steps taken
+    episodes: int = 0               # Episodes completed
+    metrics: Dict[str, float] = {}  # Metrics to log
+    trajectory: Optional[Dict] = None  # Data for buffer
+    extras: Dict[str, Any] = {}     # Additional data
+```
+
+---
+
+## Phase Configuration
+
+Phases are defined in experiment YAML under `training.phases`:
+
+```yaml
+training:
+  total_timesteps: 1000000
+  phases:
+    # Phase 1: Collect random data
+    - name: data_collection
+      type: online
+      buffer: replay              # Which buffer to use
+      duration_steps: 10000       # Run for 10k env steps
+      workflow_hooks:
+        - collect                 # Only collect, no training
+
+    # Phase 2: Train world model
+    - name: train_world_model
+      type: offline              # No collection
+      buffer: replay
+      duration_updates: 50000    # 50k gradient updates
+      workflow_hooks:
+        - update_world_model
+
+    # Phase 3: Joint training
+    - name: joint_training
+      type: online
+      buffer: replay
+      duration_steps: 500000
+      workflow_hooks:
+        - collect
+        - update_world_model
+        - update_controller
+```
+
+**Duration options:**
+- `duration_steps`: Environment steps
+- `duration_updates`: Gradient updates
+- `duration_cycles`: Complete hook cycles
+
+**Hook types:**
+- `collect`: Call workflow.collect_step()
+- `update_world_model`: Call workflow.update_world_model()
+- `update_controller`: Call workflow.update_controller()
+- `evaluate`: Run evaluation episodes
+
+**Workflow receives phase context:**
+```python
+def update_world_model(self, batch, *, phase):
+    if phase['name'] == 'converge_vae':
+        # VAE-specific training
+    elif phase['name'] == 'converge_mdn':
+        # MDN-specific training
+```
+
+---
+
+## Implementing a New Algorithm
+
+### Step 1: Create the Workflow
+
+Create `src/workflows/your_algorithm.py`:
+
+```python
+from .utils.base import WorldModelWorkflow, CollectResult, Batch, PhaseConfig
+from .utils.context import WorkflowContext
+
+class YourWorkflow(WorldModelWorkflow):
+    def __init__(self):
+        super().__init__()
+
+    def initialize(self, context: WorkflowContext) -> None:
+        """Bind components and setup state."""
+        self._bind_context(context)
+        self._reset_episode_tracking(self.num_envs, clear_history=True)
+        self._reset_rollout_state(
+            initial_obs=context.initial_observation,
+            initial_dones=context.initial_dones,
+        )
+
+    def _bind_context(self, context: WorkflowContext) -> None:
+        """Extract what you need from context. Use your own variable names."""
+        self.config = context.config
+        self.device = context.device
+        self.environment = context.train_environment
+        self.num_envs = int(getattr(self.environment, "num_envs", 1))
+
+        # Get components - use whatever names make sense for your algorithm
+        components = context.components
+        self.encoder = getattr(components, "encoder", None)
+        self.dynamics = getattr(components, "dynamics_model", None)
+
+        # Get optimizers
+        self.optimizer = context.optimizers.get("world_model")
+
+    def collect_step(self, step: int, *, phase: PhaseConfig) -> CollectResult:
+        """One step of environment interaction."""
+        with torch.no_grad():
+            # Your collection logic
+            action = self.select_action(self.current_obs)
+            next_obs, reward, done, info = self.environment.step(action)
+
+            # Track episode stats (provided by base class)
+            self._update_episode_stats(reward, done, info)
+
+            # Build trajectory
+            trajectory = {
+                "observations": self.current_obs,
+                "actions": action,
+                "rewards": reward,
+                "dones": done,
+            }
+
+            self.current_obs = next_obs
+
+        return CollectResult(
+            steps=self.num_envs,
+            trajectory=trajectory,
+            metrics={"collect/reward": float(reward.mean())},
+        )
+
+    def update_world_model(self, batch: Batch, *, phase: PhaseConfig) -> Dict[str, float]:
+        """One gradient step on world model."""
+        # Your loss computation
+        loss = self.compute_loss(batch)
+
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+
+        return {"loss": loss.item()}
+```
+
+### Step 2: Create Config Files
+
+**Workflow config** (`configs/workflow/your_algorithm.yaml`):
+```yaml
+_target_: src.workflows.your_algorithm.YourWorkflow
+```
+
+**Experiment config** (`configs/experiment/your_algorithm_env.yaml`):
+```yaml
+# @package _global_
+defaults:
+  - /workflow: your_algorithm
+  - /components/representation_learner@components.encoder: your_encoder
+  - /controller@controllers.actor: your_controller
+  - /buffer: world_model_sequence
+  - /environment: cartpole
+  - _self_
+
+experiment:
+  name: your_algorithm_cartpole
+  seed: 42
+  device: auto
+
+_dims:
+  observation: 4
+  action: 2
+  latent: 64
+
+algorithm:
+  learning_rate: 1e-4
+  # Your hyperparameters
+
+components:
+  encoder:
+    input_dim: ${_dims.observation}
+    latent_dim: ${_dims.latent}
+
+training:
+  total_timesteps: 100000
+  phases:
+    - name: training
+      type: online
+      buffer: replay
+      duration_steps: 100000
+      workflow_hooks:
+        - collect
+        - update_world_model
+```
+
+### Step 3: Run
+
+```bash
+python scripts/train.py experiment=your_algorithm_env
+```
+
+---
 
 ## Common Commands
 
 ### Training
 
 ```bash
-# Start a new world model training run (Hydra-based)
-python scripts/train.py experiment=dreamer_cartpole
+# Run experiment
+python scripts/train.py experiment=og_wm_carracing
 
 # Override config values
-python scripts/train.py experiment=dreamer_cartpole experiment.seed=42 training.total_timesteps=1000000
+python scripts/train.py experiment=og_wm_carracing experiment.seed=123
 
-# Use different components
-python scripts/train.py experiment=dreamer_cartpole components/encoder=cnn
+# Resume from checkpoint
+python scripts/train.py experiment=og_wm_carracing training.resume_path=path/to/checkpoint.pt
 
-# Dry run (validate config without training)
-python scripts/train.py experiment=dreamer_cartpole --dry-run
+# Print resolved config (no training)
+python scripts/train.py experiment=og_wm_carracing --cfg job
 ```
-
-**Note:** The framework uses Hydra for configuration. The old `--config` flag is replaced by `experiment=<name>`.
 
 ### Testing
 
 ```bash
-# Run all tests
-pytest
-
-# Run specific test file
-pytest tests/test_world_model_system.py
-
-# Run with verbose output
-pytest -v
+pytest                           # All tests
+pytest tests/test_file.py        # Specific file
+pytest -v                        # Verbose
+pytest -x                        # Stop on first failure
 ```
 
-### Installation
+### Monitoring
 
 ```bash
-# Install in development mode
-pip install -e .
-
-# Install with all extras
-pip install -e ".[all]"
-
-# Install specific extras
-pip install -e ".[envs,dev,vision]"
+tensorboard --logdir experiments/
 ```
 
-## Architecture
+---
 
-### Three-Layer Design
+## Component Organization
 
-The framework uses a clean three-layer architecture:
+Components are organized by function, NOT by strict interfaces:
 
 ```
-┌─────────────────────────────────────────────┐
-│  Entry Point: scripts/train.py             │
-│  • Loads Hydra configs                      │
-│  • Instantiates components via _target_     │
-│  • Creates orchestrator and runs training   │
-└──────────────┬──────────────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────────────┐
-│  Infrastructure: WorldModelOrchestrator     │
-│  (src/orchestration/world_model_orchestrator.py)
-│  • Training loop (run() method)             │
-│  • Phase scheduling (warmup, online, eval)  │
-│  • Buffer routing                           │
-│  • Checkpointing, logging, evaluation       │
-│  • NO algorithm-specific logic              │
-└──────────────┬──────────────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────────────┐
-│  Algorithm: Workflow (e.g., DreamerWorkflow)│
-│  (src/workflows/world_models/)              │
-│  • collect_step(): environment interaction  │
-│  • update_world_model(): model learning     │
-│  • update_controller(): policy learning     │
-│  • imagine(): latent rollouts               │
-│  • Pure algorithm logic, no infrastructure  │
-└─────────────────────────────────────────────┘
+src/components/
+├── controllers/       # Things that select actions
+├── dynamics/          # Things that predict next states
+├── representation_learners/  # Things that manage latent states
+└── return_computers/  # Things that compute returns
 ```
 
-**Key Design Principle:** Orchestrator knows nothing about algorithms. Workflow knows nothing about infrastructure.
+**Key principle**: Workflows know how to use their components. Components don't need to follow rigid base classes.
 
-### Component System
+For example, `og_wm.py` uses:
+- `self.vae` with methods: `observe()`, `observe_sequence()`, `decode()`
+- `self.mdn_rnn` with methods: `observe()`, `observe_sequence()`, `reset_state()`
+- `self.controller` with method: `act()`
 
-Components are instantiated via Hydra's `_target_` mechanism (not decorator-based registry):
+While `dreamer.py` uses:
+- `self.rssm` with methods: `observe()`, `observe_sequence()`, `imagine_step()`
+- `self.actor` and `self.critic` controllers
 
-**Core Components** (`src/components/`):
-- **Encoders** (`encoders/`): Transform observations to features
-  - `MLPEncoder`: Dense layers for vector observations
-  - `CNNEncoder`: Convolutional layers for image observations
+Each workflow documents (via its `_bind_context()`) what it expects from its components.
 
-**World Model Components** (`src/components/world_models/`):
-- **Representation Learners** (`representation_learners/`): Manage latent state
-  - `RSSMRepresentationLearner`: Dreamer-style stochastic recurrent state
-  - `IdentityRepresentationLearner`: Pass-through for simple models
-  - Base protocol: `observe()`, `observe_sequence()`, `imagine_step()`
+---
 
-- **Dynamics Models** (`dynamics/`): Predict next latent state
-  - `RSSMDynamicsModel`: Recurrent state-space model
-  - Base interface: `forward(state, action) -> next_state`
+## Checkpointing
 
-- **Controllers** (`controllers/`): Action selection
-  - `DreamerActorController`: Learned policy network
-  - `DreamerCriticController`: Value function network
-  - Each controller owns its optimizer
-  - Base interface: `act(latent_state) -> action/distribution`
+The Orchestrator handles all checkpointing. It saves:
 
-- **Decoders** (`decoders/observation/`): Reconstruct observations
-  - `MLPObservationDecoder`: For vector observations
-  - `AtariObservationDecoder`: For image observations
-  - Base interface: `forward(latent) -> observation`
-
-- **Predictors** (`reward_predictors/`, `value_predictors/`): Auxiliary heads
-  - Reward prediction for world model training
-  - Value prediction for planning/critic learning
-
-### Hydra Configuration System
-
-Components are instantiated using `_target_` paths pointing to Python classes:
-
-**Example Component Config** (`configs/components/encoder/mlp.yaml`):
-```yaml
-_target_: src.components.encoders.simple_mlp.MLPEncoder
-input_dim: ???  # Must be provided by experiment config
-hidden_dims: [128, 128]
-activation: elu
+```python
+{
+    "version": 1,
+    "global_step": 12345,
+    "workflow_name": "OriginalWorldModelsWorkflow",
+    "phase_state": {...},           # PhaseScheduler state
+    "components": {...},            # All component state_dicts
+    "controllers": {...},           # All controller state_dicts
+    "optimizers": {...},            # All optimizer state_dicts
+    "workflow_custom": {...},       # workflow.get_state() output
+}
 ```
 
-**Example Experiment Config** (`configs/experiment/dreamer_cartpole.yaml`):
+To add custom state to checkpoints, implement in your workflow:
+```python
+def get_state(self) -> Dict[str, Any]:
+    return {
+        "my_counter": self.my_counter,
+        "episode_returns": list(self.episode_returns),
+    }
+
+def set_state(self, state: Dict[str, Any]) -> None:
+    self.my_counter = state.get("my_counter", 0)
+    self.episode_returns = state.get("episode_returns", [])
+```
+
+---
+
+## Hydra Configuration
+
+### Key Patterns
+
+**Composition via defaults:**
 ```yaml
 defaults:
   - /workflow: dreamer
-  - /components/encoder: mlp
-  - /components/representation_learner: rssm
+  - /components/encoder@components.encoder: mlp
   - /controller@controllers.actor: dreamer_actor
-  - /controller@controllers.critic: dreamer_critic
-  - /training: default
-  - /buffer: world_model_sequence
-  - /environment: cartpole
-  - _self_
+```
 
-experiment:
-  name: dreamer_cartpole
-  seed: 42
-  device: auto
-  paradigm: world_model
-
+**Dimension tracking:**
+```yaml
 _dims:
   observation: 4
   action: 2
-  encoder_output: 128
-  deterministic: 200
-  stochastic: 32
-  representation: ${add:${_dims.deterministic},${_dims.stochastic}}
-
-algorithm:
-  world_model_lr: 2.0e-4
-  actor_lr: 3.0e-4
-  imagination_horizon: 15
-  gamma: 0.99
+  latent: ${add:${_dims.observation}, 10}  # Computed dimension
 
 components:
   encoder:
-    input_dim: ${_dims.observation}
-    hidden_dims: [128, 128]
-
-controllers:
-  actor:
-    representation_dim: ${_dims.representation}
-    action_dim: ${_dims.action}
+    input_dim: ${_dims.observation}  # Reference
 ```
 
-**Key Features:**
-- **Compositional**: Mix and match components via defaults list
-- **Dimension tracking**: `_dims` section ensures consistency
-- **Interpolation**: Use `${_dims.observation}` to reference values
-- **Type-safe**: Hydra validates structure at runtime
-
-### Workflow Contract
-
-All world model algorithms implement `WorldModelWorkflow` base class (`src/workflows/world_models/base.py`):
-
-```python
-class WorldModelWorkflow(ABC):
-    @abstractmethod
-    def initialize(self, context: WorkflowContext) -> None:
-        """Bind components and initialize state."""
-
-    @abstractmethod
-    def update_world_model(self, batch, *, phase) -> Dict[str, float]:
-        """Update dynamics model, decoder, reward predictor. Return metrics."""
-
-    def collect_step(self, step, *, phase) -> Optional[CollectResult]:
-        """Interact with environment, return trajectories."""
-
-    def update_controller(self, batch, *, phase) -> Dict[str, float]:
-        """Update policy/value networks. Return metrics."""
-
-    def imagine(self, *, observations=None, latent=None, horizon) -> Dict[str, Any]:
-        """Generate imagined rollouts in latent space."""
-```
-
-**WorkflowContext** (`src/workflows/world_models/context.py`):
-Immutable dataclass providing workflows with:
-- `config`: Full experiment configuration
-- `device`: torch device (cuda/cpu)
-- `train_environment`, `eval_environment`: Environment instances
-- `components`: WorldModelComponents bundle (encoder, RSSM, decoder, etc.)
-- `optimizers`: Dict of optimizers keyed by name
-- `buffers`: Dict of replay buffers
-- `controller_manager`: Manages actor/critic/planner controllers
-- `checkpoint_manager`: Handles saving/loading
-- `experiment_logger`: Logging backend (TensorBoard, W&B)
-
-### Phase-Based Training
-
-Training is controlled by **PhaseScheduler** (`src/orchestration/phase_scheduler.py`), enabling complex curricula:
-
-**Example Phase Config**:
+**Partial instantiation (for optimizers):**
 ```yaml
-training:
-  total_timesteps: 10000000
-  phases:
-    - name: warmup
-      type: online
-      duration: 1000000  # steps
-      hooks:
-        - collect: {every: 1, steps: 1}
-        - update_world_model: {every: 1, updates: 1}
-        # No policy updates during warmup
-
-    - name: joint_training
-      type: online
-      duration: 9000000
-      hooks:
-        - collect: {every: 1, steps: 1}
-        - update_world_model: {every: 1, updates: 1}
-        - update_controller: {every: 1, updates: 1}
+optimizers:
+  world_model:
+    _target_: torch.optim.Adam
+    _partial_: true  # Creates partial, params added by train.py
+    lr: 1e-4
 ```
 
-**Phase Actions:**
-- `collect`: Call `workflow.collect_step()`, add to buffer
-- `update_world_model`: Sample batch, call `workflow.update_world_model()`
-- `update_controller`: Sample batch, call `workflow.update_controller()`
-- `evaluate`: Run evaluation episodes
+### Config Resolution
 
-**Use Cases:**
-- Model warmup before policy training (Dreamer V2/V3)
-- Offline pretraining then online finetuning (MuZero)
-- Alternating model/policy updates at different ratios
-- Periodic evaluation without hardcoding in workflow
+When you run `python scripts/train.py experiment=og_wm_carracing`:
 
-## Implementing a New World Model Algorithm
+1. Hydra loads `configs/config.yaml` (root)
+2. Loads `configs/experiment/og_wm_carracing.yaml`
+3. Follows `defaults` list, loading each referenced config
+4. Merges everything, resolving `${...}` interpolations
+5. Final config passed to `main(cfg)`
 
-### Example: Adding TD-MPC
+---
 
-**Files to CREATE:**
+## Debugging
 
-1. **Workflow** (`src/workflows/world_models/tdmpc.py`):
-```python
-class TDMPCWorkflow(WorldModelWorkflow):
-    def initialize(self, context):
-        # Bind components from context
-        self.encoder = context.components.encoder
-        self.dynamics_model = context.components.dynamics_model
-        self.reward_predictor = context.components.reward_predictor
-        self.value_function = context.controller_manager.get("critic")
-        self.planner = context.controller_manager.get("planner")
-        self.world_model_optimizer = context.optimizers["world_model"]
+### Config Issues
 
-    def collect_step(self, step, *, phase):
-        # Encode observation → deterministic latent
-        latent = self.encoder(self.current_obs)
+```bash
+# Print full resolved config
+python scripts/train.py experiment=your_exp --cfg job
 
-        # Plan action via MPC
-        action = self.planner.act(latent, workflow=self)
-
-        # Step environment
-        next_obs, reward, done, info = self.environment.step(action)
-        return CollectResult(steps=1, extras={"replay": trajectory})
-
-    def update_world_model(self, batch, *, phase):
-        # Deterministic dynamics loss + reward loss
-        next_latent_pred = self.dynamics_model(latent, action)
-        dynamics_loss = F.mse_loss(next_latent_pred, next_latent_target)
-        # ... optimize
-
-    def update_controller(self, batch, *, phase):
-        # TD value learning (no actor)
-        td_target = reward + gamma * next_value
-        value_loss = F.mse_loss(value_pred, td_target)
-        # ... optimize
+# Print just the job config (no Hydra internals)
+python scripts/train.py experiment=your_exp --cfg job --package _global_
 ```
 
-2. **MPC Planner** (`src/components/world_models/controllers/mpc_planner.py`):
-```python
-class MPCPlanner(BaseController):
-    def act(self, latent_state, *, workflow=None, **kwargs):
-        # Cross-Entropy Method planning
-        for _ in range(self.cem_iterations):
-            action_sequences = self.sample_sequences()
-            values = [workflow.imagine(latent, action_seq) for action_seq in action_sequences]
-            self.refit_distribution(top_k_sequences)
-        return self.action_mean[0]
-```
+### Training Issues
 
-3. **Deterministic Dynamics** (`src/components/world_models/dynamics/deterministic_mlp.py`):
-```python
-class DeterministicMLPDynamics(BaseDynamicsModel):
-    def forward(self, state, action):
-        input_tensor = torch.cat([state, action], dim=-1)
-        return self.net(input_tensor)  # Direct prediction, no stochastic sampling
-```
+1. **Buffer not ready** - Normal during initial collection. Training starts when buffer has enough data.
 
-4. **Config Files** (4 YAML files in `configs/`):
-   - `workflow/tdmpc.yaml`: Points to TDMPCWorkflow class
-   - `controller/mpc_planner.yaml`: MPC hyperparameters
-   - `components/dynamics_model/deterministic_mlp.yaml`: Network architecture
-   - `experiment/tdmpc_cartpole.yaml`: Full experiment config
+2. **Dimension mismatch** - Check `_dims` section, ensure all interpolations resolve correctly.
 
-**Files to MODIFY: NONE**
+3. **Component not found** - Check component name in `_bind_context()` matches config key.
 
-**Total Effort:** ~700 lines of new code, zero infrastructure changes.
-
-### Key Abstractions to Follow
-
-**When implementing a new workflow:**
-1. Inherit from `WorldModelWorkflow`
-2. Implement required methods: `initialize()`, `update_world_model()`
-3. Optionally implement: `collect_step()`, `update_controller()`, `imagine()`
-4. Access components via `context` in `initialize()`
-5. Return metrics as `Dict[str, float]` from update methods
-6. Let orchestrator handle logging, checkpointing, evaluation
-
-**When implementing a new component:**
-1. Inherit from appropriate base class (e.g., `BaseEncoder`, `BaseDynamicsModel`)
-2. Implement required abstract methods
-3. Add `__init__` accepting `config` dict or kwargs
-4. Create corresponding YAML config with `_target_` pointing to class
-5. Component will be instantiated by Hydra and passed to workflow via context
-
-## Config Organization
-
-```
-configs/
-├── config.yaml                  # Hydra root (minimal)
-├── experiment/                  # Complete experiment configs
-│   ├── dreamer_cartpole.yaml
-│   └── your_experiment.yaml
-├── workflow/                    # Workflow selection
-│   └── dreamer.yaml
-├── components/                  # Component defaults
-│   ├── encoder/
-│   │   ├── mlp.yaml
-│   │   └── cnn.yaml
-│   ├── representation_learner/
-│   │   └── rssm.yaml
-│   └── dynamics_model/
-│       └── rssm.yaml
-├── controller/                  # Controller configs
-│   ├── dreamer_actor.yaml
-│   └── dreamer_critic.yaml
-├── buffer/
-│   └── world_model_sequence.yaml
-├── training/                    # Training hyperparameters
-│   └── default.yaml
-├── environment/                 # Environment configs
-│   ├── cartpole.yaml
-│   └── atari.yaml
-└── logging/
-    └── tensorboard.yaml
-```
-
-## Experiment Outputs
-
-All experiments save to `experiments/<name>_<timestamp>/`:
-- `configs/config.yaml`: Complete resolved config (all Hydra interpolations resolved)
-- `checkpoints/`: Model checkpoints
-  - `step_<N>.pt`: Periodic checkpoints
-  - `final.pt`: Final checkpoint
-- Hydra creates working directory and changes to it during training
-
-## Known Issues and Workarounds
-
-### 1. RSSM Coupling in Dreamer Workflow
-
-**Issue:** `src/workflows/world_models/dreamer.py` directly calls RSSM-specific methods:
-```python
-latent_step = self.rssm.observe(...)  # Assumes RSSM interface
-```
-
-**Impact:** Cannot swap RSSM for Transformer-based representation learner without modifying workflow.
-
-**Workaround:** If implementing non-RSSM Dreamer variant:
-1. Create new workflow inheriting from `WorldModelWorkflow`
-2. Use duck typing to call your representation learner's methods
-3. Or: Refactor Dreamer to use Protocol-based interface (future work)
-
-**Future Fix:** Define `RepresentationLearnerProtocol` and use `self.representation_learner` instead of `self.rssm`.
-
-### 2. Controller Interface Ambiguity
-
-**Issue:** Some controllers return `Distribution` (actor), others return `action` tensor (planner).
-
-**Workaround:** In workflow, check controller type or add mode parameter:
-```python
-if isinstance(controller, ActorController):
-    action = controller.act(latent).rsample()
-else:
-    action = controller.act(latent)  # Planner returns tensor directly
-```
-
-**Future Fix:** Standardize controller interface with explicit return type contracts.
-
-### 3. Optimizer Construction Location
-
-**Issue:** Optimizers are built in `scripts/train.py` (lines 168-198), not via Hydra configs.
-
-**Workaround:** To use different optimizer:
-```python
-# In workflow.initialize():
-self.world_model_optimizer = RMSprop(params, lr=self.config.algorithm.world_model_lr)
-```
-
-**Future Fix:** Create optimizer configs: `configs/optimizer/adam.yaml`, instantiate via Hydra.
-
-## Environment System
-
-**Wrappers** (`src/environments/`):
-- `gym_wrapper.py`: Basic Gym environments (CartPole, MountainCar, etc.)
-- `atari_wrapper.py`: Atari with standard preprocessing (frame stacking, grayscale, etc.)
-- `vectorized_gym_wrapper.py`: Parallel environments for faster collection
-- `minigrid_wrapper.py`: MiniGrid environments
-
-**Important:** Environments automatically reset on `done=True`. Workflows don't call `env.reset()` explicitly.
-
-**Config Example**:
-```yaml
-environment:
-  _target_: src.environments.gym_wrapper.GymWrapper
-  name: CartPole-v1
-  num_envs: 8
-  transforms:
-    - normalize_observations: true
-```
-
-## Buffer System
-
-**WorldModelSequenceBuffer** (`src/buffers/world_model_sequence.py`):
-- Stores vectorized trajectories in per-environment deques
-- Returns contiguous sequences `(B, T, ...)` for world model training
-- Supports configurable sequence length and stride
-- Optional return computation (n-step, TD-λ, etc.)
-
-**Config Example**:
-```yaml
-buffer:
-  _target_: src.buffers.world_model_sequence.WorldModelSequenceBuffer
-  capacity: 100000
-  batch_size: 32
-  sequence_length: 16
-  sequence_stride: 8
-  num_envs: ${environment.num_envs}
-```
-
-**Buffer Interface:**
-- `add(trajectory=...)`: Add vectorized trajectory dict
-- `sample(batch_size) -> Dict[str, torch.Tensor]`: Sample batch of sequences
-- `ready() -> bool`: Check if enough data to sample
-- `clear()`: Reset buffer
-
-## Debugging and Development
-
-### Debugging Tips
-
-1. **Validate config without training:**
-   ```bash
-   python scripts/train.py experiment=dreamer_cartpole --cfg job
-   ```
-   This prints the full resolved config without running training.
-
-2. **Check component dimensions:**
-   ```bash
-   python scripts/train.py experiment=dreamer_cartpole --dry-run
-   ```
-   Instantiates all components and validates dimension consistency.
-
-3. **Monitor training:**
-   ```bash
-   tensorboard --logdir experiments/
-   ```
-
-4. **Check logs:**
-   - Hydra outputs to `experiments/<name>_<timestamp>/`
-   - Check `.hydra/config.yaml` for resolved config
-   - Check `.hydra/overrides.yaml` for command-line overrides
-
-### Common Errors
-
-**"Config missing required key '_dims.X'":**
-- Solution: Add dimension to `_dims` section in experiment config
-- Dimensions must be defined: `observation`, `action`, `encoder_output`, `representation`
-
-**"Encoder output dim doesn't match representation learner input dim":**
-- Solution: Use Hydra interpolation: `feature_dim: ${_dims.encoder_output}`
-- Ensures consistency across component configs
-
-**"Buffer not ready" warning during training:**
-- Solution: Buffer doesn't have enough sequences yet
-- This is normal during initial collection phase
-- Training will start once buffer reaches `batch_size` sequences
-
-**"Controller not found: 'actor'":**
-- Solution: Add controller to config:
-  ```yaml
-  defaults:
-    - /controller@controllers.actor: dreamer_actor
-  ```
-
-### Logging and Metrics
+### Logging
 
 Metrics are logged with prefixes:
-- `collect/*`: Environment interaction metrics (reward, episode length)
-- `train/*`: World model training metrics (reconstruction loss, KL divergence)
-- `controller/*`: Policy/value training metrics (actor loss, critic loss, entropy)
-- `eval/*`: Evaluation metrics (return_mean, return_std)
-- `workflow/*`: Workflow-specific metrics (total episodes, runtime)
+- `collect/*` - Environment interaction
+- `train/*` - World model training (from `update_world_model`)
+- `controller/*` - Controller training (from `update_controller`)
+- `eval/*` - Evaluation metrics
+- `workflow/*` - Custom workflow metrics
 
-## Best Practices
+---
 
-### When Implementing New Algorithms
+## File Reference
 
-1. **Start with workflow skeleton:**
-   - Copy `base.py` method signatures
-   - Implement minimal `initialize()` and `update_world_model()`
-   - Test with simple environment before adding complexity
+| File | Purpose |
+|------|---------|
+| `scripts/train.py` | Entry point - instantiation and wiring |
+| `src/orchestration/orchestrator.py` | Training loop, checkpointing, logging |
+| `src/orchestration/phase_scheduler.py` | Phase progression FSM |
+| `src/workflows/utils/base.py` | WorldModelWorkflow ABC, CollectResult |
+| `src/workflows/utils/context.py` | WorkflowContext dataclass |
+| `src/workflows/utils/controllers.py` | ControllerManager |
+| `src/workflows/dreamer.py` | Dreamer implementation |
+| `src/workflows/og_wm.py` | Original World Models implementation |
+| `src/buffers/world_model_sequence.py` | Main replay buffer |
+| `src/utils/checkpoint.py` | CheckpointManager |
 
-2. **Keep workflows pure:**
-   - No logging setup (use orchestrator's logger via context)
-   - No checkpoint management (orchestrator handles this)
-   - No training loop logic (orchestrator controls phases)
-   - Focus on algorithm: losses, updates, imagination
+---
 
-3. **Use Hydra interpolations:**
-   - Reference `_dims` for all dimension configs
-   - Use `${add:...}` or `${multiply:...}` for computed dimensions
-   - This prevents dimension mismatch errors
+## Design Decisions
 
-4. **Test components independently:**
-   - Create components in test file
-   - Verify input/output shapes
-   - Check gradient flow before integrating into workflow
+### Why is `_bind_context()` in each workflow, not the base class?
 
-### When Modifying Existing Code
+Each workflow extracts different things and uses different names. Keeping it explicit:
+- Reader sees exactly what's being used
+- Workflow author chooses their own names (`self.vae` vs `self.encoder`)
+- No hidden magic
 
-1. **Preserve orchestrator/workflow boundary:**
-   - Don't add algorithm logic to orchestrator
-   - Don't add infrastructure logic to workflow
-   - Use `WorkflowContext` for communication
+### Why does train.py do all the instantiation?
 
-2. **Update configs when adding parameters:**
-   - Add new parameters to component YAML configs
-   - Document default values and valid ranges
-   - Use `???` for required parameters (Hydra will error if missing)
+train.py is the "experiment setup script". Orchestrator is the "execution engine". This separation:
+- Makes testing easier (inject mocks into Orchestrator)
+- Keeps Orchestrator focused on execution
+- Allows custom instantiation logic per experiment
 
-3. **Maintain backward compatibility:**
-   - When changing component interfaces, update all implementations
-   - Consider adding optional parameters with defaults instead of breaking changes
+### Why `update_world_model` and `update_controller` as hook names?
 
-## Reference: File Locations
+These cover most RL algorithms:
+- World models: `update_world_model` = VAE/dynamics, `update_controller` = policy
+- Model-free: `update_world_model` = value network, `update_controller` = policy
+- VLAs: `update_world_model` = main model, `update_controller` = optional
 
-**Key Files:**
-- Orchestrator: `src/orchestration/world_model_orchestrator.py:42` (WorldModelOrchestrator class)
-- Workflow base: `src/workflows/world_models/base.py:34` (WorldModelWorkflow class)
-- Dreamer workflow: `src/workflows/world_models/dreamer.py:28` (DreamerWorkflow class)
-- Context: `src/workflows/world_models/context.py` (WorkflowContext dataclass)
-- Phase scheduler: `src/orchestration/phase_scheduler.py` (PhaseScheduler class)
-- Buffer: `src/buffers/world_model_sequence.py:17` (WorldModelSequenceBuffer class)
-- Entry point: `scripts/train.py` (Hydra main function)
+If you need more hooks (e.g., GAN discriminator), the system is extensible.
 
-**Component Base Classes:**
-- Encoder: `src/components/encoders/base.py:15`
-- Representation learner: `src/components/world_models/representation_learners/base.py:147`
-- Dynamics model: `src/components/world_models/dynamics/base.py:12`
-- Controller: `src/components/world_models/controllers/base.py:15`
-- Decoder: `src/components/world_models/decoders/observation/base.py`
+### Why no strict interfaces for components?
 
-## Quick Start: Implementing Your Algorithm
+This is a research framework. Strict interfaces:
+- Limit experimentation
+- Force artificial categorization
+- Add boilerplate
 
-1. **Create workflow file:** `src/workflows/world_models/your_algorithm.py`
-2. **Inherit from base:** `class YourWorkflow(WorldModelWorkflow):`
-3. **Implement methods:** `initialize()`, `update_world_model()`, optionally `collect_step()`, `update_controller()`, `imagine()`
-4. **Create components:** If needed, implement custom encoders/dynamics/controllers
-5. **Create configs:**
-   - `configs/workflow/your_algorithm.yaml` with `_target_` pointing to workflow
-   - `configs/experiment/your_algorithm_<env>.yaml` with full experiment config
-6. **Run:** `python scripts/train.py experiment=your_algorithm_<env>`
+Instead, workflows document what they need, and components are organized loosely by function.
 
-**That's it!** The orchestrator handles training loop, checkpointing, logging, evaluation automatically.
+---
+
+## Existing Workflows
+
+### DreamerWorkflow (`src/workflows/dreamer.py`)
+- RSSM-based world model
+- Actor-critic in imagination
+- Supports Dreamer v1/v2/v3 variants
+
+### TDMPCWorkflow (`src/workflows/tdmpc.py`)
+- Deterministic latent dynamics
+- MPC planning with learned value function
+- TD learning for value
+
+### OriginalWorldModelsWorkflow (`src/workflows/og_wm.py`)
+- VAE for visual encoding
+- MDN-RNN for dynamics
+- CMA-ES for controller (WIP)
+- Follows Ha & Schmidhuber 2018
+
+### DiffusionPolicyWorkflow (`src/workflows/diffusion_policy_workflow.py`)
+- Diffusion-based action generation
+- Behavioral cloning from demonstrations
+- Work in progress
+
+---
+
+## Quick Reference
+
+### Running an experiment
+```bash
+python scripts/train.py experiment=<name>
+```
+
+### Adding a new algorithm
+1. Create `src/workflows/your_algo.py` inheriting from `WorldModelWorkflow`
+2. Create `configs/workflow/your_algo.yaml` with `_target_`
+3. Create `configs/experiment/your_algo_env.yaml`
+
+### Adding a new component
+1. Create `src/components/<category>/your_component.py`
+2. Create `configs/components/<category>/your_component.yaml` with `_target_`
+3. Reference in experiment config
+
+### Key methods to implement
+```python
+initialize(context)           # Required - bind components
+update_world_model(batch, phase)  # Required - train model
+collect_step(step, phase)     # Optional - env interaction
+update_controller(batch, phase)   # Optional - train policy
+get_state() / set_state()     # Optional - custom checkpointing
+```
+
+---
+
+## Notes for LLMs
+
+1. **Always check actual file paths** - This doc is accurate as of the last update, but verify files exist.
+
+2. **The orchestrator/workflow boundary is sacred** - Don't add algorithm logic to Orchestrator, don't add infrastructure to workflows.
+
+3. **Phase config goes to workflows** - Workflows receive `phase` dict with name, type, progress. Branch on `phase['name']` for phase-specific behavior.
+
+4. **Components are duck-typed** - Workflows call whatever methods they need. No strict interfaces.
+
+5. **Hydra instantiation** - Components are created via `instantiate(cfg.component)`. The `_target_` field points to the Python class.
+
+6. **Buffer routing** - Orchestrator routes `CollectResult.trajectory` to the buffer specified in phase config.
+
+7. **Episode tracking** - Use base class utilities: `_reset_episode_tracking()`, `_update_episode_stats()`.
