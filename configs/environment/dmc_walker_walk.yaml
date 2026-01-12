@@ -1,0 +1,9 @@
+# DeepMind Control Suite: Walker Walk
+# obs_dim: 24, action_dim: 6
+
+_target_: src.environments.dmc_wrapper.DMCWrapper
+name: walker_walk
+from_pixels: false
+frame_skip: 1
+normalize_obs: false
+max_episode_steps: 1000

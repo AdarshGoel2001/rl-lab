@@ -103,6 +103,41 @@ class PhaseScheduler:
         return self._finished
 
     # ------------------------------------------------------------------
+    # State persistence
+    # ------------------------------------------------------------------
+
+    def get_state(self) -> Dict[str, Any]:
+        """Return scheduler state for checkpointing and progress tracking.
+
+        Keys:
+            current_index: Index of current phase
+            pending_hooks: Remaining hooks in current cycle
+            steps_done: Steps completed in current phase
+            updates_done: Updates completed in current phase
+            cycles_done: Cycles completed in current phase
+            finished: Whether all phases are complete
+        """
+        return {
+            "current_index": self._current_index,
+            "pending_hooks": list(self._pending_hooks),
+            "steps_done": self._phase_steps,
+            "updates_done": self._phase_updates,
+            "cycles_done": self._phase_cycles,
+            "finished": self._finished,
+        }
+
+    def set_state(self, state: Dict[str, Any]) -> None:
+        """Restore scheduler state from checkpoint."""
+        if not state:
+            return
+        self._current_index = state.get("current_index", 0)
+        self._pending_hooks = list(state.get("pending_hooks", []))
+        self._phase_steps = state.get("steps_done", 0)
+        self._phase_updates = state.get("updates_done", 0)
+        self._phase_cycles = state.get("cycles_done", 0)
+        self._finished = state.get("finished", False)
+
+    # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 

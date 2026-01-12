@@ -70,7 +70,7 @@ environment:
 
 # Buffer - MUST set dataset_path to your pre-collected dataset
 buffer:
-  dataset_path: ???  # REQUIRED: Set to your dataset path, e.g., datasets/auto_20241218_143022
+  dataset_path: datasets/auto_20251219_070048 # REQUIRED: Set to your dataset path, e.g., datasets/auto_20241218_143022
   sequence_length: 15
   sequence_stride: 1
   batch_size: 256
@@ -83,7 +83,7 @@ logging:
 # Training configuration - NO COLLECTION PHASE
 training:
   total_timesteps: 1000000  # Large number, phases control actual duration
-  checkpoint_frequency: 10000
+  checkpoint_frequency: 100
   eval_frequency: 0
 
   phases:

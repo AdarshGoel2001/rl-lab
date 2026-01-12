@@ -1,124 +1,83 @@
-# Analysis: Checkpoint/Resume System
+# Final Architecture Spec: Checkpoint & Resume System
 
-## Approach
-I propose a strict **Extract-then-Save** architecture. The `Workflow` and `Buffer` objects are responsible for serializing their internal state into dictionaries (Extraction). The `Orchestrator` coordinates this extraction. The `CheckpointManager` is reduced to a "dumb" persistence layer that writes the aggregated dictionary to disk. This resolves the interface mismatch by ensuring `CheckpointManager` always receives serializable data, never objects.
+## 1. CheckpointManager: Minimal Responsibility
+**Not redundant, but simplified.**
+**Responsibility:** Pure persistence layer.
+-   **Input:** `Dict[str, Any]` (the full state payload), `step`, `path`.
+-   **Action:** Atomic write to disk (temp file -> rename), symlink management (`latest.pt`, `best.pt`), housekeeping (delete old ckpts).
+-   **Output:** `Dict[str, Any]` (loaded payload).
+-   **Removed:** All `hasattr` checks, state extraction logic, and object introspection.
 
-## Reasoning
-1.  **Truth**: The current `CheckpointManager` assumes it can call `.get_state()` on values passed to it. The `Orchestrator` passes dictionaries. This is a hard type error.
-2.  **Simplicity**: Instead of making `CheckpointManager` handle both Objects and Dicts (using `hasattr`), we standardize on `Orchestrator` performing the extraction. This adheres to "Strict interface, not conditional".
-3.  **Discovery**: By enforcing that `Workflow` iterates its components, we satisfy the "Loop-based discovery" constraint without hardcoding component names in the save logic.
-
-## Data Contract & Sequence
-
-### 1. Checkpoint Data Structure (The Contract)
-The `.pt` file will contain a single top-level dictionary:
-
+## 2. Checkpoint Data Contract (`.pt` file structure)
 ```python
 {
     "metadata": {
-        "step": int,
+        "step": int,              # Global orchestrator step
         "timestamp": str,
-        "version": "1.0"
+        "run_id": str,
+        "config_summary": Dict    # Optional: For validation, not restoration
     },
-    "workflow": {  # Derived from workflow.get_state()
-        "components": {
-            "encoder": OrderedDict(...),         # nn.Module state_dict
-            "representation_learner": OrderedDict(...),
-            "dynamics_model": OrderedDict(...),
-            "actor": OrderedDict(...),           # Controllers are components
-            "critic": OrderedDict(...)
-        },
-        "optimizers": {
-            "world_model_optimizer": dict(...),  # Optimizer state_dict
-            "actor_optimizer": dict(...),
-            "critic_optimizer": dict(...)
-        },
-        "custom": {
-            "world_model_updates": int,
-            "total_episodes": int
-            # ... researcher defined fields
-        }
+    "components": {               # Sourced from WorldModelComponents
+        "encoder": OrderedDict,   # nn.Module state_dict
+        "rssm": OrderedDict,
+        "actor": OrderedDict,
+        ...                       # Automatically discovered modules
     },
-    "buffers": {
-        "replay_buffer": {
-            "write_pointer": int,
-            "size": int,
-            # If DiskBuffer, path/metadata. If RAM, potentially data (but prompt warns against incomplete)
-        }
+    "optimizers": {               # Sourced from WorldModelComponents
+        "world_model": Dict,      # Optimizer state_dict
+        "actor": Dict,
+        ...
+    },
+    "workflow": {                 # Sourced from Workflow.get_state()
+        "episodes": int,          # Algorithm counters
+        "custom_metric": Any      # Researcher defined
+    },
+    "buffers": {                  # Sourced from Buffers
+        "replay_buffer": Dict     # Pointers, metadata (data if Disk)
     }
 }
 ```
 
-### 2. Interfaces
+## 3. Save/Load Sequence
 
-**Workflow (`src/workflows/world_models/base.py`):**
-```python
-class WorldModelWorkflow(abc.ABC):
-    def get_state(self) -> Dict[str, Any]:
-        """
-        Aggregates state from 3 sources:
-        1. Components (nn.Modules): Discovered via loop over self.components
-        2. Optimizers: Discovered via loop over self.optimizers
-        3. Custom: via self.get_custom_state()
-        """
-        # Implementation logic (pseudo-code)
-        # return {
-        #    'components': {k: v.state_dict() for k, v in self.components.items() if isinstance(v, nn.Module)},
-        #    'optimizers': {k: v.state_dict() for k, v in self.optimizers.items()},
-        #    'custom': self.get_custom_state()
-        # }
+### Save Sequence (Orchestrator-Driven)
+1.  **Orchestrator** decides to save (e.g., `step % freq == 0`).
+2.  **Orchestrator** calls `comp_state = self.context.components.state_dict()`.
+    *   `WorldModelComponents` iterates its registry.
+    *   Collects `state_dict()` for all `nn.Module` and `Optimizer`.
+    *   Collects `get_state()` for any `StatefulComponent` (Protocol).
+3.  **Orchestrator** calls `flow_state = self.workflow.get_state()`.
+    *   `Workflow` returns dict of counters/custom vars.
+4.  **Orchestrator** calls `buf_state = {k: v.save_checkpoint() for k,v in self.buffers.items()}`.
+5.  **Orchestrator** assembles `payload = {metadata, components, workflow, buffers}`.
+6.  **Orchestrator** delegates to `CheckpointManager.save_checkpoint(payload, path)`.
 
-    def set_state(self, state: Dict[str, Any]) -> None:
-        """
-        Restores state:
-        1. Components: load_state_dict(strict=True)
-        2. Optimizers: load_state_dict(), then force LR from Config
-        3. Custom: self.set_custom_state()
-        """
-        
-    def get_custom_state(self) -> Dict[str, Any]:
-        # Default implementation returns empty or basic stats
-        return {'world_model_updates': self.world_model_updates}
+### Load Sequence (Orchestrator-Driven)
+1.  **Orchestrator** delegates to `payload = CheckpointManager.load_checkpoint(path)`.
+2.  **Orchestrator** extracts `step = payload['metadata']['step']`.
+3.  **Orchestrator** calls `self.context.components.load_state_dict(payload['components'], payload['optimizers'])`.
+    *   `WorldModelComponents` loads module weights (`strict=True`).
+    *   `WorldModelComponents` loads optimizer states.
+4.  **Orchestrator** (or Context) re-initializes **Schedulers** using `step` as `last_epoch`.
+5.  **Orchestrator** calls `self.workflow.set_state(payload['workflow'])`.
+6.  **Orchestrator** calls `self.buffers[k].load_checkpoint(payload['buffers'][k])`.
 
-    def set_custom_state(self, state: Dict[str, Any]) -> None:
-        # Restore basic stats
-        pass
-```
+## 4. Refactor Plan
 
-### 3. Load/Save Sequence
+1.  **`src/utils/checkpoint.py`**:
+    *   Strip `get_state`/`hasattr` logic.
+    *   Make `save_checkpoint` accept a single `state_dict`.
 
-**Save Sequence:**
-1.  **Orchestrator** determines a checkpoint is needed (e.g. `step % freq == 0`).
-2.  **Orchestrator** calls `state_payload = self.workflow.get_state()`.
-3.  **Orchestrator** calls `buffer_payload = {k: b.save_checkpoint() for k, b in self.buffers.items()}`.
-4.  **Orchestrator** combines them: `full_state = {'workflow': state_payload, 'buffers': buffer_payload}`.
-5.  **Orchestrator** calls `self.checkpoint_manager.save_checkpoint(full_state, step)`.
-6.  **CheckpointManager** writes `full_state` to disk using `torch.save`.
+2.  **`src/workflows/world_models/context.py`** (`WorldModelComponents`):
+    *   Add `state_dict()`: Loop `self.components` + `self.optimizers` -> return Dict.
+    *   Add `load_state_dict(state, optimizers_state)`: Restore modules and optimizers.
+    *   Define `StatefulComponent` Protocol here.
 
-**Load Sequence:**
-1.  **Orchestrator** calls `checkpoint = self.checkpoint_manager.load_checkpoint(path)`.
-2.  **Orchestrator** extracts `workflow_state = checkpoint['workflow']`.
-3.  **Orchestrator** calls `self.workflow.set_state(workflow_state)`.
-    *   `Workflow` restores NN weights.
-    *   `Workflow` restores Optimizers, **then overrides LR from current Config**.
-    *   `Workflow` restores custom counters.
-4.  **Orchestrator** calls `self.buffers[name].load_checkpoint(checkpoint['buffers'][name])`.
+3.  **`src/workflows/world_models/base.py`** (`WorldModelWorkflow`):
+    *   Clean up `state_dict`: Remove optimizer handling (moved to Components).
+    *   Focus `state_dict` purely on `total_episodes`, `episode_returns`.
 
-## Answers to Questions
-
-1.  **Checkpoint Dict**: See "Data Contract" above. Top-level keys: `metadata`, `workflow`, `buffers`.
-2.  **Loop Discovery**:
-    *   In `DreamerWorkflow.initialize`, store `self.components = context.components` (the `WorldModelComponents` container).
-    *   In `get_state`, iterate `self.components.as_dict().items()`.
-    *   Filter: `if isinstance(obj, torch.nn.Module)`.
-    *   This ensures configs are ignored (unless they accidentally masquerade as Modules) and new modules added to the container are automatically picked up.
-3.  **Missing/Extra Keys**:
-    *   **Workflow Logic**: Iterate the *checkpoint's* keys. If a key exists in `self.components`, load it.
-    *   **Safety**: Use `strict=True` for the `load_state_dict` of individual modules to catch architecture mismatches (layer size changes).
-    *   **Architecture Evolution**: If the checkpoint has a component `foo` that no longer exists in code, log a warning and ignore. If code has `bar` not in checkpoint, log a warning and leave initialized (random).
-4.  **Buffer Pitfalls**:
-    *   **Incomplete Episodes**: Buffers must store a `write_pointer` that strictly points to the end of the last *terminated* episode. When saving, only valid episodes up to that pointer are "valid".
-    *   **Resumption**: On load, if the buffer finds data beyond the saved `write_pointer` (e.g. if using a persistent memory-mapped file that wasn't truncated), it must reset its internal pointer to the checkpointed value to ensure the partial episode is discarded/overwritten.
-
-## Confidence
-High. The proposed separation of concerns aligns with the "Ideal System Design" and solves the root cause (interface mismatch) by standardizing on Data Transfer Objects (Dictionaries) rather than active Objects at the CheckpointManager boundary.
+4.  **`src/orchestration/world_model_orchestrator.py`**:
+    *   Update `_save_checkpoint` to assemble the payload as described.
+    *   Update `resume_from_checkpoint` (or `_load_checkpoint`) to follow the Load Sequence.
+    *   Implement Scheduler re-init logic after load.

@@ -236,3 +236,34 @@ class OriginalWorldModelsWorkflow(WorldModelWorkflow):
         """Delegate to MDN-RNN to sample dream trajectories."""
         # TODO: Implement MDN-RNN rollout logic once the module and latent interface exist
         raise NotImplementedError("imagine homework pending.")
+
+    # ------------------------------------------------------------------
+    # Checkpoint state (researcher-defined custom state)
+    # ------------------------------------------------------------------
+    def get_state(self) -> Dict[str, Any]:
+        """Return custom state for checkpointing (episode tracking)."""
+        return {
+            "total_episodes": self.total_episodes,
+            "episode_returns": list(self.episode_returns),
+            "episode_lengths": list(self.episode_lengths),
+            "vector_episode_returns": self.vector_episode_returns.tolist(),
+            "vector_episode_lengths": self.vector_episode_lengths.tolist(),
+            "num_envs": self.num_envs,
+            "episode_history_len": self._episode_history_len,
+        }
+
+    def set_state(self, state: Dict[str, Any]) -> None:
+        """Restore custom state from checkpoint."""
+        if not state:
+            return
+        # Use the existing episode tracking restoration helper
+        tracking_state = {
+            "total_episodes": state.get("total_episodes", 0),
+            "returns": state.get("episode_returns", []),
+            "lengths": state.get("episode_lengths", []),
+            "vector_returns": np.array(state.get("vector_episode_returns", []), dtype=np.float32),
+            "vector_lengths": np.array(state.get("vector_episode_lengths", []), dtype=np.int32),
+            "num_envs": state.get("num_envs", self.num_envs),
+            "history_len": state.get("episode_history_len", self._episode_history_len),
+        }
+        self._restore_episode_tracking(tracking_state)

@@ -74,19 +74,24 @@ class WorldModelOrchestrator:
         }
         self.global_step = 0
 
-        timestamp = getattr(config.experiment, "timestamp", None)
-        if timestamp is None:
-            from datetime import datetime
+        if experiment_dir:
+            self.experiment_dir = Path(experiment_dir)
+        else:
+            cwd = Path.cwd()
+            # When Hydra chdir is enabled, use the run directory as the experiment root.
+            if (cwd / ".hydra").exists():
+                self.experiment_dir = cwd
+            else:
+                timestamp = getattr(config.experiment, "timestamp", None)
+                if timestamp is None:
+                    from datetime import datetime
 
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-        default_dir = Path("experiments") / f"{config.experiment.name}_{timestamp}"
-        self.experiment_dir = Path(experiment_dir) if experiment_dir else default_dir
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                self.experiment_dir = Path("experiments") / f"{config.experiment.name}_{timestamp}"
         self.experiment_dir.mkdir(parents=True, exist_ok=True)
 
         self.checkpoint_manager = CheckpointManager(
             self.experiment_dir,
-            auto_save_frequency=self.config.training.checkpoint_frequency,
             max_checkpoints=5,
         )
         self.experiment_logger = create_logger(
@@ -271,11 +276,7 @@ class WorldModelOrchestrator:
                     scheduler.advance("noop")
                     continue
 
-                phase_config = phase_def.to_mapping(progress={
-        "steps_done": scheduler._phase_steps,
-        "updates_done": scheduler._phase_updates,
-        "cycles_done": scheduler._phase_cycles,
-    })
+                phase_config = phase_def.to_mapping(progress=scheduler.get_state())
 
                 if action == "collect":
                     collect_result = self.workflow.collect_step(self.global_step, phase=phase_config)
@@ -311,6 +312,8 @@ class WorldModelOrchestrator:
                     if last_update_metrics:
                         self.experiment_logger.log_metrics(last_update_metrics, self.global_step, prefix="train")
                     scheduler.advance(action, updates=1)
+                    self.global_step += 1
+                    self._update_context(global_step=self.global_step)
 
                 elif action == "update_controller":
                     buffer = self._resolve_buffer(phase_config)
@@ -327,6 +330,8 @@ class WorldModelOrchestrator:
                     if controller_metrics:
                         self.experiment_logger.log_metrics(controller_metrics, self.global_step, prefix="controller")
                     scheduler.advance(action, updates=1)
+                    self.global_step += 1
+                    self._update_context(global_step=self.global_step)
 
                 elif action == "evaluate":
                     eval_metrics = self._run_evaluation_phase(phase_config)
@@ -582,16 +587,108 @@ class WorldModelOrchestrator:
         return normalized
 
     def _save_checkpoint(self, *, final: bool = False) -> None:
+        """Save checkpoint with loop-based component/optimizer discovery."""
+        context = self.ensure_context()
+
+        # 1. Collect component states (loop-based discovery)
+        components_state = {}
+        for name, component in context.components.components.items():
+            if component is not None and isinstance(component, torch.nn.Module):
+                components_state[name] = component.state_dict()
+
+        # 2. Collect optimizer states (loop-based discovery)
+        optimizers_state = {}
+        for name, optimizer in (context.optimizers or {}).items():
+            if optimizer is not None:
+                optimizers_state[name] = optimizer.state_dict()
+
+        # 3. Collect controller states
+        controllers_state = {}
+        if self.controller_manager is not None:
+            controllers_state = self.controller_manager.state_dict()
+
+        # 4. Collect phase scheduler state
+        phase_state = self.scheduler.get_state()
+
+        # 5. Collect workflow custom state
+        workflow_custom = self.workflow.get_state()
+
+        # 6. Assemble checkpoint (buffers rely on finalize() for persistence)
         state = {
+            "version": 1,
+            "global_step": self.global_step,
             "workflow_name": self.workflow.__class__.__name__,
-            "metrics": {},
-            "world_model_updates": getattr(self.workflow, "world_model_updates", 0),
-            "workflow": self.workflow.state_dict(mode="checkpoint"),
-            "buffers": {name: self._buffer_checkpoint(buf) for name, buf in self.buffers.items()},
-            "controllers": self._controller_state_dict(),
+            "phase_state": phase_state,
+            "components": components_state,
+            "controllers": controllers_state,
+            "optimizers": optimizers_state,
+            "workflow_custom": workflow_custom,
         }
-        name = "final" if final else None
-        self.checkpoint_manager.save_checkpoint(state, self.global_step, name=name, is_best=final)
+
+        # 8. Delegate I/O to checkpoint manager
+        name = "final" if final else f"step_{self.global_step}"
+        self.checkpoint_manager.save(state, self.global_step, name=name, is_best=final)
+
+    def load_checkpoint(self, path: Path) -> None:
+        """Load checkpoint and restore all state."""
+        # 1. Load raw checkpoint
+        ckpt = self.checkpoint_manager.load(path)
+        if ckpt is None:
+            logger.warning(f"No checkpoint found at {path}")
+            return
+
+        context = self.ensure_context()
+
+        # 2. Restore global step
+        self.global_step = ckpt.get("global_step", 0)
+        logger.info(f"Restoring checkpoint from step {self.global_step}")
+
+        # 3. Restore phase scheduler state
+        phase_state = ckpt.get("phase_state", {})
+        self.scheduler.set_state(phase_state)
+
+        # 4. Restore component weights (loop-based)
+        components_state = ckpt.get("components", {})
+        for name, state_dict in components_state.items():
+            component = context.components.components.get(name)
+            if component is not None and isinstance(component, torch.nn.Module):
+                component.load_state_dict(state_dict)
+                logger.debug(f"Restored component: {name}")
+
+        # 5. Restore optimizer states with LR override from config
+        optimizers_state = ckpt.get("optimizers", {})
+        for name, opt_state in optimizers_state.items():
+            optimizer = (context.optimizers or {}).get(name)
+            if optimizer is not None:
+                optimizer.load_state_dict(opt_state)
+                # Override LR from config
+                lr_key = f"{name}_lr"
+                config_lr = getattr(self.config.algorithm, lr_key, None)
+                if config_lr is not None:
+                    for pg in optimizer.param_groups:
+                        pg["lr"] = float(config_lr)
+                    logger.debug(f"Restored optimizer {name} with LR override: {config_lr}")
+                else:
+                    logger.debug(f"Restored optimizer {name} (no LR override)")
+
+        # 6. Restore controller states
+        controllers_state = ckpt.get("controllers", {})
+        if self.controller_manager is not None and controllers_state:
+            self.controller_manager.load_state_dict(controllers_state)
+            logger.debug("Restored controller states")
+
+        # 7. Restore workflow custom state
+        workflow_custom = ckpt.get("workflow_custom", {})
+        self.workflow.set_state(workflow_custom)
+        logger.debug("Restored workflow custom state")
+
+        # 8. Update context global_step (buffers rely on finalize() for persistence)
+        self._update_context(global_step=self.global_step)
+
+        # 9. Restore RNG states
+        self.checkpoint_manager.restore_rng_states(ckpt)
+
+        logger.info(f"Checkpoint restored successfully from step {self.global_step}")
 
     def save_experiment_config(self) -> None:
         config_dir = self.experiment_dir / "configs"
@@ -626,18 +723,3 @@ class WorldModelOrchestrator:
                 context.eval_environment.close()
             except Exception:
                 pass
-
-    def _buffer_checkpoint(self, buffer: Any) -> Dict[str, Any]:
-        saver = getattr(buffer, "save_checkpoint", None)
-        if callable(saver):
-            try:
-                return saver()
-            except TypeError:
-                return saver
-        state_dict = getattr(buffer, "state_dict", None)
-        if callable(state_dict):
-            try:
-                return state_dict(mode="checkpoint")
-            except TypeError:
-                return state_dict()
-        return {}

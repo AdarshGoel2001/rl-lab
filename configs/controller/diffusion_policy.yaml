@@ -1,0 +1,9 @@
+# Diffusion Policy Controller Config
+_target_: src.components.controllers.diffusion_policy.DiffusionPolicyController
+
+obs_dim: ${_dims.observation}
+action_dim: ${_dims.action}
+horizon: 16
+num_diffusion_steps: 100
+hidden_dim: 256
+schedule_type: cosine

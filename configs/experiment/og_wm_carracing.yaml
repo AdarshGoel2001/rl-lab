@@ -81,15 +81,16 @@ logging:
 # Training configuration (inlined for clarity)
 training:
   total_timesteps: 1000000  # Large number to ensure phases complete (phases control actual duration)
-  checkpoint_frequency: 10000  # Save every 10k steps
+  checkpoint_frequency: 1000  # Save every 10k steps
   eval_frequency: 0  # Disable evaluation for now
+  resume_path: null  # Set to checkpoint path to resume training (e.g., "experiments/og_wm_carracing_20241219/checkpoints/latest.pt")
 
   phases:
     # Phase 1: Collect random rollouts to fill buffer
     - name: data_collection
       type: online
       buffer: replay
-      duration_steps: 30000
+      duration_steps: 3000
       workflow_hooks:
         - collect  # Only collect, no training
 

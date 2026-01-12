@@ -39,8 +39,8 @@ minigrid>=2.3.1             # MiniGrid gridworld environments
 ale-py>=0.9.0               # Arcade Learning Environment for Atari (includes ROMs)
 gymnasium[atari]>=1.0.0     # Gymnasium with Atari support
 vizdoom>=1.2.4              # ViZDoom pixel-based FPS scenarios
-# dm-control>=1.0.14        # DeepMind Control Suite (requires MuJoCo)
-# mujoco>=2.3.0             # MuJoCo physics simulator
+dm-control>=1.0.14          # DeepMind Control Suite (requires MuJoCo)
+mujoco>=2.3.0               # MuJoCo physics simulator
 # pybullet>=3.2.5           # PyBullet physics simulator
 
 # Additional Utilities

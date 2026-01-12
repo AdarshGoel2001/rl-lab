@@ -1,0 +1,8 @@
+# Gymnasium Hopper-v5
+# obs_dim: 11, action_dim: 3
+
+_target_: src.environments.gym_wrapper.GymWrapper
+name: Hopper-v5
+normalize_obs: false
+normalize_reward: false
+max_episode_steps: 1000

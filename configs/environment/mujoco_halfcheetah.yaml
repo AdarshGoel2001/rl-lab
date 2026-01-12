@@ -1,0 +1,9 @@
+# Gymnasium HalfCheetah-v5
+# Uses your existing GymWrapper - no new wrapper needed!
+# obs_dim: 17, action_dim: 6
+
+_target_: src.environments.gym_wrapper.GymWrapper
+name: HalfCheetah-v5
+normalize_obs: false
+normalize_reward: false
+max_episode_steps: 1000

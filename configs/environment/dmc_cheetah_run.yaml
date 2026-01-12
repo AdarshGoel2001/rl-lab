@@ -1,0 +1,9 @@
+# DeepMind Control Suite: Cheetah Run
+# obs_dim: 17, action_dim: 6
+
+_target_: src.environments.dmc_wrapper.DMCWrapper
+name: cheetah_run
+from_pixels: false
+frame_skip: 1
+normalize_obs: false
+max_episode_steps: 1000

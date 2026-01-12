@@ -96,18 +96,29 @@ class WorldModelWorkflow(abc.ABC):
     def log_metrics(self, step: int, writer: Any) -> None:
         """Emit workflow-specific metrics to the experiment logger."""
 
-    def state_dict(self, *, mode: str = "checkpoint") -> Dict[str, Any]:
-        """Persist workflow-managed state or provide derived projections.
+    def get_state(self) -> Dict[str, Any]:
+        """Return researcher-defined custom state for checkpointing.
 
-        Args:
-            mode: View to materialize. Defaults to "checkpoint" for full state
-                restoration payloads. Other modes (e.g. "metrics") can return
-                alternate projections while still using a dict contract.
+        Override in subclass to persist algorithm-specific counters, episode
+        tracking, or any other state not covered by component/optimizer state_dict.
+        The orchestrator handles saving component weights and optimizer states
+        separately via loop-based discovery.
+
+        Returns:
+            Dictionary of custom state to persist.
         """
         return {}
 
-    def load_state_dict(self, state: Mapping[str, Any]) -> None:
-        """Restore workflow-managed state."""
+    def set_state(self, state: Mapping[str, Any]) -> None:
+        """Restore researcher-defined custom state from checkpoint.
+
+        Override in subclass to restore algorithm-specific counters and state.
+        Called by orchestrator after component/optimizer states are restored.
+
+        Args:
+            state: Dictionary of custom state from checkpoint.
+        """
+        pass
 
     # ------------------------------------------------------------------
     # Episode tracking utilities

@@ -1,0 +1,56 @@
+# Diffusion Policy on HalfCheetah
+# Run: python scripts/train.py experiment=diffusion_halfcheetah
+
+defaults:
+  - /workflow: diffusion_policy
+  - /controller@controllers.actor: diffusion_policy
+  - /buffer@buffers.replay: episode_replay
+  - /environment: mujoco_halfcheetah
+  - /logging: tensorboard
+  - /training: default
+  - _self_
+
+experiment:
+  name: diffusion_halfcheetah
+  seed: 42
+  device: auto
+  paradigm: diffusion_policy
+
+# Dimensions for HalfCheetah-v5
+_dims:
+  observation: 17
+  action: 6
+
+# Algorithm hyperparameters
+algorithm:
+  lr: 1.0e-4
+  horizon: 16
+  num_diffusion_steps: 100
+  batch_size: 256
+  grad_clip: 1.0
+
+# Training schedule
+training:
+  total_timesteps: 100000
+
+  phases:
+    # Warmup: collect random data first
+    - name: warmup
+      type: online
+      duration: 10000
+      hooks:
+        - collect: {every: 1, steps: 1}
+
+    # Train: collect + update controller
+    - name: training
+      type: online
+      duration: 90000
+      hooks:
+        - collect: {every: 1, steps: 1}
+        - update_controller: {every: 1, updates: 1}
+
+# Buffer config
+buffers:
+  replay:
+    capacity: 100000
+    batch_size: ${algorithm.batch_size}

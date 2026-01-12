@@ -194,6 +194,16 @@ def main(cfg: DictConfig) -> None:
         eval_environment=eval_environment,
     )
 
+    # Handle checkpoint resume if specified
+    resume_path = cfg.training.get("resume_path", None)
+    if resume_path:
+        resume_path = Path(resume_path)
+        if resume_path.exists():
+            logger.info(f"Resuming from checkpoint: {resume_path}")
+            orchestrator.load_checkpoint(resume_path)
+        else:
+            logger.warning(f"Resume path not found, starting fresh: {resume_path}")
+
     logger.info("Starting training loop...")
     results = orchestrator.train()
     logger.info("Training complete: %s", results)

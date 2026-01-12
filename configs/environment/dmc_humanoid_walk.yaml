@@ -1,0 +1,9 @@
+# DeepMind Control Suite: Humanoid Walk
+# obs_dim: 67, action_dim: 21
+
+_target_: src.environments.dmc_wrapper.DMCWrapper
+name: humanoid_walk
+from_pixels: false
+frame_skip: 1
+normalize_obs: false
+max_episode_steps: 1000
