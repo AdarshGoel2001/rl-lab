@@ -459,7 +459,7 @@ training:
 ### Step 3: Run
 
 ```bash
-python scripts/train.py experiment=your_algorithm_env
+python scripts/train.py +experiment=your_algorithm_env
 ```
 
 ---
@@ -470,16 +470,16 @@ python scripts/train.py experiment=your_algorithm_env
 
 ```bash
 # Run experiment
-python scripts/train.py experiment=og_wm_carracing
+python scripts/train.py +experiment=og_wm_carracing
 
 # Override config values
-python scripts/train.py experiment=og_wm_carracing experiment.seed=123
+python scripts/train.py +experiment=og_wm_carracing experiment.seed=123
 
 # Resume from checkpoint
-python scripts/train.py experiment=og_wm_carracing training.resume_path=path/to/checkpoint.pt
+python scripts/train.py +experiment=og_wm_carracing training.resume_path=path/to/checkpoint.pt
 
 # Print resolved config (no training)
-python scripts/train.py experiment=og_wm_carracing --cfg job
+python scripts/train.py +experiment=og_wm_carracing --cfg job
 ```
 
 ### Testing
@@ -593,7 +593,7 @@ optimizers:
 
 ### Config Resolution
 
-When you run `python scripts/train.py experiment=og_wm_carracing`:
+When you run `python scripts/train.py +experiment=og_wm_carracing`:
 
 1. Hydra loads `configs/config.yaml` (root)
 2. Loads `configs/experiment/og_wm_carracing.yaml`
@@ -609,10 +609,10 @@ When you run `python scripts/train.py experiment=og_wm_carracing`:
 
 ```bash
 # Print full resolved config
-python scripts/train.py experiment=your_exp --cfg job
+python scripts/train.py +experiment=your_exp --cfg job
 
 # Print just the job config (no Hydra internals)
-python scripts/train.py experiment=your_exp --cfg job --package _global_
+python scripts/train.py +experiment=your_exp --cfg job --package _global_
 ```
 
 ### Training Issues
@@ -716,7 +716,7 @@ Instead, workflows document what they need, and components are organized loosely
 
 ### Running an experiment
 ```bash
-python scripts/train.py experiment=<name>
+python scripts/train.py +experiment=<name>
 ```
 
 ### Adding a new algorithm

@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.orchestration import Orchestrator
 from src.utils.config import resolve_device
 from src.workflows import DreamerWorkflow
-from src.workflows.context import ControllerManager, WorldModelComponents
+from src.workflows.utils.context import ControllerManager, WorldModelComponents
 
 logger = logging.getLogger(__name__)
 
