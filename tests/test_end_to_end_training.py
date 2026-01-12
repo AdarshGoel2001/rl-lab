@@ -37,10 +37,10 @@ from src.components.representation_learners.rssm import (
 )
 from src.environments.gym_wrapper import GymWrapper
 from src.orchestration.phase_scheduler import PhaseScheduler
-from src.orchestration.world_model_orchestrator import WorldModelOrchestrator
+from src.orchestration.orchestrator import Orchestrator
 from src.utils.checkpoint import CheckpointManager
-from src.workflows.context import WorkflowContext, WorldModelComponents
-from src.workflows.controllers import ControllerManager
+from src.workflows.utils.context import WorkflowContext, WorldModelComponents
+from src.workflows.utils.controllers import ControllerManager
 from src.workflows.dreamer import DreamerWorkflow
 
 
@@ -593,7 +593,7 @@ class TestOrchestratorIntegration:
         workflow = DreamerWorkflow()
 
         # Create orchestrator
-        orchestrator = WorldModelOrchestrator(
+        orchestrator = Orchestrator(
             config=cartpole_config,
             workflow=workflow,
             experiment_dir=temp_experiment_dir,
@@ -819,7 +819,7 @@ class TestCheckpointingAndResumption:
         workflow = DreamerWorkflow()
 
         # Create orchestrator
-        orchestrator = WorldModelOrchestrator(
+        orchestrator = Orchestrator(
             config=cartpole_config,
             workflow=workflow,
             experiment_dir=temp_experiment_dir,
@@ -1094,7 +1094,7 @@ class TestFullTrainingScenarios:
 
         workflow = DreamerWorkflow()
 
-        orchestrator = WorldModelOrchestrator(
+        orchestrator = Orchestrator(
             config=cartpole_config,
             workflow=workflow,
             experiment_dir=temp_experiment_dir,

@@ -1,5 +1,5 @@
-"""Shared orchestration utilities for world-model training."""
+"""Orchestration utilities for training."""
 
-from .world_model_orchestrator import WorldModelOrchestrator
+from .orchestrator import Orchestrator
 
-__all__ = ["WorldModelOrchestrator"]
+__all__ = ["Orchestrator"]

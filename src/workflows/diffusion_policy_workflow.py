@@ -10,7 +10,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn.functional as F
 
-from .base import WorldModelWorkflow, CollectResult
+from .utils.base import WorldModelWorkflow, CollectResult
 
 
 @dataclass

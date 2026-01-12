@@ -13,9 +13,9 @@ import torch.nn.functional as F
 from torch.nn.utils import clip_grad_norm_
 
 from ..utils.config import Config
-from .base import Batch, CollectResult, PhaseConfig, WorldModelWorkflow
-from .context import WorkflowContext, WorldModelComponents
-from .controllers import ControllerManager
+from .utils.base import Batch, CollectResult, PhaseConfig, WorldModelWorkflow
+from .utils.context import WorkflowContext, WorldModelComponents
+from .utils.controllers import ControllerManager
 from ..components.representation_learners import (
     LatentState,
     LatentStep,

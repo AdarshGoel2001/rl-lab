@@ -1,8 +1,8 @@
 """World-model workflow definitions and helpers."""
 
-from .base import WorldModelWorkflow, CollectResult, PhaseConfig, Batch
-from .context import WorkflowContext, WorldModelComponents
-from .controllers import ControllerManager
+from .utils.base import WorldModelWorkflow, CollectResult, PhaseConfig, Batch
+from .utils.context import WorkflowContext, WorldModelComponents
+from .utils.controllers import ControllerManager
 from .dreamer import DreamerWorkflow
 from .tdmpc import TDMPCWorkflow
 from .og_wm import OriginalWorldModelsWorkflow

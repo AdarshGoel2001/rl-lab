@@ -1,4 +1,4 @@
-"""Orchestrator coordinating world-model workflows."""
+"""Orchestrator coordinating workflows."""
 
 from __future__ import annotations
 
@@ -18,9 +18,9 @@ import torch
 from ..utils.checkpoint import CheckpointManager
 from ..utils.config import Config, resolve_device, save_config
 from ..utils.logger import create_logger
-from ..workflows.base import CollectResult, WorldModelWorkflow
-from ..workflows.context import WorkflowContext, WorldModelComponents
-from ..workflows.controllers import ControllerManager
+from ..workflows.utils.base import CollectResult, WorldModelWorkflow
+from ..workflows.utils.context import WorkflowContext, WorldModelComponents
+from ..workflows.utils.controllers import ControllerManager
 from .phase_scheduler import PhaseScheduler, PhaseDefinition
 
 logger = logging.getLogger(__name__)
@@ -39,7 +39,7 @@ def _to_dict(payload: Any) -> Dict[str, Any]:
     raise TypeError(f"Cannot convert payload of type {type(payload)} to dict.")
 
 
-class WorldModelOrchestrator:
+class Orchestrator:
     """Owns experiment lifecycle while delegating algorithm detail to workflows."""
 
     def __init__(
@@ -131,7 +131,7 @@ class WorldModelOrchestrator:
 
         train_environment = resources.get("train_environment")
         if train_environment is None:
-            raise RuntimeError("WorldModelOrchestrator requires a pre-instantiated training environment.")
+            raise RuntimeError("Orchestrator requires a pre-instantiated training environment.")
         eval_environment = resources.get("eval_environment") or train_environment
 
         seed = getattr(getattr(self.config, "experiment", None), "seed", None)
@@ -139,7 +139,7 @@ class WorldModelOrchestrator:
 
         components_input = resources.get("components")
         if components_input is None:
-            raise RuntimeError("WorldModelOrchestrator requires pre-instantiated world model components.")
+            raise RuntimeError("Orchestrator requires pre-instantiated world model components.")
         components = (
             components_input
             if isinstance(components_input, WorldModelComponents)
@@ -149,13 +149,13 @@ class WorldModelOrchestrator:
 
         optimizers_input = resources.get("optimizers") or {}
         if not optimizers_input:
-            raise RuntimeError("WorldModelOrchestrator requires optimizer mappings aligned with the provided components.")
+            raise RuntimeError("Orchestrator requires optimizer mappings aligned with the provided components.")
         optimizers = dict(optimizers_input)
 
         buffers_input = resources.get("buffers") or {}
         buffers: Dict[str, Any] = {name: buf for name, buf in buffers_input.items() if buf is not None}
         if not buffers:
-            raise RuntimeError("WorldModelOrchestrator requires at least one buffer instance.")
+            raise RuntimeError("Orchestrator requires at least one buffer instance.")
 
         context = WorkflowContext(
             config=self.config,
@@ -188,7 +188,7 @@ class WorldModelOrchestrator:
         if controller_manager is None and controllers_input is not None:
             controller_manager = ControllerManager(dict(controllers_input))
         if controller_manager is None:
-            raise RuntimeError("WorldModelOrchestrator requires instantiated controllers or a controller manager.")
+            raise RuntimeError("Orchestrator requires instantiated controllers or a controller manager.")
         controllers = dict(controller_manager.as_dict())
 
         context = context.with_updates(

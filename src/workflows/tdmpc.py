@@ -10,9 +10,9 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor
 
-from .base import Batch, CollectResult, PhaseConfig, WorldModelWorkflow
-from .context import WorkflowContext
-from .controllers import ControllerManager
+from .utils.base import Batch, CollectResult, PhaseConfig, WorldModelWorkflow
+from .utils.context import WorkflowContext
+from .utils.controllers import ControllerManager
 
 
 class TDMPCWorkflow(WorldModelWorkflow):

@@ -14,8 +14,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from .base import Batch, CollectResult, PhaseConfig, WorldModelWorkflow
-from .context import WorkflowContext
+from .utils.base import Batch, CollectResult, PhaseConfig, WorldModelWorkflow
+from .utils.context import WorkflowContext
 
 
 class OriginalWorldModelsWorkflow(WorldModelWorkflow):

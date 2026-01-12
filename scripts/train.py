@@ -21,7 +21,7 @@ from omegaconf import DictConfig, OmegaConf
 # Ensure local packages are importable when running directly
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.orchestration import WorldModelOrchestrator
+from src.orchestration import Orchestrator
 from src.utils.config import resolve_device
 from src.workflows import DreamerWorkflow
 from src.workflows.context import ControllerManager, WorldModelComponents
@@ -182,7 +182,7 @@ def main(cfg: DictConfig) -> None:
     if not buffers:
         buffers["replay"] = instantiate(cfg.buffer, device=device, num_envs=buffer_num_envs)
 
-    orchestrator = WorldModelOrchestrator(
+    orchestrator = Orchestrator(
         cfg,
         workflow,
         components=components,
