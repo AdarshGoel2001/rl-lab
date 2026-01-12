@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import Any, Dict, Optional
 
-from ...utils.checkpoint import CheckpointManager
-from ...utils.config import Config
+from ..utils.checkpoint import CheckpointManager
+from ..utils.config import Config
 from .controllers import ControllerManager
 
 

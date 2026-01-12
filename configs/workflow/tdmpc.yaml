@@ -1,1 +1,1 @@
-_target_: src.workflows.world_models.tdmpc.TDMPCWorkflow
+_target_: src.workflows.tdmpc.TDMPCWorkflow

@@ -39,9 +39,9 @@ from src.environments.gym_wrapper import GymWrapper
 from src.orchestration.phase_scheduler import PhaseScheduler
 from src.orchestration.world_model_orchestrator import WorldModelOrchestrator
 from src.utils.checkpoint import CheckpointManager
-from src.workflows.world_models.context import WorkflowContext, WorldModelComponents
-from src.workflows.world_models.controllers import ControllerManager
-from src.workflows.world_models.dreamer import DreamerWorkflow
+from src.workflows.context import WorkflowContext, WorldModelComponents
+from src.workflows.controllers import ControllerManager
+from src.workflows.dreamer import DreamerWorkflow
 
 
 @pytest.fixture

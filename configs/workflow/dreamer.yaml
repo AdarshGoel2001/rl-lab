@@ -1,1 +1,1 @@
-_target_: src.workflows.world_models.dreamer.DreamerWorkflow
+_target_: src.workflows.dreamer.DreamerWorkflow

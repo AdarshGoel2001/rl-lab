@@ -18,9 +18,9 @@ import torch
 from ..utils.checkpoint import CheckpointManager
 from ..utils.config import Config, resolve_device, save_config
 from ..utils.logger import create_logger
-from ..workflows.world_models.base import CollectResult, WorldModelWorkflow
-from ..workflows.world_models.context import WorkflowContext, WorldModelComponents
-from ..workflows.world_models.controllers import ControllerManager
+from ..workflows.base import CollectResult, WorldModelWorkflow
+from ..workflows.context import WorkflowContext, WorldModelComponents
+from ..workflows.controllers import ControllerManager
 from .phase_scheduler import PhaseScheduler, PhaseDefinition
 
 logger = logging.getLogger(__name__)
