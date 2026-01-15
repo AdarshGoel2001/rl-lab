@@ -334,7 +334,7 @@ class Orchestrator:
                     self._update_context(global_step=self.global_step)
 
                 elif action == "evaluate":
-                    eval_metrics = self._run_evaluation_phase(phase_config)
+                    eval_metrics = self._run_evaluation(phase_config)
                     if eval_metrics:
                         self.experiment_logger.log_metrics(eval_metrics, self.global_step, prefix="eval")
                     scheduler.advance(action)
@@ -344,7 +344,7 @@ class Orchestrator:
                     scheduler.advance(action)
 
                 if log_freq > 0 and (self.global_step - last_log) >= log_freq:
-                    workflow_metrics = self.workflow.state_dict(mode="metrics")
+                    workflow_metrics = self.workflow.get_state()
                     if workflow_metrics:
                         self.experiment_logger.log_metrics(workflow_metrics, self.global_step, prefix="workflow")
                     last_log = self.global_step
@@ -354,7 +354,7 @@ class Orchestrator:
                     last_ckpt = self.global_step
 
                 if eval_freq > 0 and (self.global_step - last_eval) >= eval_freq:
-                    eval_metrics = self._run_evaluation_phase({"type": "eval_only", "name": "scheduled_eval"})
+                    eval_metrics = self._run_evaluation({"type": "eval_only", "name": "scheduled_eval"})
                     if eval_metrics:
                         self.experiment_logger.log_metrics(eval_metrics, self.global_step, prefix="eval")
                     last_eval = self.global_step
@@ -362,7 +362,7 @@ class Orchestrator:
             duration = max(time.time() - start_time, 1e-6)
             final_metrics = dict(last_update_metrics)
             final_metrics.setdefault("wall_time", duration)
-            workflow_metrics = self.workflow.state_dict(mode="metrics")
+            workflow_metrics = self.workflow.get_state()
             if workflow_metrics:
                 self.experiment_logger.log_metrics(workflow_metrics, self.global_step, prefix="workflow")
             self._save_checkpoint(final=True)
@@ -414,6 +414,32 @@ class Orchestrator:
     def _resolve_buffer(self, phase_config: Mapping[str, Any]) -> Optional[Any]:
         buffer_name = phase_config.get("buffer", "replay")
         return self.buffers.get(buffer_name)
+
+    def _run_evaluation(self, phase_config: Mapping[str, Any]) -> Dict[str, float]:
+        """Run evaluation using workflow.evaluate() if available."""
+        workflow = self.workflow
+
+        # Prefer workflow.evaluate() if it exists
+        if hasattr(workflow, "evaluate") and callable(workflow.evaluate):
+            training_cfg = getattr(self.config, "training", None)
+            num_episodes = 10
+            max_steps = 1000
+
+            if training_cfg is not None:
+                num_episodes = int(getattr(training_cfg, "num_eval_episodes", num_episodes) or num_episodes)
+                max_steps = int(getattr(training_cfg, "max_eval_steps", max_steps) or max_steps)
+
+            logger.info(f"Running evaluation: {num_episodes} episodes")
+            metrics = workflow.evaluate(
+                num_episodes=num_episodes,
+                max_steps_per_episode=max_steps,
+                deterministic=True,
+            )
+            logger.info(f"Evaluation complete: mean_return={metrics.get('return_mean', 'N/A'):.2f}")
+            return metrics
+
+        # Fall back to _run_evaluation_phase
+        return self._run_evaluation_phase(phase_config)
 
     def _run_evaluation_phase(self, phase_config: Mapping[str, Any]) -> Dict[str, float]:
         raise NotImplementedError("Evaluation phase not implemented")

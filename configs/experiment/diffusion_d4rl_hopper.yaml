@@ -1,0 +1,76 @@
+# @package _global_
+# Diffusion Policy on D4RL Hopper Expert
+# Offline behavioral cloning from demonstrations
+
+defaults:
+  - /workflow: diffusion_policy
+  - /controller@controllers.actor: diffusion_policy
+  - /buffer@buffers.replay: d4rl_sequence
+  - /environment: mujoco_hopper
+  - _self_
+
+experiment:
+  name: diffusion_d4rl_hopper
+  seed: 42
+  device: auto
+  paradigm: diffusion_policy
+
+# Dimension tracking
+_dims:
+  observation: 11  # Hopper-v5 observation space
+  action: 3        # Hopper-v5 action space
+
+# Empty components section (diffusion policy has no world model components)
+components: {}
+
+# Optimizer for diffusion controller
+optimizers:
+  actor:
+    _target_: torch.optim.AdamW
+    _partial_: true
+    lr: ${algorithm.lr}
+
+# Algorithm hyperparameters
+algorithm:
+  lr: 1.0e-4
+  horizon: 16
+  num_diffusion_steps: 100
+  batch_size: 256
+  grad_clip: 1.0
+  actions_per_plan: 3  # Execute 3 actions before re-planning
+
+# Override controller config
+controllers:
+  actor:
+    horizon: ${algorithm.horizon}
+    num_diffusion_steps: ${algorithm.num_diffusion_steps}
+
+# Override buffer config
+buffers:
+  replay:
+    path: /home/omkar/rl-lab/datasets/d4rl/hopper_expert-v2.hdf5
+    horizon: ${algorithm.horizon}
+    batch_size: ${algorithm.batch_size}
+
+# Logging
+logging:
+  use_tensorboard: true
+  log_interval: 100
+
+# Training configuration
+training:
+  total_timesteps: 1000000  # Large number; phase duration controls actual stopping
+  checkpoint_frequency: 10000
+  eval_frequency: 1000  # Evaluate every 1000 updates
+  num_eval_episodes: 5  # Number of episodes per evaluation
+  max_eval_steps: 1000  # Max steps per evaluation episode
+  resume_path: null
+
+  phases:
+    # Single phase: Offline behavioral cloning
+    - name: offline_bc
+      type: offline
+      buffer: replay
+      duration_updates: 100000
+      workflow_hooks:
+        - update_controller

@@ -41,6 +41,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+datasets/
 
 # Experiment outputs (if you want to ignore them)
 experiments/

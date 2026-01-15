@@ -21,6 +21,7 @@ class DiffusionConfig:
     num_diffusion_steps: int = 100
     batch_size: int = 256
     grad_clip: Optional[float] = 1.0
+    actions_per_plan: int = 3  # How many actions to execute before re-planning
 
 
 class DiffusionPolicyWorkflow(WorldModelWorkflow):
@@ -41,11 +42,14 @@ class DiffusionPolicyWorkflow(WorldModelWorkflow):
         # Get controller from context
         self.controller = context.controller_manager.get("actor")
 
-        # Create optimizer (owned by workflow, not controller)
-        self.optimizer = torch.optim.AdamW(
-            self.controller.parameters(),
-            lr=self.config.lr,
-        )
+        # Get optimizer from context, or create fallback
+        if context.optimizers and "actor" in context.optimizers:
+            self.optimizer = context.optimizers["actor"]
+        else:
+            self.optimizer = torch.optim.AdamW(
+                self.controller.parameters(),
+                lr=self.config.lr,
+            )
 
         # Get buffer reference
         self.buffer = context.buffers.get("replay") or context.buffers.get("train")
@@ -70,6 +74,7 @@ class DiffusionPolicyWorkflow(WorldModelWorkflow):
             num_diffusion_steps=algo.get("num_diffusion_steps", 100),
             batch_size=algo.get("batch_size", 256),
             grad_clip=algo.get("grad_clip", 1.0),
+            actions_per_plan=algo.get("actions_per_plan", 3),
         )
 
     # =========================================================================
@@ -111,35 +116,19 @@ class DiffusionPolicyWorkflow(WorldModelWorkflow):
             # TODO: Better approach is to store action sequences in buffer
             actions = actions.unsqueeze(1).expand(B, self.config.horizon, -1)
 
-        # TODO: Implement diffusion training loss
-        #
-        # Step 1: Sample random timesteps for each batch item
-        # timesteps = ...
-        #
-        # Step 2: Sample random noise
-        # noise = ...
-        #
-        # Step 3: Add noise to actions using schedule
-        # noisy_actions = self.controller.schedule.add_noise(actions, noise, timesteps)
-        #
-        # Step 4: Predict noise
-        # noise_pred = self.controller.forward(noisy_actions, timesteps, observations)
-        #
-        # Step 5: Compute MSE loss
-        # loss = ...
-        #
-        # Step 6: Backward pass
-        # self.optimizer.zero_grad()
-        # loss.backward()
-        # if self.config.grad_clip:
-        #     torch.nn.utils.clip_grad_norm_(self.controller.parameters(), self.config.grad_clip)
-        # self.optimizer.step()
+        # Use controller's compute_loss (handles diffusion internally)
+        loss = self.controller.compute_loss(observations, actions)
 
-        raise NotImplementedError("Implement update_controller")
+        # Backward pass
+        self.optimizer.zero_grad()
+        loss.backward()
+        if self.config.grad_clip:
+            torch.nn.utils.clip_grad_norm_(self.controller.parameters(), self.config.grad_clip)
+        self.optimizer.step()
 
         # Return metrics
         return {
-            "loss": loss.item(),
+            "controller/loss": loss.item(),
         }
 
     # =========================================================================
@@ -217,6 +206,97 @@ class DiffusionPolicyWorkflow(WorldModelWorkflow):
     def imagine(self, **kwargs) -> Dict[str, Any]:
         """Not used - diffusion policy doesn't imagine."""
         return {}
+
+    def evaluate(
+        self,
+        num_episodes: int = 10,
+        max_steps_per_episode: int = 1000,
+        deterministic: bool = True,
+    ) -> Dict[str, float]:
+        """
+        Run evaluation episodes and return statistics.
+
+        Uses receding horizon: gets action sequence from controller,
+        executes actions_per_plan steps, then re-plans.
+
+        Args:
+            num_episodes: Number of episodes to run
+            max_steps_per_episode: Max steps before truncating an episode
+            deterministic: Whether to use deterministic actions (ignored for diffusion)
+
+        Returns:
+            Dict with eval metrics: mean/std/min/max return, mean length
+        """
+        self.controller.eval()
+
+        actions_per_plan = self.config.actions_per_plan
+        episode_returns = []
+        episode_lengths = []
+
+        for _ in range(num_episodes):
+            obs = self.env.reset()
+            if isinstance(obs, tuple):
+                obs = obs[0]
+
+            episode_return = 0.0
+            episode_length = 0
+            done = False
+
+            while episode_length < max_steps_per_episode and not done:
+                # Get action sequence from controller
+                obs_tensor = torch.as_tensor(obs, dtype=torch.float32, device=self.device)
+                if obs_tensor.dim() == 1:
+                    obs_tensor = obs_tensor.unsqueeze(0)
+
+                with torch.no_grad():
+                    action_seq = self.controller.act(obs_tensor)  # (1, horizon, action_dim)
+
+                # Extract actions: (horizon, action_dim)
+                actions = action_seq.cpu().numpy().squeeze(0)
+
+                # Execute first actions_per_plan actions
+                for i in range(min(actions_per_plan, len(actions))):
+                    if done or episode_length >= max_steps_per_episode:
+                        break
+
+                    action = actions[i]
+
+                    # Step environment
+                    result = self.env.step(action)
+                    if len(result) == 5:
+                        obs, reward, terminated, truncated, info = result
+                        done = terminated or truncated
+                    else:
+                        obs, reward, done, info = result
+
+                    # Handle vectorized env output
+                    if isinstance(reward, (list, tuple, np.ndarray)):
+                        reward = float(reward[0]) if hasattr(reward, '__len__') and len(reward) > 0 else float(reward)
+                    if hasattr(done, '__len__'):
+                        done = bool(done[0]) if len(done) > 0 else bool(done)
+
+                    episode_return += reward
+                    episode_length += 1
+
+            episode_returns.append(episode_return)
+            episode_lengths.append(episode_length)
+
+        self.controller.train()
+
+        # Compute statistics
+        returns_arr = np.array(episode_returns)
+        lengths_arr = np.array(episode_lengths)
+
+        metrics = {
+            "return_mean": float(returns_arr.mean()),
+            "return_std": float(returns_arr.std()),
+            "return_min": float(returns_arr.min()),
+            "return_max": float(returns_arr.max()),
+            "episode_length_mean": float(lengths_arr.mean()),
+            "num_episodes": float(num_episodes),
+        }
+
+        return metrics
 
 
 # Need this import for type hints

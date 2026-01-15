@@ -1,0 +1,19 @@
+# D4RL Sequence Buffer for Diffusion Policy
+# Loads D4RL HDF5 datasets and returns action sequences
+
+_target_: src.buffers.d4rl_sequence.D4RLSequenceBuffer
+
+# Path to D4RL HDF5 file (set in experiment config)
+path: null
+
+# Action sequence length
+horizon: 16
+
+# Batch size for sampling
+batch_size: 256
+
+# Whether to shuffle samples
+shuffle: true
+
+# Device for output tensors
+device: ${experiment.device}
