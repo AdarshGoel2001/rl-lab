@@ -50,10 +50,34 @@ class NoiseSchedule:
         self.sqrt_alpha_bars = self.sqrt_alpha_bars.to(device)
         self.sqrt_one_minus_alpha_bars = self.sqrt_one_minus_alpha_bars.to(device)
         return self
+    
+class TransformerBlock(nn.Module):
+    def __init__(self, hidden_dim: int, num_heads: int, dropout: float = 0.1):
+        super().__init__()
+        self.hidden_dim = hidden_dim
+        self.num_heads = num_heads
+        self.attention = nn.MultiheadAttention(embed_dim=hidden_dim, num_heads=num_heads, dropout=dropout, batch_first=True)
+        self.norm1 = nn.LayerNorm(hidden_dim)
+        self.ffn = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim * 4),
+            nn.GELU(),
+            nn.Linear(hidden_dim * 4, hidden_dim),
+            nn.Dropout(dropout),
+        )
+        self.norm2 = nn.LayerNorm(hidden_dim)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x_norm = self.norm1(x)
+        attn_out, _ = self.attention(x_norm, x_norm, x_norm)
+        x = x + self.dropout(attn_out)
+        x_norm = self.norm2(x)
+        ffn_out = self.ffn(x_norm)
+        x = x + ffn_out
+        return x
 
 class DiffusionTransformer(nn.Module):
     
-
     def __init__(
         self,
         obs_dim: int,
@@ -61,15 +85,21 @@ class DiffusionTransformer(nn.Module):
         horizon: int,
         num_diffusion_steps: int,
         hidden_dim: int = 256,
-        embed_dim: int = 256,
+        num_layers: int = 4,
+        num_heads: int = 4,
+        dropout: float = 0.1,
     ):
+
         super().__init__()
         self.obs_dim = obs_dim
         self.action_dim = action_dim
         self.horizon = horizon
         self.num_diffusion_steps = num_diffusion_steps
         self.hidden_dim = hidden_dim
-        self.time_embed = nn.Embedding(num_diffusion_steps, embed_dim)
+        self.time_embed = nn.Embedding(num_diffusion_steps, hidden_dim)
+        self.num_layers = num_layers
+        self.num_heads = num_heads
+        self.dropout = dropout
 
         self.obs_encoder = nn.Sequential(
             nn.Linear(obs_dim, hidden_dim),
@@ -77,13 +107,17 @@ class DiffusionTransformer(nn.Module):
             nn.Linear(hidden_dim, hidden_dim)
         )
 
-        self.action_mlp = nn.Sequential(
-            nn.Linear(action_dim + embed_dim + hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, action_dim)
-        )
+        self.action_proj = nn.Linear(action_dim, hidden_dim)
+        self.pos_encoding = nn.Parameter(torch.randn(1, horizon, hidden_dim)*0.02)
+
+        self.transformer_blocks = nn.ModuleList([
+            TransformerBlock(
+                hidden_dim=hidden_dim,
+                num_heads=num_heads,
+                dropout=dropout
+            ) for _ in range(num_layers) ])
+        
+        self.output_proj = nn.Linear(hidden_dim, action_dim)
         
         
 
@@ -93,10 +127,16 @@ class DiffusionTransformer(nn.Module):
         timestep: torch.Tensor,
         observations: torch.Tensor,
     ) -> torch.Tensor:
-        time_emb = self.time_embed(timestep).unsqueeze(1).expand(-1, noisy_actions.shape[1], -1)
-        obs_feat = self.obs_encoder(observations).unsqueeze(1).expand(-1, noisy_actions.shape[1], -1)
-        conditioning = torch.cat([noisy_actions, time_emb, obs_feat], dim=-1)
-        noise_pred = self.action_mlp(conditioning)
+        B, H, _ = noisy_actions.shape
+        time_emb = self.time_embed(timestep)
+        obs_feat = self.obs_encoder(observations)
+        conditioning = time_emb + obs_feat
+        x = self.action_proj(noisy_actions) + self.pos_encoding
+        cond_expanded = conditioning.unsqueeze(1)
+        x = x + cond_expanded
+        for block in self.transformer_blocks:
+            x = block(x)
+        noise_pred = self.output_proj(x)
         return noise_pred
 
 
@@ -135,7 +175,10 @@ class DiffusionPolicyController(nn.Module):
         self.horizon = cfg.get("horizon", 16)
         self.num_diffusion_steps = cfg.get("num_diffusion_steps", 100)
         self.device = torch.device(cfg.get("device", "cpu"))
-        self.time_embed_dim = cfg.get("time_embed_dim", 256)
+        self.hidden_dim = cfg.get("hidden_dim", 256)
+        self.num_layers = cfg.get("num_layers", 4)
+        self.num_heads = cfg.get("num_heads", 4)
+        self.dropout = cfg.get("dropout", 0.1)
 
         # Build network
         self.network = DiffusionTransformer(
@@ -143,8 +186,10 @@ class DiffusionPolicyController(nn.Module):
             action_dim=self.action_dim,
             horizon=self.horizon,
             num_diffusion_steps=self.num_diffusion_steps,
-            hidden_dim=cfg.get("hidden_dim", 256),
-            embed_dim=self.time_embed_dim,
+            hidden_dim=self.hidden_dim,
+            num_layers=self.num_layers,
+            num_heads=self.num_heads,
+            dropout=self.dropout,
         )
 
         # Build schedule

@@ -37,7 +37,7 @@ algorithm:
   num_diffusion_steps: 100
   batch_size: 256
   grad_clip: 1.0
-  actions_per_plan: 3  # Execute 3 actions before re-planning
+  actions_per_plan: 1  # Execute 1 action before re-planning
 
 # Override controller config
 controllers:
@@ -48,7 +48,7 @@ controllers:
 # Override buffer config
 buffers:
   replay:
-    path: /home/omkar/rl-lab/datasets/d4rl/hopper_expert-v2.hdf5
+    path: /home/omkar/rl-lab/datasets/d4rl/hopper_medium_expert-v2.hdf5
     horizon: ${algorithm.horizon}
     batch_size: ${algorithm.batch_size}
 

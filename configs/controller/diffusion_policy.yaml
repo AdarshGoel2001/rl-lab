@@ -6,4 +6,7 @@ action_dim: ${_dims.action}
 horizon: 16
 num_diffusion_steps: 100
 hidden_dim: 256
+num_layers: 4
+num_heads: 4
+dropout: 0.1
 schedule_type: cosine
