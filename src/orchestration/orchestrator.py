@@ -317,16 +317,15 @@ class Orchestrator:
 
                 elif action == "update_controller":
                     buffer = self._resolve_buffer(phase_config)
-                    if last_batch is None:
-                        if buffer is None or not getattr(buffer, "ready", lambda: True)():
-                            logger.debug(
-                                "Skipping controller update in phase '%s': no batch available.",
-                                phase_def.name,
-                            )
-                            scheduler.advance(action)
-                            continue
-                        last_batch = buffer.sample()
-                    controller_metrics = self.workflow.update_controller(last_batch, phase=phase_config) or {}
+                    if buffer is None or not getattr(buffer, "ready", lambda: True)():
+                        logger.debug(
+                            "Skipping controller update in phase '%s': no batch available.",
+                            phase_def.name,
+                        )
+                        scheduler.advance(action)
+                        continue
+                    batch = buffer.sample()
+                    controller_metrics = self.workflow.update_controller(batch, phase=phase_config) or {}
                     if controller_metrics:
                         self.experiment_logger.log_metrics(controller_metrics, self.global_step, prefix="controller")
                     scheduler.advance(action, updates=1)

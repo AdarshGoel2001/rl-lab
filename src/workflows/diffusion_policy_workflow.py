@@ -38,6 +38,7 @@ class DiffusionPolicyWorkflow(WorldModelWorkflow):
         self.context = context
         self.device = context.device
         self.config = self._extract_config(context.config)
+        self.experiment_logger = context.experiment_logger
 
         # Get controller from context
         self.controller = context.controller_manager.get("actor")
@@ -56,6 +57,7 @@ class DiffusionPolicyWorkflow(WorldModelWorkflow):
 
         # Get environment
         self.env = context.train_environment
+        self.eval_env = context.eval_environment or context.train_environment
 
         # Track current observation for collect_step
         self._current_obs = None
@@ -194,6 +196,42 @@ class DiffusionPolicyWorkflow(WorldModelWorkflow):
 
         return CollectResult(steps=1, extras=extras)
 
+    def on_context_update(self, context) -> None:
+        self.context = context
+
+    def _maybe_capture_frame(self, env: Any, frames: list[np.ndarray]) -> None:
+        try:
+            frame = env.render()
+        except Exception:
+            return
+        if frame is None:
+            return
+        frame = np.asarray(frame)
+        if frame.ndim == 3:
+            frames.append(frame)
+
+    def _log_eval_video(self, frames: list[np.ndarray], step: int, fps: int = 30) -> None:
+        if not frames:
+            return
+        logger = getattr(self, "experiment_logger", None)
+        writer = getattr(logger, "tensorboard_writer", None) if logger is not None else None
+        if writer is None:
+            return
+
+        video = np.stack(frames, axis=0)
+        if np.issubdtype(video.dtype, np.floating):
+            max_val = float(np.nanmax(video)) if video.size else 0.0
+            if max_val <= 1.0:
+                video = (np.clip(video, 0.0, 1.0) * 255).astype(np.uint8)
+            else:
+                video = np.clip(video, 0.0, 255.0).astype(np.uint8)
+        elif video.dtype != np.uint8:
+            video = np.clip(video, 0, 255).astype(np.uint8)
+
+        video_tensor = torch.from_numpy(video).permute(0, 3, 1, 2).unsqueeze(0)
+        writer.add_video("eval/rollout", video_tensor, int(step), fps=fps)
+        writer.flush()
+
     def update_world_model(
         self,
         batch: Dict[str, torch.Tensor],
@@ -230,17 +268,24 @@ class DiffusionPolicyWorkflow(WorldModelWorkflow):
         self.controller.eval()
 
         actions_per_plan = self.config.actions_per_plan
+        env = self.eval_env or self.env
+        writer = getattr(getattr(self, "experiment_logger", None), "tensorboard_writer", None)
+        capture_video = writer is not None and not getattr(env, "is_vectorized", False)
+        frames: list[np.ndarray] = []
         episode_returns = []
         episode_lengths = []
 
-        for _ in range(num_episodes):
-            obs = self.env.reset()
+        for episode_idx in range(num_episodes):
+            obs = env.reset()
             if isinstance(obs, tuple):
                 obs = obs[0]
 
             episode_return = 0.0
             episode_length = 0
             done = False
+
+            if capture_video and episode_idx == 0:
+                self._maybe_capture_frame(env, frames)
 
             while episode_length < max_steps_per_episode and not done:
                 # Get action sequence from controller
@@ -262,7 +307,7 @@ class DiffusionPolicyWorkflow(WorldModelWorkflow):
                     action = actions[i]
 
                     # Step environment
-                    result = self.env.step(action)
+                    result = env.step(action)
                     if len(result) == 5:
                         obs, reward, terminated, truncated, info = result
                         done = terminated or truncated
@@ -278,10 +323,16 @@ class DiffusionPolicyWorkflow(WorldModelWorkflow):
                     episode_return += reward
                     episode_length += 1
 
+                    if capture_video and episode_idx == 0:
+                        self._maybe_capture_frame(env, frames)
+
             episode_returns.append(episode_return)
             episode_lengths.append(episode_length)
 
         self.controller.train()
+        if capture_video and frames:
+            step = int(getattr(self.context, "global_step", 0) or 0)
+            self._log_eval_video(frames, step, fps=30)
 
         # Compute statistics
         returns_arr = np.array(episode_returns)
