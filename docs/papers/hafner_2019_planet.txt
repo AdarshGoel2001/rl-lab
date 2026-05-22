@@ -1,0 +1,1132 @@
+                                                               Learning Latent Dynamics for Planning from Pixels
+
+
+                                                                 Danijar Hafner 1 2 Timothy Lillicrap 3 Ian Fischer 4 Ruben Villegas 1 5
+                                                                             David Ha 1 Honglak Lee 1 James Davidson 1
+
+
+                                                                  Abstract                              enough for planning has been a long-standing challenge.
+                                               Planning has been very successful for control            Key difficulties include model inaccuracies, accumulating
+                                               tasks with known environment dynamics. To                errors of multi-step predictions, failure to capture multiple
+
+
+
+
+arXiv:1811.04551v5 [cs.LG] 4 Jun 2019
+                                               leverage planning in unknown environments,               possible futures, and overconfident predictions outside of
+                                               the agent needs to learn the dynamics from               the training distribution.
+                                               interactions with the world. However, learning           Planning using learned models offers several benefits over
+                                               dynamics models that are accurate enough for             model-free reinforcement learning. First, model-based plan-
+                                               planning has been a long-standing challenge,             ning can be more data efficient because it leverages a richer
+                                               especially in image-based domains. We propose            training signal and does not require propagating rewards
+                                               the Deep Planning Network (PlaNet), a purely             through Bellman backups. Moreover, planning carries the
+                                               model-based agent that learns the environment            promise of increasing performance just by increasing the
+                                               dynamics from images and chooses actions                 computational budget for searching for actions, as shown
+                                               through fast online planning in latent space. To         by Silver et al. (2017). Finally, learned dynamics can be
+                                               achieve high performance, the dynamics model             independent of any specific task and thus have the potential
+                                               must accurately predict the rewards ahead for            to transfer well to other tasks in the environment.
+                                               multiple time steps. We approach this using a
+                                               latent dynamics model with both deterministic            Recent work has shown promise in learning the dynamics of
+                                               and stochastic transition components. Moreover,          simple low-dimensional environments (Deisenroth & Ras-
+                                               we propose a multi-step variational inference            mussen, 2011; Gal et al., 2016; Amos et al., 2018; Chua
+                                               objective that we name latent overshooting.              et al., 2018; Henaff et al., 2018). However, these approaches
+                                               Using only pixel observations, our agent solves          typically assume access to the underlying state of the world
+                                               continuous control tasks with contact dynamics,          and the reward function, which may not be available in prac-
+                                               partial observability, and sparse rewards, which         tice. In high-dimensional environments, we would like to
+                                               exceed the difficulty of tasks that were previously      learn the dynamics in a compact latent space to enable fast
+                                               solved by planning with learned models. PlaNet           planning. The success of such latent models has previously
+                                               uses substantially fewer episodes and reaches final      been limited to simple tasks such as balancing cartpoles and
+                                               performance close to and sometimes higher than           controlling 2-link arms from dense rewards (Watter et al.,
+                                               strong model-free algorithms.                            2015; Banijamali et al., 2017).
+                                                                                                        In this paper, we propose the Deep Planning Network
+                                                                                                        (PlaNet), a model-based agent that learns the environment
+                                        1. Introduction                                                 dynamics from pixels and chooses actions through online
+                                        Planning is a natural and powerful approach to decision         planning in a compact latent space. To learn the dynamics,
+                                        making problems with known dynamics, such as game play-         we use a transition model with both stochastic and determin-
+                                        ing and simulated robot control (Tassa et al., 2012; Silver     istic components. Moreover, we experiment with a novel
+                                        et al., 2017; Moravčík et al., 2017). To plan in unknown       generalized variational objective that encourages multi-step
+                                        environments, the agent needs to learn the dynamics from        predictions. PlaNet solves continuous control tasks from
+                                        experience. Learning dynamics models that are accurate          pixels that are more difficult than those previously solved
+                                                                                                        by planning with learned models.
+                                           1
+                                            Google Brain 2 University of Toronto 3 DeepMind 4 Google
+                                        Research 5 University of Michigan. Correspondence to: Danijar   Key contributions of this work are summarized as follows:
+                                        Hafner <mail@danijar.com>.
+
+                                        Proceedings of the 36 th International Conference on Machine     • Planning in latent spaces We solve a variety of tasks
+                                        Learning, Long Beach, California, PMLR 97, 2019. Copyright         from the DeepMind control suite, shown in Figure 1, by
+                                        2019 by the author(s).                                             learning a dynamics model and efficiently planning in
+                                        Learning Latent Dynamics for Planning from Pixels
+
+
+
+
+    (a) Cartpole          (b) Reacher            (c) Cheetah             (d) Finger               (e) Cup              (f) Walker
+Figure 1: Image-based control domains used in our experiments. The images show agent observations before downscaling
+to 64 × 64 × 3 pixels. (a) The cartpole swingup task has a fixed camera so the cart can move out of sight. (b) The reacher
+task has only a sparse reward. (c) The cheetah running task includes both contacts and a larger number of joints. (d) The
+finger spinning task includes contacts between the finger and the object. (e) The cup task has a sparse reward that is only
+given once the ball is caught. (f) The walker task requires balance and predicting difficult interactions with the ground when
+the robot is lying down.
+
+    its latent space. Our agent substantially outperforms the         Algorithm 1: Deep Planning Network (PlaNet)
+    model-free A3C and in some cases D4PG algorithm in                Input :
+    final performance, with on average 200× less environ-             R Action repeat      p(st | st−1 , at−1 ) Transition model
+    ment interaction and similar computation time.                    S Seed episodes      p(ot | st )          Observation model
+ • Recurrent state space model We design a latent dy-                 C Collect interval   p(rt | st )          Reward model
+   namics model with both deterministic and stochastic                B Batch size         q(st | o≤t , a<t ) Encoder
+   components (Buesing et al., 2018; Chung et al., 2015).             L Chunk length       p()                 Exploration noise
+   Our experiments indicate having both components to be              α Learning rate
+   crucial for high planning performance.                         1 Initialize dataset D with S random seed episodes.
+                                                                  2 Initialize model parameters θ randomly.
+  • Latent overshooting We generalize the standard vari-
+                                                                  3 while not converged do
+      ational bound to include multi-step predictions. Using
+      only terms in latent space results in a fast regularizer          // Model fitting
+      that can improve long-term predictions and is compati- 4           for update step s = 1..C do
+      ble with any latent sequence model.                         5          Draw sequence chunks {(ot , at , rt )L+k     B
+                                                                                                                    t=k }i=1 ∼ D
+                                                                               uniformly at random from the dataset.
+2. Latent Space Planning                                          6          Compute        loss L(θ) from Equation 3.
+                                                                  7          Update model parameters θ ← θ − α∇θ L(θ).
+To solve unknown environments via planning, we need to
+                                                                        // Data collection
+model the environment dynamics from experience. PlaNet
+                                                                  8      o1 ← env.reset()
+does so by iteratively collecting data using planning and                                         T 
+                                                                  9      for time step t = 1.. R        do
+training the dynamics model on the gathered data. In this
+                                                                 10          Infer belief over current state q(st | o≤t , a<t ) from
+section, we introduce notation for the environment and de-
+                                                                               the history.
+scribe the general implementation of our model-based agent.
+                                                                 11          at ← planner(q(st | o≤t , a<t ), p), see
+In this section, we assume access to a learned dynamics
+                                                                               Algorithm 2 in the appendix for details.
+model. Our design and training objective for this model are
+                                                                 12          Add exploration noise  ∼ p() to the action.
+detailed in Section 3.
+                                                                 13          for action repeat k = 1..R do
+                                                                 14                rtk , okt+1 ← env.step(at )
+Problem setup Since individual image observations gen-                                        PR
+erally do not reveal the full state of the environment, we 15                rt , ot+1 ← k=1 rtk , oR    t+1
+consider a partially observable Markov decision process 16               D ← D ∪ {(ot , at , rt )Tt=1 }
+(POMDP). We define a discrete time step t, hidden states
+st , image observations ot , continuous action vectors at , and
+scalar rewards rt , that follow the stochastic dynamics
+                                                                    where we assume a fixed initial state s0 without loss of gen-
+  Transition function:               st ∼ p(st | st−1 , at−1 )
+                                                                    erality. The goal is to implement a policy p(at | o≤t , a<t )
+  Observation function:              ot ∼ p(ot | st )               that maximizes the expected sum of rewards Ep
+                                                                                                                         PT       
+                                                             (1)                                                            t=1 rt ,
+  Reward function:                   rt ∼ p(rt | st )               where the expectation is over the distributions of the envi-
+  Policy:                            at ∼ p(at | o≤t , a<t ),       ronment and the policy.
+
+                                                                 2
+                                      Learning Latent Dynamics for Planning from Pixels
+
+Model-based planning PlaNet learns a transition model                 we found it sufficient to consider a single trajectory per
+p(st | st−1 , at−1 ), observation model p(ot | st ), and reward       action sequence and thus focus the computational budget on
+model p(rt | st ) from previously experienced episodes                evaluating a larger number of different sequences. Because
+(note italic letters for the model compared to upright letters        the reward is modeled as a function of the latent state, the
+for the true dynamics). The observation model provides a              planner can operate purely in latent space without generating
+rich training signal but is not used for planning. We also            images, which allows for fast evaluation of large batches
+learn an encoder q(st | o≤t , a<t ) to infer an approximate           of action sequences. The next section introduces the latent
+belief over the current hidden state from the history using           dynamics model that the planner uses.
+filtering. Given these components, we implement the policy
+as a planning algorithm that searches for the best sequence           3. Recurrent State Space Model
+of future actions. We use model-predictive control (MPC;
+Richards, 2005) to allow the agent to adapt its plan based            For planning, we need to evaluate thousands of action se-
+on new observations, meaning we replan at each step. In               quences at every time step of the agent. Therefore, we use
+contrast to model-free and hybrid reinforcement learning              a recurrent state-space model (RSSM) that can predict for-
+algorithms, we do not use a policy or value network.                  ward purely in latent space, similar to recently proposed
+                                                                      models (Karl et al., 2016; Buesing et al., 2018; Doerr et al.,
+                                                                      2018). This model can be thought of as a non-linear Kalman
+Experience collection Since the agent may not initially
+                                                                      filter or sequential VAE. Instead of an extensive comparison
+visit all parts of the environment, we need to iteratively
+                                                                      to prior architectures, we highlight two findings that can
+collect new experience and refine the dynamics model. We
+                                                                      guide future designs of dynamics models: our experiments
+do so by planning with the partially trained model, as shown
+                                                                      show that both stochastic and deterministic paths in the
+in Algorithm 1. Starting from a small amount of S seed
+                                                                      transition model are crucial for successful planning. In this
+episodes collected under random actions, we train the model
+                                                                      section, we remind the reader of latent state-space models
+and add one additional episode to the data set every C update
+                                                                      and then describe our dynamics model.
+steps. When collecting episodes for the data set, we add
+small Gaussian exploration noise to the action. To reduce
+the planning horizon and provide a clearer learning signal            Latent dynamics We consider sequences {ot , at , rt }Tt=1
+to the model, we repeat each action R times, as common in             with discrete time step t, image observations ot , continuous
+reinforcement learning (Mnih et al., 2015; 2016).                     action vectors at , and scalar rewards rt . A typical latent
+                                                                      state-space model is shown in Figure 2b and resembles the
+                                                                      structure of a partially observable Markov decision process.
+Planning algorithm We use the cross entropy method                    It defines the generative process of the images and rewards
+(CEM; Rubinstein, 1997; Chua et al., 2018) to search for              using a hidden state sequence {st }Tt=1 ,
+the best action sequence under the model, as outlined in
+                                                                       Transition model:                 st ∼ p(st | st−1 , at−1 )
+Algorithm 2. We decided on this algorithm because of its
+robustness and because it solved all considered tasks when             Observation model:                ot ∼ p(ot | st )
+                                                                                                                                (2)
+given the true dynamics for planning. CEM is a population-             Reward model:                     rt ∼ p(rt | st ),
+based optimization algorithm that infers a distribution over          where we assume a fixed initial state s0 without loss of
+action sequences that maximize the objective. As detailed in          generality. The transition model is Gaussian with mean and
+Algorithm 2 in the appendix, we initialize a time-dependent           variance parameterized by a feed-forward neural network,
+diagonal Gaussian belief over optimal action sequences                the observation model is Gaussian with mean parameterized
+                              2
+at:t+H ∼ Normal(µt:t+H , σt:t+H      I), where t is the current       by a deconvolutional neural network and identity covariance,
+time step of the agent and H is the length of the planning            and the reward model is a scalar Gaussian with mean param-
+horizon. Starting from zero mean and unit variance, we                eterized by a feed-forward neural network and unit variance.
+repeatedly sample J candidate action sequences, evaluate              Note that the log-likelihood under a Gaussian distribution
+them under the model, and re-fit the belief to the top K              with unit variance equals the mean squared error up to a
+action sequences. After I iterations, the planner returns the         constant.
+mean of the belief for the current time step, µt . Importantly,
+after receiving the next observation, the belief over action          Variational encoder Since the model is non-linear, we
+sequences starts from zero mean and unit variance again to            cannot directly compute the state posteriors that are needed
+avoid local optima.                                                   for parameter learning. Instead, we use an encoder q(s1:T |
+                                                                                     QT
+To evaluate a candidate action sequence under the learned             o1:T , a1:T ) = t=1 q(st | st−1 , at−1 , ot ) to infer approx-
+model, we sample a state trajectory starting from the current         imate state posteriors from past observations and actions,
+state belief, and sum the mean rewards predicted along                where q(st | st−1 , at−1 , ot ) is a diagonal Gaussian with
+the sequence. Since we use a population-based optimizer,              mean and variance parameterized by a convolutional neural
+
+                                                                  3
+                                                   Learning Latent Dynamics for Planning from Pixels
+
+                                                                                                                        a1          a2
+
+
+
+                 a1         a2                                      a1              a2                                 h1          h2        h3
+
+
+
+                h1         h2             h3                        s1              s2           s3                     s1          s2        s3
+
+
+
+               o1 , r1    o2 , r2        o3 , r3                  o1 , r1         o2 , r2      o3 , r3                o1 , r1     o2 , r2   o3 , r3
+
+           (a) Deterministic model (RNN)                       (b) Stochastic model (SSM)                    (c) Recurrent state-space model (RSSM)
+Figure 2: Latent dynamics model designs. In this example, the model observes the first two time steps and predicts the
+third. Circles represent stochastic variables and squares deterministic variables. Solid lines denote the generative process
+and dashed lines the inference model. (a) Transitions in a recurrent neural network are purely deterministic. This prevents
+the model from capturing multiple futures and makes it easy for the planner to exploit inaccuracies. (b) Transitions in a
+state-space model are purely stochastic. This makes it difficult to remember information over multiple time steps. (c) We
+split the state into stochastic and deterministic parts, allowing the model to robustly learn to predict multiple futures.
+
+network followed by a feed-forward neural network. We use                                we name recurrent state-space model (RSSM),
+the filtering posterior that conditions on past observations                                Deterministic state model:          ht = f (ht−1 , st−1 , at−1 )
+since we are ultimately interested in using the model for
+                                                                                            Stochastic state model:             st ∼ p(st | ht )
+planning, but one may also use the full smoothing posterior                                                                                               (4)
+during training (Babaeizadeh et al., 2017; Gregor & Besse,                                  Observation model:                  ot ∼ p(ot | ht , st )
+2018).                                                                                      Reward model:                       rt ∼ p(rt | ht , st ),
+                                                                                         where f (ht−1 , st−1 , at−1 ) is implemented as a recurrent
+Training objective Using the encoder, we construct a
+variational bound on the data log-likelihood. For simplicity,                            neural network (RNN). Intuitively, we can understand this
+we write losses for predicting only the observations — the                               model as splitting the state into a stochastic part st and a de-
+reward losses follow by analogy. The variational bound                                   terministic part ht , which depend on the stochastic and deter-
+obtained using Jensen’s inequality is                                                    ministic parts at the previous time step through
+                                                                                                                                    QT the RNN. We
+                             Z Y                                                         use the encoder q(s1:T | o1:T , a1:T ) = t=1 q(st | ht , ot )
+   ln p(o1:T | a1:T ) , ln              p(st | st−1 , at−1 )p(ot | st ) ds1:T            to parameterize the approximate state posteriors. Impor-
+                                    t
+         T 
+         X                                                                               tantly, all information about the observations must pass
+     ≥         Eq(st |o≤t ,a<t ) [ln p(ot | st )] ←-                                     through the sampling step of the encoder to avoid a deter-
+         t=1          reconstruction
+                                                                         (3)          ministic shortcut from inputs to reconstructions.
+         − E KL[q(st | o≤t , a<t ) k p(st | st−1 , at−1 )] .
+           q(st−1 |o≤t−1 ,a<t−1 )                                                        In the next section, we identify a limitation of the standard
+                                    complexity
+                                                                                         objective for latent sequence models and propose a general-
+For the derivation, please see Equation 8 in the appendix.                               ization of it that improves long-term predictions.
+Estimating the outer expectations using a single reparam-
+eterized sample yields an efficient objective for inference
+                                                                                         4. Latent Overshooting
+and learning in non-linear latent variable models that can be
+optimized using gradient ascent (Kingma & Welling, 2013;                                 In the previous section, we derived the typical variational
+Rezende et al., 2014; Krishnan et al., 2017).                                            bound for learning and inference in latent sequence models
+                                                                                         (Equation 3). As show in Figure 3a, this objective function
+Deterministic path Despite its generality, the purely                                    contains reconstruction terms for the observations and KL-
+stochastic transitions make it difficult for the transition                              divergence regularizers for the approximate posteriors. A
+model to reliably remember information for multiple time                                 limitation of this objective is that the stochastic path of the
+steps. In theory, this model could learn to set the variance                             transition function p(st | st−1 , at−1 ) is only trained via the
+to zero for some state components, but the optimization pro-                             KL-divergence regularizers for one-step predictions: the gra-
+cedure may not find this solution. This motivates including                              dient flows through p(st | st−1 , at−1 ) directly into q(st−1 )
+a deterministic sequence of activation vectors {ht }Tt=1 that                            but never traverses a chain of multiple p(st | st−1 , at−1 ).
+allow the model to access not just the last state but all pre-                           In this section, we generalize this variational bound to latent
+vious states deterministically (Chung et al., 2015; Buesing                              overshooting, which trains all multi-step predictions in la-
+et al., 2018). We use such a model, shown in Figure 2c, that                             tent space. We found that several dynamics models benefit
+
+                                                                                  4
+                                         Learning Latent Dynamics for Planning from Pixels
+
+                                                                              s3|1                                                   s3|1
+
+
+
+
+                            s2|1      s3|2                       s2|1         s3|2                                         s2|1      s3|2
+
+
+
+
+                  s1|1      s2|2      s3|3             s1|1      s2|2         s3|3                          s1|1           s2|2      s3|3
+
+
+
+
+                 o1 , r1   o2 , r2   o3 , r3          o1 , r1   o2 , r2      o3 , r3                       o1 , r1        o2 , r2   o3 , r3
+
+             (a) Standard variational bound           (b) Observation overshooting                          (c) Latent overshooting
+Figure 3: Unrolling schemes. The labels si|j are short for the state at time i conditioned on observations up to time j.
+Arrows pointing at shaded circles indicate log-likelihood loss terms. Wavy arrows indicate KL-divergence loss terms. (a)
+The standard variational objectives decodes the posterior at every step to compute the reconstruction loss. It also places a
+KL on the prior and posterior at every step, which trains the transition function for one-step predictions. (b) Observation
+overshooting (Amos et al., 2018) decodes all multi-step predictions to apply additional reconstruction losses. This is
+typically too expensive in image domains. (c) Latent overshooting predicts all multi-step priors. These state beliefs are
+trained towards their corresponding posteriors in latent space to encourage accurate multi-step predictions.
+
+from latent overshooting, although our final agent using the              tion, we generalize Equation 3 to the variational bound on
+RSSM model does not require it (see Appendix D).                          the multi-step predictive distribution pd ,
+                                                                                                 Z Y   T
+Limited capacity If we could train our model to make per-                    ln pd (o1:T ) , ln            p(st | st−d )p(ot | st ) ds1:T
+fect one-step predictions, it would also make perfect multi-                     T                    t=1
+                                                                                X
+step predictions, so this would not be a problem. However,                   ≥         Eq(st |o≤t ) [ln p(ot | st )] ←-
+when using a model with limited capacity and restricted                                                                                   (6)
+                                                                                t=1            reconstruction
+distributional family, training the model only on one-step                                                                
+                                                                                − E KL[q(st | o≤t ) k p(st | st−1 )] .
+predictions until convergence does in general not coincide                             p(st−1 |st−d )q(st−d |o≤t−d )
+with the model that is best at multi-step predictions. For suc-                                   multi-step prediction
+cessful planning, we need accurate multi-step predictions.                For the derivation, please see Equation 9 in the appendix.
+Therefore, we take inspiration from Amos et al. (2018) and                Maximizing this objective trains the multi-step predictive
+earlier related ideas (Krishnan et al., 2015; Lamb et al.,                distribution. This reflects the fact that during planning, the
+2016; Chiappa et al., 2017), and train the model on multi-                model makes predictions without having access to all the
+step predictions of all distances. We develop this idea for               preceding observations.
+latent sequence models, showing that multi-step predictions
+can be improved by a loss in latent space, without having to              We conjecture that Equation 6 is also a lower bound on
+generate additional images.                                               ln p(o1:T ) based on the data processing inequality. Since
+                                                                          the latent state sequence is Markovian, for d ≥ 1 we
+Multi-step prediction We start by generalizing the stan-                  have I(st ; st−d ) ≤ I(st ; st−1 ) and thus E[ln pd (o1:T )] ≤
+dard variational bound (Equation 3) from training one-step                E[ln p(o1:T )]. Hence, every bound on the multi-step predic-
+predictions to training multi-step predictions of a fixed dis-            tive distribution is also a bound on the one-step predictive
+tance d. For ease of notation, we omit actions in the con-                distribution in expectation over the data set. For details,
+ditioning set here; every distribution over st is conditioned             please see Equation 10 in the appendix. In the next para-
+upon a<t . We first define multi-step predictions, which are              graph, we alleviate the limitation that a particular pd only
+computed by repeatedly applying the transition model and                  trains predictions of one distance and arrive at our final
+integrating out the intermediate states,                                  objective.
+                  Z      t
+                        Y                                                 Latent overshooting We introduced a bound on predic-
+  p(st | st−d ) ,              p(sτ | sτ −1 ) dst−d+1:t−1                 tions of a given distance d. However, for planning we need
+                     τ =t−d+1                              (5)
+                                                                          accurate predictions not just for a fixed distance but for
+               = Ep(st−1 |st−d ) [p(st | st−1 )].                         all distances up to the planning horizon. We introduce la-
+                                                                          tent overshooting for this, an objective function for latent
+The case d = 1 recovers the one-step transitions used in the              sequence models that generalizes the standard variational
+original model. Given this definition of a multi-step predic-             bound (Equation 3) to train the model on multi-step predic-
+
+                                                                    5
+                                               Learning Latent Dynamics for Planning from Pixels
+
+tions of all distances 1 ≤ d ≤ D,                                             Comparison to model-free methods Figure 4 compares
+                                                                              the performance of PlaNet to the model-free algorithms re-
+      D                    T                                                  ported by Tassa et al. (2018). Within 100 episodes, PlaNet
+   1 X                    X
+         ln pd (o1:T ) ≥         Eq(st |o≤t ) [ln p(ot | st )] ←-             outperforms the policy-gradient method A3C trained from
+   D
+     d=1
+              D
+                          t=1            reconstruction                       proprioceptive states for 100,000 episodes, on all tasks. Af-
+          1 X                                                              ter 500 episodes, it achieves performance similar to D4PG,
+       −          βd E KL[q(st | o≤t ) k p(st | st−1 )] .           (7)
+          D           p(st−1 |st−d )q(st−d |o≤t−d )                           trained from images for 100,000 episodes, except for the
+              d=1
+                             latent overshooting                              finger task. PlaNet surpasses the final performance of D4PG
+                                                                              with a relative improvement of 26% on the cheetah running
+Latent overshooting can be interpreted as a regularizer in                    task. We refer to Table 1 for numerical results, which also
+latent space that encourages consistency between one-step                     includes the performance of CEM planning with the true
+and multi-step predictions, which we know should be equiv-                    dynamics of the simulator.
+alent in expectation over the data set. We include weighting
+factors {βd }Dd=1 analogously to the β-VAE (Higgins et al.,                   Model designs Figure 4 additionally compares design
+2016). While we set all β>1 to the same value for sim-                        choices of the dynamics model. We train PlaNet using
+plicity, they could be chosen to let the model focus more                     our recurrent state-space model (RSSM), as well as ver-
+on long-term or short-term predictions. In practice, we                       sions with purely deterministic GRU (Cho et al., 2014), and
+stop gradients of the posterior distributions for overshoot-                  purely stochastic state-space model (SSM). We observe the
+ing distances d > 1, so that the multi-step predictions are                   importance of both stochastic and deterministic elements
+trained towards the informed posteriors, but not the other                    in the transition function on all tasks. The deterministic
+way around.                                                                   part allows the model to remember information over many
+                                                                              time steps. The stochastic component is even more impor-
+5. Experiments                                                                tant – the agent does not learn without it. This could be
+                                                                              because the tasks are stochastic from the agent’s perspective
+We evaluate PlaNet on six continuous control tasks from                       due to partial observability of the initial states. The noise
+pixels. We explore multiple design axes of the agent: the                     might also add a safety margin to the planning objective that
+stochastic and deterministic paths in the dynamics model,                     results in more robust action sequences.
+iterative planning, and online experience collection. We
+refer to the appendix for hyper parameters (Appendix A)                       Agent designs Figure 5 compares PlaNet, a version col-
+and additional experiments (Appendices C to E). Besides                       lecting episodes under random actions rather than by plan-
+the action repeat, we use the same hyper parameters for all                   ning, and a version that at each environment step selects the
+tasks. Within less than one hundredth the episodes, PlaNet                    best action out of 1000 sequences rather than iteratively re-
+outperforms A3C (Mnih et al., 2016) and achieves sim-                         fining plans via CEM. We observe that online data collection
+ilar performance to the top model-free algorithm D4PG                         helps for all tasks and is necessary for the cartpole, finger,
+(Barth-Maron et al., 2018). The training time of 10 to 20                     and walker tasks. Iterative search for action sequences using
+hours (depending on the task) on a single Nvidia V100                         CEM improves performance on all tasks.
+GPU compares favorably to that of A3C and D4PG. Our
+implementation uses TensorFlow Probability (Dillon et al.,
+                                                                              One agent all tasks Figure 7 in the appendix shows the
+2017). Please visit https://danijar.com/planet
+                                                                              performance of a single agent trained on all six tasks. The
+for access to the code and videos of the trained agent.
+                                                                              agent is not told which task it is facing; it needs to infer
+For our evaluation, we consider six image-based continuous                    this from the image observations. We pad the action spaces
+control tasks of the DeepMind control suite (Tassa et al.,                    with unused elements to make them compatible and adapt
+2018), shown in Figure 1. These environments provide                          Algorithm 1 to collect one episode of each task every C
+qualitatively different challenges. The cartpole swingup                      update steps. We use the same hyper parameters as for the
+task requires a long planning horizon and to memorize the                     main experiments above. The agent solves all tasks while
+cart when it is out of view, reacher has a sparse reward                      learning slower compared to individually trained agents.
+given when the hand and goal area overlap, finger spinning                    This indicates that the model can learn to predict multiple
+includes contact dynamics between the finger and the object,                  domains, regardless of the conceptually different visuals.
+cheetah exhibits larger state and action spaces, the cup task
+only has a sparse reward for when the ball is caught, and the                 6. Related Work
+walker is challenging because the robot first has to stand up
+and then walk, resulting in collisions with the ground that                   Previous work in model-based reinforcement learning
+are difficult to predict. In all tasks, the only observations are             has focused on planning in low-dimensional state spaces
+third-person camera images of size 64 × 64 × 3 pixels.                        (Gal et al., 2016; Higuera et al., 2018; Henaff et al., 2018;
+
+                                                                          6
+                                               Learning Latent Dynamics for Planning from Pixels
+                       Cartpole Swing Up                               Reacher Easy                                               Cheetah Run
+        1000                                            1000                                               1000
+         800                                             800                                                 800
+         600                                             600                                                 600
+         400                                             400                                                 400
+         200                                             200                                                 200
+            0                                               0                                                    0
+                5       250     500      750     1000           5    250        500     750      1000                5        250      500      750   1000
+                           Finger Spin                                     Cup Catch                                              Walker Walk
+        1000                                            1000                                               1000
+         800                                             800                                                 800
+         600                                             600                                                 600
+         400                                             400                                                 400
+         200                                             200                                                 200
+            0                                               0                                                    0
+                5       250     500      750     1000           5    250        500     750      1000                5        250      500      750   1000
+                              PlaNet (RSSM)                Stochastic (SSM)                             D4PG (100k episodes)
+                                                           Deterministic (GRU)                          A3C (100k episodes, proprio)
+Figure 4: Comparison of PlaNet to model-free algorithms and other model designs. Plots show test performance over the
+number of collected episodes. We compare PlaNet using our RSSM (Section 3) to purely deterministic (GRU) and purely
+stochastic models (SSM). The RNN does not use latent overshooting, as it does not have stochastic latents. The lines show
+medians and the areas show percentiles 5 to 95 over 5 seeds and 10 trajectories. The shaded areas are large on two of the
+tasks due to the sparse rewards.
+Table 1: Comparison of PlaNet to the model-free algorithms A3C and D4PG reported by Tassa et al. (2018). The training
+curves for these are shown as orange lines in Figure 4 and as solid green lines in Figure 6 in their paper. From these, we
+estimate the number of episodes that D4PG takes to achieve the final performance of PlaNet to estimate the data efficiency
+gain. We further include CEM planning (H = 12, I = 10, J = 1000, K = 100) with the true simulator instead of learned
+dynamics as an estimated upper bound on performance. Numbers indicate mean final performance over 5 seeds and 10
+trajectories.
+
+                                                                                  Cartpole
+                                                                                              Reacher     Cheetah        Finger              Walker
+                                                                                                                                    Cup
+                    Method                      Modality            Episodes      Swing Up    Easy        Run            Spin       Catch    Walk
+
+                    A3C                         proprioceptive       100,000          558      285         214            129        105     311
+                    D4PG                        pixels               100,000          862      967         524            985        980     968
+                    PlaNet (ours)               pixels                 1,000          821      832         662            700        930     951
+                    CEM + true simulator        simulator state            0          850      964         656            825        993     994
+                    Data efficiency gain PlaNet over D4PG (factor)                    250        40       500+            300        100       90
+
+
+
+Chua et al., 2018), combining the benefits of model-based                       gor & Besse, 2018). Appendix G reviews these orthogonal
+and model-free approaches (Kalweit & Boedecker, 2017;                           research directions in more detail.
+Nagabandi et al., 2017; Weber et al., 2017; Kurutach et al.,
+                                                                                Relatively few works have demonstrated successful plan-
+2018; Buckman et al., 2018; Ha & Schmidhuber, 2018;
+                                                                                ning from pixels using learned dynamics models. The
+Wayne et al., 2018; Igl et al., 2018; Srinivas et al., 2018),
+                                                                                robotics community focuses on video prediction models
+and pure video prediction without planning (Oh et al., 2015;
+                                                                                for planning (Agrawal et al., 2016; Finn & Levine, 2017;
+Krishnan et al., 2015; Karl et al., 2016; Chiappa et al., 2017;
+                                                                                Ebert et al., 2018; Zhang et al., 2018) that deal with the
+Babaeizadeh et al., 2017; Gemici et al., 2017; Denton &
+                                                                                visual complexity of the real world and solve tasks with
+Fergus, 2018; Buesing et al., 2018; Doerr et al., 2018; Gre-
+
+                                                                            7
+                                           Learning Latent Dynamics for Planning from Pixels
+                    Cartpole Swing Up                            Reacher Easy                                Cheetah Run
+        1000                                         1000                                       1000
+         800                                          800                                       800
+         600                                          600                                       600
+         400                                          400                                       400
+         200                                          200                                       200
+            0                                           0                                         0
+                5   250    500       750     1000           5   250        500    750    1000          5   250   500   750   1000
+                       Finger Spin                                    Cup Catch                              Walker Walk
+        1000                                         1000                                       1000
+         800                                          800                                       800
+         600                                          600                                       600
+         400                                          400                                       400
+         200                                          200                                       200
+            0                                           0                                         0
+                5   250    500       750     1000           5   250        500    750    1000          5   250   500   750   1000
+                           PlaNet                   Random collection                   D4PG (100k episodes)
+                                                    Random shooting                     A3C (100k episodes, proprio)
+Figure 5: Comparison of agent designs. Plots show test performance over the number of collected episodes. We compare
+PlaNet, a version that collects data under random actions (random collection), and a version that chooses the best action out
+of 1000 sequences at each environment step (random shooting) without iteratively refining plans via CEM. The lines show
+medians and the areas show percentiles 5 to 95 over 5 seeds and 10 trajectories.
+
+a simple gripper, such as grasping or pushing objects. In                  show that learning latent dynamics models for planning in
+comparison, we focus on simulated environments, where                      image domains is a promising approach.
+we leverage latent planning to scale to larger state and ac-
+                                                                           Directions for future work include learning temporal ab-
+tion spaces, longer planning horizons, as well as sparse
+                                                                           straction instead of using a fixed action repeat, possibly
+reward tasks. E2C (Watter et al., 2015) and RCE (Banija-
+                                                                           through hierarchical models. To further improve final per-
+mali et al., 2017) embed images into a latent space, where
+                                                                           formance, one could learn a value function to approximate
+they learn local-linear latent transitions and plan for actions
+                                                                           the sum of rewards beyond the planning horizon. Moreover,
+using LQR. These methods balance simulated cartpoles and
+                                                                           gradient-based planning could increase the computational
+control 2-link arms from images, but have been difficult to
+                                                                           efficiency of the agent and learning representations without
+scale up. We lift the Markov assumption of these models,
+                                                                           reconstruction could help to solve tasks with higher visual
+making our method applicable under partial observability,
+                                                                           diversity. Our work provides a starting point for multi-task
+and present results on more challenging environments that
+                                                                           control by sharing the dynamics model.
+include longer planning horizons, contact dynamics, and
+sparse rewards.
+                                                                           Acknowledgements We thank Jacob Buckman, Nicolas
+                                                                           Heess, John Schulman, Rishabh Agarwal, Silviu Pitis,
+7. Discussion                                                              Mohammad Norouzi, George Tucker, David Duvenaud,
+                                                                           Shane Gu, Chelsea Finn, Steven Bohez, Jimmy Ba,
+We present PlaNet, a model-based agent that learns a la-
+                                                                           Stephanie Chan, and Jenny Liu for helpful discussions.
+tent dynamics model from image observations and chooses
+actions by fast planning in latent space. To enable accu-
+rate long-term predictions, we design a model with both
+stochastic and deterministic paths. We show that our agent
+succeeds at several continuous control tasks from image
+observations, reaching performance that is comparable to
+the best model-free algorithms while using 200× fewer
+episodes and similar or less computation time. The results
+
+
+                                                                       8
+                                    Learning Latent Dynamics for Planning from Pixels
+
+References                                                         Chung, J., Kastner, K., Dinh, L., Goel, K., Courville, A. C.,
+                                                                     and Bengio, Y. A recurrent latent variable model for
+Agrawal, P., Nair, A. V., Abbeel, P., Malik, J., and Levine,         sequential data. In Advances in neural information pro-
+  S. Learning to poke by poking: Experiential learning               cessing systems, pp. 2980–2988, 2015.
+  of intuitive physics. In Advances in Neural Information
+ Processing Systems, pp. 5074–5082, 2016.                          Clevert, D.-A., Unterthiner, T., and Hochreiter, S. Fast
+                                                                     and accurate deep network learning by exponential linear
+Amos, B., Dinh, L., Cabi, S., Rothörl, T., Muldal, A., Erez,         units (elus). arXiv preprint arXiv:1511.07289, 2015.
+ T., Tassa, Y., de Freitas, N., and Denil, M. Learning
+ awareness models. In International Conference on Learn-           Deisenroth, M. and Rasmussen, C. E. Pilco: A model-based
+ ing Representations, 2018.                                          and data-efficient approach to policy search. In Proceed-
+                                                                     ings of the 28th International Conference on machine
+Babaeizadeh, M., Finn, C., Erhan, D., Campbell, R. H., and           learning (ICML-11), pp. 465–472, 2011.
+  Levine, S. Stochastic variational video prediction. arXiv
+  preprint arXiv:1710.11252, 2017.                                 Denton, E. and Fergus, R. Stochastic video generation with
+                                                                     a learned prior. arXiv preprint arXiv:1802.07687, 2018.
+Banijamali, E., Shu, R., Ghavamzadeh, M., Bui, H., and
+  Ghodsi, A. Robust locally-linear controllable embedding.         Dillon, J. V., Langmore, I., Tran, D., Brevdo, E., Vasudevan,
+  arXiv preprint arXiv:1710.05373, 2017.                             S., Moore, D., Patton, B., Alemi, A., Hoffman, M., and
+                                                                     Saurous, R. A. Tensorflow distributions. arXiv preprint
+Barth-Maron, G., Hoffman, M. W., Budden, D., Dabney,                 arXiv:1711.10604, 2017.
+  W., Horgan, D., Muldal, A., Heess, N., and Lillicrap, T.
+  Distributed distributional deterministic policy gradients.       Doerr, A., Daniel, C., Schiegg, M., Nguyen-Tuong, D.,
+  arXiv preprint arXiv:1804.08617, 2018.                             Schaal, S., Toussaint, M., and Trimpe, S. Proba-
+                                                                     bilistic recurrent state-space models. arXiv preprint
+Bengio, S., Vinyals, O., Jaitly, N., and Shazeer, N. Sched-          arXiv:1801.10395, 2018.
+  uled sampling for sequence prediction with recurrent neu-
+  ral networks. In Advances in Neural Information Process-         Ebert, F., Finn, C., Dasari, S., Xie, A., Lee, A., and Levine,
+  ing Systems, pp. 1171–1179, 2015.                                  S. Visual foresight: Model-based deep reinforcement
+                                                                     learning for vision-based robotic control. arXiv preprint
+Buckman, J., Hafner, D., Tucker, G., Brevdo, E., and                 arXiv:1812.00568, 2018.
+  Lee, H. Sample-efficient reinforcement learning with
+  stochastic ensemble value expansion. arXiv preprint              Finn, C. and Levine, S. Deep visual foresight for planning
+  arXiv:1807.01675, 2018.                                            robot motion. In Robotics and Automation (ICRA), 2017
+                                                                     IEEE International Conference on, pp. 2786–2793. IEEE,
+Buesing, L., Weber, T., Racaniere, S., Eslami, S., Rezende,          2017.
+  D., Reichert, D. P., Viola, F., Besse, F., Gregor, K.,
+  Hassabis, D., et al. Learning and querying fast gener-           Gal, Y., McAllister, R., and Rasmussen, C. E. Improving
+  ative models for reinforcement learning. arXiv preprint            pilco with bayesian neural network dynamics models. In
+  arXiv:1802.03006, 2018.                                            Data-Efficient Machine Learning workshop, ICML, 2016.
+
+Chiappa, S., Racaniere, S., Wierstra, D., and Mohamed,             Gemici, M., Hung, C.-C., Santoro, A., Wayne, G., Mo-
+  S. Recurrent environment simulators. arXiv preprint                hamed, S., Rezende, D. J., Amos, D., and Lillicrap, T.
+  arXiv:1704.02254, 2017.                                            Generative temporal models with memory. arXiv preprint
+                                                                     arXiv:1702.04649, 2017.
+Cho, K., Van Merriënboer, B., Gulcehre, C., Bahdanau,
+  D., Bougares, F., Schwenk, H., and Bengio, Y. Learn-             Gregor, K. and Besse, F. Temporal difference variational
+  ing phrase representations using rnn encoder-decoder               auto-encoder. arXiv preprint arXiv:1806.03107, 2018.
+  for statistical machine translation. arXiv preprint
+  arXiv:1406.1078, 2014.                                           Ha, D. and Schmidhuber, J. World models. arXiv preprint
+                                                                     arXiv:1803.10122, 2018.
+Chua, K., Calandra, R., McAllister, R., and Levine, S.
+  Deep reinforcement learning in a handful of trials us-           Henaff, M., Whitney, W. F., and LeCun, Y. Model-based
+  ing probabilistic dynamics models. arXiv preprint                  planning with discrete and continuous actions. arXiv
+  arXiv:1805.12114, 2018.                                            preprint arXiv:1705.07177, 2018.
+
+                                                               9
+                                     Learning Latent Dynamics for Planning from Pixels
+
+Higgins, I., Matthey, L., Pal, A., Burgess, C., Glorot, X.,           Mnih, V., Kavukcuoglu, K., Silver, D., Rusu, A. A., Veness,
+  Botvinick, M., Mohamed, S., and Lerchner, A. beta-                   J., Bellemare, M. G., Graves, A., Riedmiller, M., Fidje-
+  vae: Learning basic visual concepts with a constrained               land, A. K., Ostrovski, G., et al. Human-level control
+  variational framework. In International Conference on                through deep reinforcement learning. Nature, 518(7540):
+  Learning Representations, 2016.                                      529, 2015.
+
+Higuera, J. C. G., Meger, D., and Dudek, G. Synthesizing              Mnih, V., Badia, A. P., Mirza, M., Graves, A., Lillicrap,
+  neural network controllers with probabilistic model based            T., Harley, T., Silver, D., and Kavukcuoglu, K. Asyn-
+  reinforcement learning. arXiv preprint arXiv:1803.02291,             chronous methods for deep reinforcement learning. In
+  2018.                                                                International Conference on Machine Learning, pp. 1928–
+                                                                       1937, 2016.
+Igl, M., Zintgraf, L., Le, T. A., Wood, F., and Whiteson,
+   S. Deep variational reinforcement learning for pomdps.             Moerland, T. M., Broekens, J., and Jonker, C. M. Learning
+   arXiv preprint arXiv:1806.02426, 2018.                              multimodal transition dynamics for model-based rein-
+                                                                       forcement learning. arXiv preprint arXiv:1705.00470,
+Kalchbrenner, N., Oord, A. v. d., Simonyan, K., Danihelka,             2017.
+  I., Vinyals, O., Graves, A., and Kavukcuoglu, K. Video
+  pixel networks. arXiv preprint arXiv:1610.00527, 2016.              Moravčík, M., Schmid, M., Burch, N., Lisỳ, V., Morrill, D.,
+                                                                       Bard, N., Davis, T., Waugh, K., Johanson, M., and Bowl-
+Kalweit, G. and Boedecker, J. Uncertainty-driven imagi-                ing, M. Deepstack: Expert-level artificial intelligence in
+  nation for continuous deep reinforcement learning. In                heads-up no-limit poker. Science, 356(6337):508–513,
+  Conference on Robot Learning, pp. 195–206, 2017.                     2017.
+Karl, M., Soelch, M., Bayer, J., and van der Smagt, P.
+                                                                      Nagabandi, A., Kahn, G., Fearing, R. S., and Levine, S.
+  Deep variational bayes filters: Unsupervised learning
+                                                                        Neural network dynamics for model-based deep rein-
+  of state space models from raw data. arXiv preprint
+                                                                        forcement learning with model-free fine-tuning. arXiv
+  arXiv:1605.06432, 2016.
+                                                                        preprint arXiv:1708.02596, 2017.
+Kingma, D. P. and Ba, J. Adam: A method for stochastic
+                                                                      Nair, V. and Hinton, G. E. Rectified linear units improve
+  optimization. arXiv preprint arXiv:1412.6980, 2014.
+                                                                        restricted boltzmann machines. In Proceedings of the 27th
+Kingma, D. P. and Dhariwal, P. Glow: Generative                         international conference on machine learning (ICML-10),
+  flow with invertible 1x1 convolutions. arXiv preprint                 pp. 807–814, 2010.
+  arXiv:1807.03039, 2018.
+                                                                      Oh, J., Guo, X., Lee, H., Lewis, R. L., and Singh, S. Action-
+Kingma, D. P. and Welling, M. Auto-encoding variational                 conditional video prediction using deep networks in atari
+  bayes. arXiv preprint arXiv:1312.6114, 2013.                          games. In Advances in Neural Information Processing
+                                                                        Systems, pp. 2863–2871, 2015.
+Krishnan, R. G., Shalit, U., and Sontag, D. Deep kalman
+  filters. arXiv preprint arXiv:1511.05121, 2015.                     Rezende, D. J., Mohamed, S., and Wierstra, D. Stochastic
+                                                                        backpropagation and approximate inference in deep gen-
+Krishnan, R. G., Shalit, U., and Sontag, D. Structured                  erative models. arXiv preprint arXiv:1401.4082, 2014.
+  inference networks for nonlinear state space models. In
+  AAAI, pp. 2101–2109, 2017.                                          Richards, A. G. Robust constrained model predictive control.
+                                                                        PhD thesis, Massachusetts Institute of Technology, 2005.
+Kurutach, T., Clavera, I., Duan, Y., Tamar, A., and Abbeel, P.
+  Model-ensemble trust-region policy optimization. arXiv              Rubinstein, R. Y. Optimization of computer simulation mod-
+  preprint arXiv:1802.10592, 2018.                                      els with rare events. European Journal of Operational
+                                                                        Research, 99(1):89–112, 1997.
+Lamb, A. M., GOYAL, A. G. A. P., Zhang, Y., Zhang, S.,
+  Courville, A. C., and Bengio, Y. Professor forcing: A new           Silver, D., Schrittwieser, J., Simonyan, K., Antonoglou,
+  algorithm for training recurrent networks. In Advances In              I., Huang, A., Guez, A., Hubert, T., Baker, L., Lai, M.,
+  Neural Information Processing Systems, pp. 4601–4609,                  Bolton, A., et al. Mastering the game of go without
+  2016.                                                                  human knowledge. Nature, 550(7676):354, 2017.
+
+Mathieu, M., Couprie, C., and LeCun, Y. Deep multi-                   Srinivas, A., Jabri, A., Abbeel, P., Levine, S., and Finn,
+ scale video prediction beyond mean square error. arXiv                 C. Universal planning networks. arXiv preprint
+ preprint arXiv:1511.05440, 2015.                                       arXiv:1804.00645, 2018.
+
+                                                                 10
+                                     Learning Latent Dynamics for Planning from Pixels
+
+Talvitie, E. Model regularization for stable sample rollouts.
+  In UAI, pp. 780–789, 2014.
+
+
+Tassa, Y., Erez, T., and Todorov, E. Synthesis and stabi-
+  lization of complex behaviors through online trajectory
+  optimization. In Intelligent Robots and Systems (IROS),
+  2012 IEEE/RSJ International Conference on, pp. 4906–
+  4913. IEEE, 2012.
+
+
+Tassa, Y., Doron, Y., Muldal, A., Erez, T., Li, Y., Casas, D.
+  d. L., Budden, D., Abdolmaleki, A., Merel, J., Lefrancq,
+  A., et al. Deepmind control suite. arXiv preprint
+  arXiv:1801.00690, 2018.
+
+
+van den Oord, A., Vinyals, O., et al. Neural discrete repre-
+  sentation learning. In Advances in Neural Information
+  Processing Systems, pp. 6309–6318, 2017.
+
+
+Venkatraman, A., Hebert, M., and Bagnell, J. A. Improving
+  multi-step prediction of learned time series models. In
+  AAAI, pp. 3024–3030, 2015.
+
+
+Vondrick, C., Pirsiavash, H., and Torralba, A. Generating
+  videos with scene dynamics. In Advances In Neural
+  Information Processing Systems, 2016.
+
+
+Watter, M., Springenberg, J., Boedecker, J., and Riedmiller,
+ M. Embed to control: A locally linear latent dynamics
+ model for control from raw images. In Advances in neural
+ information processing systems, pp. 2746–2754, 2015.
+
+
+Wayne, G., Hung, C.-C., Amos, D., Mirza, M., Ahuja,
+ A., Grabska-Barwinska, A., Rae, J., Mirowski, P.,
+ Leibo, J. Z., Santoro, A., et al. Unsupervised predic-
+ tive memory in a goal-directed agent. arXiv preprint
+ arXiv:1803.10760, 2018.
+
+
+Weber, T., Racanière, S., Reichert, D. P., Buesing, L., Guez,
+ A., Rezende, D. J., Badia, A. P., Vinyals, O., Heess,
+ N., Li, Y., et al. Imagination-augmented agents for deep
+ reinforcement learning. arXiv preprint arXiv:1707.06203,
+ 2017.
+
+
+Zhang, M., Vikram, S., Smith, L., Abbeel, P., Johnson, M.,
+  and Levine, S. SOLAR: deep structured representations
+  for model-based reinforcement learning. arXiv preprint
+  arXiv:1808.09105, 2018.
+
+                                                                11
+                                        Learning Latent Dynamics for Planning from Pixels
+
+    A. Hyper Parameters
+    We use the convolutional and deconvolutional networks from Ha & Schmidhuber (2018), a GRU (Cho et al., 2014) with 200
+    units as deterministic path in the dynamics model, and implement all other functions as two fully connected layers of size
+    200 with ReLU activations (Nair & Hinton, 2010). Distributions in latent space are 30-dimensional diagonal Gaussians with
+    predicted mean and standard deviation.
+    We pre-process images by reducing the bit depth to 5 bits as in Kingma & Dhariwal (2018). The model is trained using
+    the Adam optimizer (Kingma & Ba, 2014) with a learning rate of 10−3 ,  = 10−4 , and gradient clipping norm of 1000
+    on batches of B = 50 sequence chunks of length L = 50. We do not scale the KL divergence terms relatively to the
+    reconstruction terms but grant the model 3 free nats by clipping the divergence loss below this value. In a previous version
+    of the agent, we used latent overshooting and an additional fixed global prior, but we found this to not be necessary.
+    For planning, we use CEM with horizon length H = 12, optimization iterations I = 10, candidate samples J = 1000, and
+    refitting to the best K = 100. We start from S = 5 seed episodes with random actions and collect another episode every
+    C = 100 update steps under  ∼ Normal(0, 0.3) action noise. The action repeat differs between domains: cartpole (R = 8),
+    reacher (R = 4), cheetah (R = 4), finger (R = 2), cup (R = 4), walker (R = 2). We found important hyper parameters to
+    be the action repeat, the KL-divergence scales β, and the learning rate.
+
+    B. Planning Algorithm
+
+    Algorithm 2: Latent planning with CEM
+    Input : H Planning horizon distance             q(st | o≤t , a<t ) Current state belief
+            I Optimization iterations               p(st | st−1 , at−1 ) Transition model
+            J Candidates per iteration              p(rt | st )          Reward model
+            K Number of top candidates to fit
+1 Initialize factorized belief over action sequences q(at:t+H ) ← Normal(0, I).
+2 for optimization iteration i = 1..I do
+      // Evaluate J action sequences from the current belief.
+3      for candidate action sequence j = 1..J do
+            (j)
+4          at:t+H ∼ q(at:t+H )
+            (j)                              Qt+H+1                 (j)
+5          st:t+H+1 ∼ q(st | o1:t , a1:t−1 ) τ =t+1 p(sτ | sτ −1 , aτ −1 )
+                      t+H+1              (j)
+           R(j) = τ =t+1 E[p(rτ | sτ )]
+                   P
+6
+
+      // Re-fit belief to the K best action sequences.
+7      K ← argsort({R(j) }Jj=1 )1:K
+                   1
+                     P      (k)               1
+                                                 P      (k)
+ 8     µt:t+H = K      k∈K at:t+H , σt:t+H = K−1  k∈K |at:t+H − µt:t+H |.
+                                      2
+ 9     q(at:t+H ) ← Normal(µt:t+H , σt:t+H I)
+10 return first action mean µt .
+
+
+
+
+                                                                12
+                                        Learning Latent Dynamics for Planning from Pixels
+
+C. Multi-Task Learning
+                                                            Average over tasks
+                                           1000
+                                            800
+                                            600
+                                            400
+                                            200
+                                                0
+                                                    5       250       500        750   1000
+Figure 6: We compare a single PlaNet agent trained on all tasks to individual PlaNet agents. The plot shows test performance
+over the number of episodes collected for each task. The single agent learns to solve all the tasks while learning more slowly
+compared to the individual agents. The lines show mean and one standard deviation over 6 tasks, 5 seeds, and 10 trajectories.
+              Cartpole Swing Up                                   Reacher Easy                             Cheetah Run
+  1000                                         1000                                           1000
+   800                                         800                                            800
+   600                                         600                                            600
+   400                                         400                                            400
+   200                                         200                                            200
+     0                                              0                                           0
+         5    250       500       750   1000            5   250       500        750   1000          5   250   500       750   1000
+                    Finger Spin                                    Cup Catch                               Walker Walk
+  1000                                         1000                                           1000
+   800                                         800                                            800
+   600                                         600                                            600
+   400                                         400                                            400
+   200                                         200                                            200
+     0                                              0                                           0
+         5    250       500       750   1000            5   250       500        750   1000          5   250   500       750   1000
+                                        Separate agents                   D4PG (100k episodes)
+                                        Single agent                      A3C (100k episodes, proprio)
+Figure 7: Per-task performance of a single PlaNet agent trained on the six tasks. Plots show test performance over the
+number of episodes collected per task. The agent is not told which task it is solving and it needs to infer this from the image
+observations. The agent learns to distinguish the tasks and solve them with just a moderate slowdown in learning. The lines
+show medians and the areas show percentiles 5 to 95 over 4 seeds and 10 trajectories.
+
+
+
+
+                                                                     13
+                                       Learning Latent Dynamics for Planning from Pixels
+
+D. Latent Overshooting
+              Cartpole Swing Up                              Reacher Easy                              Cheetah Run
+  1000                                        1000                                        1000
+   800                                        800                                         800
+   600                                        600                                         600
+   400                                        400                                         400
+   200                                        200                                         200
+     0                                          0                                           0
+         5   250       500       750   1000          5     250      500      750   1000          5   250    500      750   1000
+                   Finger Spin                                   Cup Catch                             Walker Walk
+  1000                                        1000                                        1000
+   800                                        800                                         800
+   600                                        600                                         600
+   400                                        400                                         400
+   200                                        200                                         200
+     0                                          0                                           0
+         5   250       500       750   1000          5     250      500      750   1000          5   250    500      750   1000
+                   RSSM                                  DRNN                              D4PG (100k episodes)
+                   RSSM + Overshooting                   DRNN + Overshooting               A3C (100k episodes, proprio)
+Figure 8: We compare the standard variational objective with latent overshooting on our proposed RSSM and another model
+called DRNN that uses two RNNs as encoder and decoder with a stochastic state sequence in between. Latent overshooting
+can substantially improve the performance of the DRNN and other models we have experimented with (not shown), but
+slightly reduces performance of our RSSM. The lines show medians and the areas show percentiles 5 to 95 over 5 seeds and
+10 trajectories.
+
+
+
+
+                                                                  14
+                                       Learning Latent Dynamics for Planning from Pixels
+
+E. Activation Function
+              Cartpole Swing Up                              Reacher Easy                               Cheetah Run
+ 1000                                         1000                                         1000
+   800                                        800                                          800
+   600                                        600                                          600
+   400                                        400                                          400
+   200                                        200                                          200
+     0                                          0                                            0
+         5   250       500       750   1000          5     250      500      750    1000          5   250   500       750   1000
+                   Finger Spin                                   Cup Catch                              Walker Walk
+ 1000                                         1000                                         1000
+   800                                        800                                          800
+   600                                        600                                          600
+   400                                        400                                          400
+   200                                        200                                          200
+     0                                          0                                            0
+         5   250       500       750   1000          5     250      500      750    1000          5   250   500       750   1000
+                          PlaNet (ReLU)                  SSM (ReLU)                D4PG (100k episodes)
+                          PlaNet (ELU)                   SSM (ELU)                 A3C (100k episodes, proprio)
+Figure 9: Comparison of hard ReLU (Nair & Hinton, 2010) and smooth ELU (Clevert et al., 2015) activation functions. We
+find that smooth activations help improve performance of the purely stochastic model (and the purely deterministic model;
+not shown) while our proposed RSSM is robust to the choice of activation function. The lines show medians and the areas
+show percentiles 5 to 95 over 5 seeds and 10 trajectories.
+
+
+
+
+                                                                  15
+                                        Learning Latent Dynamics for Planning from Pixels
+
+F. Bound Derivations
+                                                                                                                  Q
+One-step predictive distribution The variational bound for latent dynamics   Q models p(o1:T , s1:T | a1:T ) = t p(st |
+st−1 , at−1 )p(ot | st ) and a variational posterior q(s1:T | o1:T , a1:T ) = t q(st | o≤t , a<t ) follows from importance
+weighting and Jensen’s inequality as shown,
+                                                     T
+                                                    Y             
+            ln p(o1:T | a1:T ) , ln Ep(s1:T |a1:T )    p(ot | st )
+                                                        t=1
+                                                             T
+                                                            Y                                                        
+                              = ln Eq(s1:T |o1:T ,a1:T )            p(ot | st )p(st | st−1 , at−1 )/q(st | o≤t , a<t )
+                                                              t=1
+                                                         T
+                                                        X                                                                                   (8)
+                              ≥ Eq(s1:T |o1:T ,a1:T )             ln p(ot | st ) + ln p(st | st−1 , at−1 ) − ln q(st | o≤t , a<t )
+                                                            t=1
+                                  T 
+                                  X                                                                       
+                              =         E[ln p(ot | st )] − E KL[q(st | o≤t , a<t ) k p(st | st−1 , at−1 )] .
+                                  t=1    q(st |o≤t ,a<t )           q(st−1|o≤t−1 ,a<a−1 )
+                                           reconstruction                               complexity
+
+
+Multi-step
+Q            predictive distribution The variational bound on the d-step predictive distribution
+                                                                                         Q         pd (o1:T , s1:T | a1:T ) =
+  t p(st | st−d , at−1 )p(ot | st ) and a variational posterior q(s1:T | o1:T , a1:T ) =  t q(st | o≤t , a<t ) follows anal-
+ogously. The second bound comes from moving the log inside the multi-step priors, which satisfy the recursion
+p(st | st−d , at−d−1:t−1 ) = Ep(st−1 |st−d ,at−d−1:t−2 ) [p(st | st−1 , at−1 )].
+                                                     T
+                                                     Y              
+        ln pd (o1:T | a1:T ) , ln Epd (s1:T |a1:T )     p(ot | st )
+                                                    t=1
+                                                        T
+                                                       Y                                                                 
+                          = ln Eq(s1:T |o1:T ,a1:T )              p(ot | st )p(st | st−d , at−d−1:t−1 )/q(st | o≤t , a<t )
+                                                            t=1
+                                                     T
+                                                    X                                                                                   
+                          ≥ Eq(s1:T |o1:T ,a1:T )            ln p(ot | st ) + ln p(st | st−d , at−d−1:t−1 ) − ln q(st | o≤t , a<t )           (9)
+                                                     t=1
+                                                     T
+                                                     X                                                                               
+                          ≥ Eq(s1:T |o1:T ,a1:T )            ln p(ot | st ) + E[ln p(st | st−1 , at−1 )] − ln q(st | o≤t , a<t )
+                                                     t=1                        p(st−1 |st−d ,at−d−1:t−2 )
+
+                              T 
+                              X                                                                                         
+                          =          Eq(st |o≤t ,a<t ) [ln p(ot | st )] − E KL[q(st | o≤t , a<t ) k p(st | st−1 , at−1 )] .
+                              t=1                                             p(st−1 |st−d ,at−d−1:t−2 )q(st−d |o≤t−d ,a<t−d )
+                                                reconstruction
+                                                                                               multi-step prediction
+
+Since all expectations are on the outside of the objective, we can easily obtain an unbiased estimator of this bound by
+changing expectations to sample averages.
+
+Relation between one-step and multi-step predictive distributions We conjecture that the multi-step predictive dis-
+tribution pd (o1:T ) lower bounds the one-step predictive distribution p(o1:T ) of the same latent sequence model model in
+expectation over the data set. Since the latent state sequence is Markovian, for d ≥ 1 we have the data processing inequality
+                                                         I(st ; st−d ) ≤ I(st ; st−1 )
+                                           H(st ) − H(st |st−d ) ≤ H(st ) − H(st |st−1 )
+                                                                                                                                             (10)
+                                               E[ln p(st | st−d )] ≤ E[ln p(st | st−1 )]
+                                                    E[ln pd (o1:T )] ≤ E[ln p(o1:T )].
+Therefore, any bound on the multi-step predictive distribution, including Equation 9 and Equation 7, is also a bound on the
+one-step predictive distribution.
+
+
+
+
+                                                                         16
+                                      Learning Latent Dynamics for Planning from Pixels
+
+G. Additional Related Work
+Planning in state space When low-dimensional states of the environment are available to the agent, it is possible to learn
+the dynamics directly in state space. In the regime of control tasks with only a few state variables, such as the cart pole
+and mountain car tasks, PILCO (Deisenroth & Rasmussen, 2011) achieves remarkable sample efficiency using Gaussian
+processes to model the dynamics. Similar approaches using neural networks dynamics models can solve two-link balancing
+problems (Gal et al., 2016; Higuera et al., 2018) and implement planning via gradients (Henaff et al., 2018). Chua et al.
+(2018) use ensembles of neural networks, scaling up to the cheetah running task. The limitation of these methods is that
+they access the low-dimensional Markovian state of the underlying system and sometimes the reward function. Amos et al.
+(2018) train a deterministic model using overshooting in observation space for active exploration with a robotics hand. We
+move beyond low-dimensional state representations and use a latent dynamics model to solve control tasks from images.
+
+Hybrid agents The challenges of model-based RL have motivated the research community to develop hybrid agents
+that accelerate policy learning by training on imagined experience (Kalweit & Boedecker, 2017; Nagabandi et al., 2017;
+Kurutach et al., 2018; Buckman et al., 2018; Ha & Schmidhuber, 2018), improving feature representations (Wayne et al.,
+2018; Igl et al., 2018), or leveraging the information content of the model directly (Weber et al., 2017). Srinivas et al. (2018)
+learn a policy network with integrated planning computation using reinforcement learning and without prediction loss, yet
+require expert demonstrations for training.
+
+Multi-step predictions Training sequence models on multi-step predictions has been explored for several years. Scheduled
+sampling (Bengio et al., 2015) changes the rollout distance of the sequence model over the course of training. Hallucinated
+replay (Talvitie, 2014) mixes predictions into the data set to indirectly train multi-step predictions. Venkatraman et al. (2015)
+take an imitation learning approach. Recently, Amos et al. (2018) train a dynamics model on all multi-step predictions at
+once. We generalize this idea to latent sequence models trained via variational inference.
+
+Latent sequence models Classic work has explored models for non-Markovian observation sequences, including recurrent
+neural networks (RNNs) with deterministic hidden state and probabilistic state-space models (SSMs). The ideas behind
+variational autoencoders (Kingma & Welling, 2013; Rezende et al., 2014) have enabled non-linear SSMs that are trained via
+variational inference (Krishnan et al., 2015). The VRNN (Chung et al., 2015) combines RNNs and SSMs and is trained via
+variational inference. In contrast to our RSSM, it feeds generated observations back into the model which makes forward
+predictions expensive. Karl et al. (2016) address mode collapse to a single future by restricting the transition function,
+(Moerland et al., 2017) focus on multi-modal transitions, and Doerr et al. (2018) stabilize training of purely stochastic
+models. Buesing et al. (2018) propose a model similar to ours but use in a hybrid agent instead for explicit planning.
+
+Video prediction Video prediction is an active area of research in deep learning. Oh et al. (2015) and Chiappa et al. (2017)
+achieve visually plausible predictions on Atari games using deterministic models. Kalchbrenner et al. (2016) introduce
+an autoregressive video prediction model using gated CNNs and LSTMs. Recent approaches introduce stochasticity to
+the model to capture multiple futures (Babaeizadeh et al., 2017; Denton & Fergus, 2018). To obtain realistic predictions,
+Mathieu et al. (2015) and Vondrick et al. (2016) use adversarial losses. In simulated environments, Gemici et al. (2017)
+augment dynamics models with an external memory to remember long-time contexts. van den Oord et al. (2017) propose a
+variational model that avoids sampling using a nearest neighbor look-up, yielding high fidelity image predictions. These
+models are complimentary to our approach.
+
+
+
+
+                                                              17
+                                                                                   Learning Latent Dynamics for Planning from Pixels
+
+H. Video Predictions
+                                                                                    Context           6   10 15 20 25 30 35 40 45 50
+
+
+                                   PlaNet
+
+
+
+
+                       Model True Model True Model True
+
+
+                                                                                     Context          6    10 15 20 25 30 35 40 45 50
+
+
+
+
+                                                Model True Model True Model True
+                       PlaNet + Overshooting
+
+
+
+
+                                                                                     Context          6    10 15 20 25 30 35 40 45 50
+
+
+
+
+                                               Model True Model True Model True
+                       Deterministic (GRU)
+
+
+
+
+                                                                                     Context          6    10 15 20 25 30 35 40 45 50
+
+
+
+
+                                               Model True Model True Model True
+                       Stochastic (SSM)
+
+
+
+
+Figure 10: Open-loop video predictions for test episodes. The columns 1–5 show reconstructed context frames and the
+remaining images are generated open-loop. Our RSSM achieves pixel-accurate predictions for 50 steps into the future in the
+cheetah environment. We randomly selected action sequences from test episodes collected with action noise alongside the
+training episodes.
+
+
+                                                                                                          18
+                                    Learning Latent Dynamics for Planning from Pixels
+
+I. State Diagnostics
+
+
+
+
+Figure 11: Open-loop state diagnostics. We freeze the dynamics model of a PlaNet agent and learn small neural networks to
+predict the true positions, velocities, and reward of the simulator. The open-loop predictions of these quantities show that
+most information about the underlying system is present in the learned latent space and can be accurately predicted forward
+further than the planning horizons used in this work.
+
+
+
+
+                                                            19
+                                                                              Learning Latent Dynamics for Planning from Pixels
+
+J. Planning Parameters
+                            fraction=0.05 horizon=6.0                   fraction=0.05 horizon=8.0               fraction=0.05 horizon=10.0               fraction=0.05 horizon=12.0               fraction=0.05 horizon=14.0
+
+              3.0
+
+
+              5.0
+
+iterations
+             10.0
+
+
+             15.0
+
+
+                            fraction=0.1 horizon=6.0                    fraction=0.1 horizon=8.0                    fraction=0.1 horizon=10.0                fraction=0.1 horizon=12.0                fraction=0.1 horizon=14.0
+
+              3.0
+
+
+              5.0
+
+iterations
+             10.0
+
+
+             15.0
+
+
+                            fraction=0.3 horizon=6.0                    fraction=0.3 horizon=8.0                    fraction=0.3 horizon=10.0                fraction=0.3 horizon=12.0                fraction=0.3 horizon=14.0
+
+              3.0
+
+
+              5.0
+
+iterations
+             10.0
+
+
+             15.0
+
+
+                            fraction=0.5 horizon=6.0                    fraction=0.5 horizon=8.0                    fraction=0.5 horizon=10.0                fraction=0.5 horizon=12.0                fraction=0.5 horizon=14.0
+
+              3.0
+
+
+              5.0
+
+iterations
+             10.0
+
+
+             15.0
+
+                    100.0        300.0      500.0      1000.0   100.0        300.0      500.0      1000.0   100.0        300.0      500.0   1000.0   100.0        300.0      500.0   1000.0   100.0        300.0      500.0   1000.0
+                                     proposals                                   proposals                                   proposals                                proposals                                proposals
+
+
+
+Figure 12: Planning performance on the cheetah running task with the true simulator using different planner settings.
+Performance ranges from 132 (blue) to 837 (yellow). Evaluating more action sequences, optimizing for more iterations, and
+re-fitting to fewer of the best proposals tend to improve performance. A planning horizon length of 6 is not sufficient and
+results in poor performance. Much longer planning horizons hurt performance because of the increased search space. For
+this environment, best planning horizon length is near 8 steps.
+
+
+
+
+                                                                                                                           20
+

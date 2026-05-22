@@ -57,19 +57,78 @@ def test_world_model_sequence_buffer_sampling():
     next_obs = batch["next_observations"]
     actions = batch["actions"]
     rewards = batch["rewards"]
-    mask = batch["sequence_mask"]
 
     assert obs.shape[0] == 4
     assert obs.shape[1] == config["sequence_length"]
     assert next_obs.shape == obs.shape
     assert actions.shape[:2] == obs.shape[:2]
     assert rewards.shape[:2] == obs.shape[:2]
-    assert mask.shape[:2] == obs.shape[:2]
-
-    # Ensure mask zeros out timesteps after terminal transitions
-    mask_np = mask.cpu().numpy()
-    assert np.all((mask_np[:, 1:] <= mask_np[:, :-1]) | (mask_np[:, :-1] == 1.0))
 
     # Ensure tensors live on configured device
     assert obs.device == buffer.device
-    assert mask.device == buffer.device
+
+
+def test_world_model_sequence_buffer_saves_and_loads_npz(tmp_path):
+    dataset_path = tmp_path / "cartpole_rollout.npz"
+    config = {
+        "capacity": 64,
+        "batch_size": 2,
+        "sequence_length": 4,
+        "sequence_stride": 1,
+        "num_envs": 2,
+        "dataset_path": str(dataset_path),
+    }
+    writer = WorldModelSequenceBuffer(config)
+
+    for _ in range(8):
+        writer.add(trajectory=_make_step(num_envs=2))
+
+    writer.finalize()
+
+    reader = WorldModelSequenceBuffer({
+        **config,
+        "read_only": True,
+    })
+    reader.initialize()
+
+    assert dataset_path.exists()
+    assert reader.ready()
+
+    batch = reader.sample(batch_size=2)
+    assert batch["observations"].shape == (2, 4, 4)
+    assert batch["actions"].shape[:2] == (2, 4)
+    assert batch["rewards"].shape == (2, 4)
+    assert batch["dones"].shape == (2, 4)
+
+
+def test_world_model_sequence_buffer_read_only_rejects_add(tmp_path):
+    dataset_path = tmp_path / "cartpole_rollout.npz"
+    writer = WorldModelSequenceBuffer({
+        "capacity": 64,
+        "batch_size": 2,
+        "sequence_length": 4,
+        "sequence_stride": 1,
+        "num_envs": 1,
+        "dataset_path": str(dataset_path),
+    })
+    for _ in range(5):
+        writer.add(trajectory=_make_step(num_envs=1))
+    writer.finalize()
+
+    reader = WorldModelSequenceBuffer({
+        "capacity": 64,
+        "batch_size": 2,
+        "sequence_length": 4,
+        "sequence_stride": 1,
+        "num_envs": 1,
+        "dataset_path": str(dataset_path),
+        "read_only": True,
+    })
+    reader.initialize()
+
+    try:
+        reader.add(trajectory=_make_step(num_envs=1))
+    except RuntimeError as exc:
+        assert "read-only" in str(exc)
+    else:
+        raise AssertionError("read-only buffer accepted new trajectory data")

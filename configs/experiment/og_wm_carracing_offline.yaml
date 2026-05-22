@@ -14,6 +14,7 @@ defaults:
   - /buffer: disk
   - /environment: carracing
   - _self_
+  - optional /budget: null
 
 experiment:
   name: og_wm_carracing_offline

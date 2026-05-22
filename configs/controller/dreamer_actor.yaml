@@ -1,4 +1,4 @@
-_target_: src.components.world_models.controllers.dreamer.DreamerActorController
+_target_: src.components.controllers.dreamer.DreamerActorController
 representation_dim: ${_dims.representation}
 action_dim: ${_dims.action}
 hidden_dims: [256, 256]

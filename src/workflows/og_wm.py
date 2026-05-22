@@ -8,6 +8,10 @@ come online.
 
 from __future__ import annotations
 
+import csv
+import logging
+import os
+from pathlib import Path
 from typing import Any, Dict, Optional
 import time
 import numpy as np
@@ -114,22 +118,26 @@ class OriginalWorldModelsWorkflow(WorldModelWorkflow):
          beta = self.beta * progress
          vae_loss = reconstruction_loss + beta * (kl_loss)
          total_loss = vae_loss
+         metrics = {"world_model/reconstruction_loss": reconstruction_loss.item(),
+         "world_model/kl_loss": kl_loss.item(),
+         "world_model/total_loss": vae_loss.item()}
 
         elif phase_name == 'converge_mdn':
          encoded_features["latent"] = encoded_features["latent"].detach()
-         latents = self.mdn_rnn.observe_sequence(encoded_features["latent"][:, :-1], batch["actions"][:, :-1], batch["dones"][:, :-1])
-         pi_probs = F.softmax(latents["pi_logits"], dim=-1)
+         latents = self.mdn_rnn.observe_sequence(
+             encoded_features["latent"][:, :-1],
+             batch["actions"][:, :-1],
+             batch["dones"][:, :-1],
+             temperature=self.temperature,
+         )
          targets = encoded_features["latent"][:, 1:]
          targets_expanded = targets.unsqueeze(2)
-         var = torch.exp(latents["logvar"])
-         log_prob = -0.5 * (np.log(2* np.pi) + latents["logvar"] + ((targets_expanded - latents["mu"])**2) / var)
+         logvar = torch.clamp(latents["logvar"], min=-10.0, max=10.0)
+         var = torch.exp(logvar)
+         log_prob = -0.5 * (np.log(2* np.pi) + logvar + ((targets_expanded - latents["mu"])**2) / var)
          log_prob = log_prob.sum(dim=-1)
-         log_pi = torch.log(pi_probs + 1e-8)
-         log_weighted = log_prob + log_pi
-         max_log_weighted, _ = torch.max(log_weighted, dim=-1, keepdim=True)
-         log_sum_exp = max_log_weighted + torch.log(torch.sum(torch.exp(log_weighted - max_log_weighted), dim=-1, keepdim=True))
-         log_sum_exp =  log_sum_exp.squeeze(-1)
-         nll = -log_sum_exp
+         log_pi = F.log_softmax(latents["pi_logits"], dim=-1)
+         nll = -torch.logsumexp(log_prob + log_pi, dim=-1)
          latents_loss = nll.mean()
          reward_targets = batch["rewards"][:, 1:]
          reward_predictions = latents["reward_preds"]
@@ -139,19 +147,20 @@ class OriginalWorldModelsWorkflow(WorldModelWorkflow):
          done_loss = F.binary_cross_entropy_with_logits(done_predictions.squeeze(-1), done_targets)
          dynamics_loss = latents_loss + reward_loss + done_loss
          total_loss = dynamics_loss
-        self.world_model_optimizer.zero_grad()
-        total_loss.backward()
-        self.world_model_optimizer.step()
-        if phase_name == 'converge_vae':
-         return {"world_model/reconstruction_loss": reconstruction_loss.item(),
-         "world_model/kl_loss": kl_loss.item(),
-         "world_model/total_loss": vae_loss.item()}
-        if phase_name == 'converge_mdn':
-         return {"world_model/latents_loss": latents_loss.item(),
+         metrics = {"world_model/latents_loss": latents_loss.item(),
          "world_model/reward_loss": reward_loss.item(),
          "world_model/done_loss": done_loss.item(),
          "world_model/dynamics_loss": dynamics_loss.item(),
          "world_model/total_loss": total_loss.item()}
+        else:
+         raise ValueError(f"Unknown OG World Models phase: {phase_name}")
+        self.world_model_optimizer.zero_grad()
+        total_loss.backward()
+        self.world_model_optimizer.step()
+        self._record_metrics(phase_name, phase, metrics)
+        if phase_name == 'converge_vae':
+         self._maybe_save_reconstruction_grid(obs_normalized, decoded_features, phase)
+        return metrics
     
 
 
@@ -161,8 +170,7 @@ class OriginalWorldModelsWorkflow(WorldModelWorkflow):
         *,
         phase: PhaseConfig,
     ) -> Dict[str, float]:
-        """Train the CMA-ES controller inside dream rollouts."""
-        
+        """Intended behavior: evolve a small controller over imagined MDN-RNN rollouts."""
         raise NotImplementedError("update_controller homework pending.")
 
     # ------------------------------------------------------------------
@@ -190,6 +198,14 @@ class OriginalWorldModelsWorkflow(WorldModelWorkflow):
         optimizers = context.optimizers or {}
         self.world_model_optimizer = optimizers.get("world_model")
         self.controller_optimizer = optimizers.get("actor")
+        self.artifact_dir = Path(context.checkpoint_manager.experiment_dir)
+        self.artifact_dir.mkdir(parents=True, exist_ok=True)
+        self.metrics_csv_path = self.artifact_dir / "metrics.csv"
+        self.loss_curve_path = self.artifact_dir / "loss_curves.png"
+        self.reconstruction_grid_path = self.artifact_dir / "reconstruction_grid.png"
+        self._metrics_rows = []
+        self._saved_reconstruction_grid = False
+        self._publish_latest_run_path()
 
         dims_cfg = getattr(self.config, "_dims", None)
         self.action_dim = int(getattr(dims_cfg, "action", 0) or 0)
@@ -233,9 +249,139 @@ class OriginalWorldModelsWorkflow(WorldModelWorkflow):
         controller_role: Optional[str] = None,
         action_sequence: Any = None,
     ) -> Dict[str, Any]:
-        """Delegate to MDN-RNN to sample dream trajectories."""
+        """Intended behavior: roll latent state forward with MDN-RNN and a controller policy."""
         # TODO: Implement MDN-RNN rollout logic once the module and latent interface exist
         raise NotImplementedError("imagine homework pending.")
+
+    def _publish_latest_run_path(self) -> None:
+        """Write a stable pointer used by smoke tests and demos."""
+        try:
+            from hydra.core.hydra_config import HydraConfig
+
+            root = Path(HydraConfig.get().runtime.cwd)
+        except Exception:
+            root = Path.cwd()
+
+        runs_dir = root / "runs"
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        (runs_dir / "latest_og_wm_run.txt").write_text(str(self.artifact_dir.resolve()))
+
+    def _record_metrics(self, phase_name: str, phase: PhaseConfig, metrics: Dict[str, float]) -> None:
+        row = {
+            "step": int(getattr(self, "_artifact_step", 0)),
+            "phase": phase_name,
+            "updates_done": int(phase.get("updates_done", 0)) + 1,
+            "vae_recon_loss": metrics.get("world_model/reconstruction_loss", "") if phase_name == "converge_vae" else "",
+            "vae_kl_loss": metrics.get("world_model/kl_loss", "") if phase_name == "converge_vae" else "",
+            "vae_total_loss": metrics.get("world_model/total_loss", "") if phase_name == "converge_vae" else "",
+            "mdn_latent_nll": metrics.get("world_model/latents_loss", "") if phase_name == "converge_mdn" else "",
+            "mdn_reward_loss": metrics.get("world_model/reward_loss", "") if phase_name == "converge_mdn" else "",
+            "mdn_done_loss": metrics.get("world_model/done_loss", "") if phase_name == "converge_mdn" else "",
+            "mdn_total_loss": metrics.get("world_model/dynamics_loss", "") if phase_name == "converge_mdn" else "",
+        }
+        self._artifact_step = row["step"] + 1
+        self._metrics_rows.append(row)
+
+        fieldnames = list(row.keys())
+        write_header = not self.metrics_csv_path.exists()
+        with self.metrics_csv_path.open("a", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+            if write_header:
+                writer.writeheader()
+            writer.writerow(row)
+
+        self._save_loss_curves()
+
+    def _save_loss_curves(self) -> None:
+        if not self._metrics_rows:
+            return
+        os.environ.setdefault("MPLCONFIGDIR", str(self.artifact_dir / ".matplotlib"))
+        os.environ.setdefault("XDG_CACHE_HOME", str(self.artifact_dir / ".cache"))
+        logging.getLogger("matplotlib").setLevel(logging.ERROR)
+        logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        numeric_keys = [
+            "vae_recon_loss",
+            "vae_kl_loss",
+            "vae_total_loss",
+            "mdn_latent_nll",
+            "mdn_reward_loss",
+            "mdn_done_loss",
+            "mdn_total_loss",
+        ]
+        fig, ax = plt.subplots(figsize=(8, 4.5))
+        steps = [row["step"] for row in self._metrics_rows]
+        for key in numeric_keys:
+            values = [row[key] for row in self._metrics_rows]
+            xy = [(step, float(value)) for step, value in zip(steps, values) if value != ""]
+            if not xy:
+                continue
+            xs, ys = zip(*xy)
+            ax.plot(xs, ys, marker="o", label=key)
+        ax.set_xlabel("world model update")
+        ax.set_ylabel("loss")
+        ax.set_title("OG World Models smoke losses")
+        ax.grid(True, alpha=0.3)
+        ax.legend(fontsize=7)
+        fig.tight_layout()
+        fig.savefig(self.loss_curve_path, dpi=150)
+        plt.close(fig)
+
+    def _maybe_save_reconstruction_grid(
+        self,
+        obs_normalized: torch.Tensor,
+        decoded_logits: torch.Tensor,
+        phase: PhaseConfig,
+    ) -> None:
+        duration_updates = int(phase.get("duration_updates", 0) or 0)
+        updates_done = int(phase.get("updates_done", 0) or 0) + 1
+        if self._saved_reconstruction_grid or duration_updates <= 0 or updates_done < duration_updates:
+            return
+
+        os.environ.setdefault("MPLCONFIGDIR", str(self.artifact_dir / ".matplotlib"))
+        os.environ.setdefault("XDG_CACHE_HOME", str(self.artifact_dir / ".cache"))
+        logging.getLogger("matplotlib").setLevel(logging.ERROR)
+        logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        originals = obs_normalized.detach().cpu().reshape(-1, *obs_normalized.shape[2:])
+        reconstructions = torch.sigmoid(decoded_logits.detach()).cpu().reshape(
+            -1, *decoded_logits.shape[2:]
+        )
+        count = min(8, originals.shape[0])
+        if count == 0:
+            return
+
+        fig, axes = plt.subplots(2, count, figsize=(count * 1.4, 3.0))
+        if count == 1:
+            axes = np.asarray(axes).reshape(2, 1)
+        for idx in range(count):
+            original = originals[idx].numpy()
+            reconstruction = reconstructions[idx].numpy()
+            if original.shape[-1] == 1:
+                original = original[..., 0]
+                reconstruction = reconstruction[..., 0]
+                cmap = "gray"
+            else:
+                cmap = None
+            axes[0, idx].imshow(np.clip(original, 0.0, 1.0), cmap=cmap)
+            axes[1, idx].imshow(np.clip(reconstruction, 0.0, 1.0), cmap=cmap)
+            axes[0, idx].axis("off")
+            axes[1, idx].axis("off")
+        axes[0, 0].set_ylabel("original", fontsize=8)
+        axes[1, 0].set_ylabel("recon", fontsize=8)
+        fig.suptitle("VAE reconstruction smoke grid", fontsize=10)
+        fig.tight_layout()
+        fig.savefig(self.reconstruction_grid_path, dpi=150)
+        plt.close(fig)
+        self._saved_reconstruction_grid = True
 
     # ------------------------------------------------------------------
     # Checkpoint state (researcher-defined custom state)

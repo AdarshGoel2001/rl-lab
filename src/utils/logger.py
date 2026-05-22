@@ -270,6 +270,9 @@ class UniversalLogger:
                         float_val = float(value.mean().item())
                 elif hasattr(value, '__len__') and len(value) == 1:
                     float_val = float(value[0])
+                elif hasattr(value, '__len__'):
+                    logger.debug("Skipping non-scalar metric %s: %s", key, value)
+                    continue
                 else:
                     float_val = float(value)
                 
@@ -280,7 +283,7 @@ class UniversalLogger:
                     logger.warning(f"Dropped non-finite metric {key}: {value}")
                     
             except (ValueError, TypeError, AttributeError):
-                logger.warning(f"Could not convert metric {key} to float: {value}")
+                logger.debug("Could not convert metric %s to float: %s", key, value)
                 continue
         
         return sanitized
@@ -392,7 +395,7 @@ class UniversalLogger:
             prefix: Optional prefix for metric names (e.g., 'train/', 'eval/')
             commit: Whether to commit/flush the metrics immediately
         """
-        print(f"LOGGER DEBUG: Received metrics with prefix '{prefix}': {metrics}", flush=True)
+        logger.debug("Received metrics with prefix '%s': %s", prefix, metrics)
         if not metrics:
             return
         
@@ -404,7 +407,7 @@ class UniversalLogger:
             
             # Step 2: Standardize names (synonyms + prefixes)
             standardized = self.standardize_names(sanitized, prefix)
-            print(f"LOGGER DEBUG: After standardization: {standardized}", flush=True)
+            logger.debug("After standardization: %s", standardized)
             
             # Step 3: Always write to bash file (no frequency gating here)
             bash_output = self.format_bash_output(standardized, step)
@@ -418,15 +421,14 @@ class UniversalLogger:
             # Step 4: TensorBoard logging
             if self.tensorboard_writer is not None:
                 try:
-                    print(f"LOGGER DEBUG: Writing to TensorBoard: {list(standardized.keys())}", flush=True)
+                    logger.debug("Writing to TensorBoard: %s", list(standardized.keys()))
                     for name, value in standardized.items():
-                        print(f"LOGGER DEBUG: TensorBoard add_scalar({name}, {value}, {step})", flush=True)
+                        logger.debug("TensorBoard add_scalar(%s, %s, %s)", name, value, step)
                         self.tensorboard_writer.add_scalar(name, value, step)
                     if commit:
                         self.tensorboard_writer.flush()
                 except Exception as e:
                     logger.warning(f"TensorBoard logging failed: {e}")
-                    print(f"LOGGER DEBUG: TensorBoard error: {e}", flush=True)
             
             # Step 5: W&B logging
             if self.wandb_run is not None:

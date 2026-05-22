@@ -1,0 +1,164 @@
+# @package _global_
+# Minimal PlaNet experiment for DeepMind Control Suite Cartpole Swingup.
+# Uses low-dimensional DMC state observations first; pixels can be added later.
+
+defaults:
+  - /workflow: planet
+  - /components/representation_learner@components.representation_learner: rssm
+  - /components/prediction_head@components.reward_predictor: reward
+  - /components/prediction_head@components.continue_predictor: continue
+  - /components/prediction_head@components.observation_predictor: observation
+  - /controller@controllers.actor: random_policy
+  - /controller@controllers.planner: mpc_planner
+  - /buffer: world_model_sequence
+  - /environment: dmc_cartpole_swingup
+  - _self_
+  - optional /budget: null
+
+experiment:
+  name: planet_dmc_cartpole_swingup
+  seed: 42
+  device: auto
+  paradigm: world_model
+
+_dims:
+  # DMCWrapper.DMC_ENVS lists cartpole_swingup as 5 state values; dm_control
+  # cartpole source returns 3 bounded position values plus 2 velocity values.
+  observation: 5
+  encoder_output: 5
+  action: 1
+  stochastic: 16
+  deterministic: 64
+  representation: 80
+  hidden: 128
+
+algorithm:
+  collect_length: 16
+  gamma: 0.99
+  free_nats: 3.0
+  kl_scale: 1.0
+  max_grad_norm: 1000.0
+  world_model_lr: 1.0e-3
+
+optimizers:
+  world_model:
+    _target_: torch.optim.Adam
+    _partial_: true
+    lr: ${algorithm.world_model_lr}
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+
+components:
+  representation_learner:
+    feature_dim: ${_dims.encoder_output}
+    action_dim: ${_dims.action}
+    deterministic_dim: ${_dims.deterministic}
+    stochastic_dim: ${_dims.stochastic}
+    hidden_dim: ${_dims.hidden}
+    min_std: 0.1
+
+  reward_predictor:
+    input_dim: ${_dims.representation}
+    hidden_dim: ${_dims.hidden}
+
+  continue_predictor:
+    input_dim: ${_dims.representation}
+    hidden_dim: ${_dims.hidden}
+
+  observation_predictor:
+    input_dim: ${_dims.representation}
+    output_dim: ${_dims.observation}
+    hidden_dim: ${_dims.hidden}
+
+controllers:
+  actor:
+    action_dim: ${_dims.action}
+    action_low: [-1.0]
+    action_high: [1.0]
+
+  planner:
+    representation_dim: ${_dims.representation}
+    action_dim: ${_dims.action}
+    horizon: 8
+    num_samples: 64
+    top_k: 8
+    iterations: 3
+    std_init: 0.75
+    std_min: 0.05
+    use_continuation: true
+
+environment:
+  num_envs: 1
+
+buffer:
+  capacity: 4096
+  batch_size: 16
+  sequence_length: 16
+  sequence_stride: 1
+  pad_end_of_episode: false
+
+logging:
+  use_tensorboard: true
+  log_interval: 1
+
+training:
+  total_timesteps: 1024
+  checkpoint_frequency: 0
+  eval_frequency: 0
+  num_eval_episodes: 1
+  max_eval_steps: 125
+  resume_path: null
+  phases:
+    - name: collect_random_seed
+      type: online
+      buffer: replay
+      duration_steps: 256
+      collect_length: 16
+      controller: actor
+      workflow_hooks:
+        - collect
+
+    - name: train_world_model_seed
+      type: offline
+      buffer: replay
+      duration_updates: 16
+      workflow_hooks:
+        - update_world_model
+
+    - name: collect_with_planner_1
+      type: online
+      buffer: replay
+      duration_steps: 256
+      collect_length: 16
+      controller: planner
+      workflow_hooks:
+        - collect
+
+    - name: train_world_model_1
+      type: offline
+      buffer: replay
+      duration_updates: 16
+      workflow_hooks:
+        - update_world_model
+
+    - name: collect_with_planner_2
+      type: online
+      buffer: replay
+      duration_steps: 256
+      collect_length: 16
+      controller: planner
+      workflow_hooks:
+        - collect
+
+    - name: train_world_model_2
+      type: offline
+      buffer: replay
+      duration_updates: 16
+      workflow_hooks:
+        - update_world_model
+
+    - name: final_eval
+      type: eval_only
+      duration_cycles: 1
+      workflow_hooks:
+        - evaluate

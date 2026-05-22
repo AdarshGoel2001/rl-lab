@@ -1,0 +1,118 @@
+# @package _global_
+# Tiny PlaNet-style RSSM world model on CartPole state observations.
+
+defaults:
+  - /workflow: planet
+  - /components/representation_learner@components.representation_learner: rssm
+  - /components/prediction_head@components.reward_predictor: reward
+  - /components/prediction_head@components.continue_predictor: continue
+  - /controller@controllers.actor: random_policy
+  - /controller@controllers.planner: mpc_planner
+  - /buffer: world_model_sequence
+  - /environment: cartpole
+  - _self_
+  - optional /budget: null
+
+experiment:
+  name: planet_cartpole
+  seed: 42
+  device: auto
+  paradigm: world_model
+
+_dims:
+  observation: 4
+  encoder_output: 4
+  action: 2
+  stochastic: 4
+  deterministic: 8
+  representation: 12
+  hidden: 16
+
+algorithm:
+  collect_length: 8
+  gamma: 0.99
+  free_nats: 0.0
+  kl_scale: 1.0
+  max_grad_norm: 100.0
+  world_model_lr: 1.0e-3
+
+optimizers:
+  world_model:
+    _target_: torch.optim.Adam
+    _partial_: true
+    lr: ${algorithm.world_model_lr}
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+
+components:
+  representation_learner:
+    feature_dim: ${_dims.encoder_output}
+    action_dim: ${_dims.action}
+    deterministic_dim: ${_dims.deterministic}
+    stochastic_dim: ${_dims.stochastic}
+    hidden_dim: ${_dims.hidden}
+    min_std: 0.1
+
+  reward_predictor:
+    input_dim: ${_dims.representation}
+    hidden_dim: 16
+
+  continue_predictor:
+    input_dim: ${_dims.representation}
+    hidden_dim: 16
+
+controllers:
+  actor:
+    action_dim: ${_dims.action}
+    action_low: [0.0, 0.0]
+    action_high: [1.0, 1.0]
+
+  planner:
+    representation_dim: ${_dims.representation}
+    action_dim: ${_dims.action}
+    horizon: 3
+    num_samples: 8
+    top_k: 2
+    iterations: 2
+    std_init: 0.5
+    std_min: 0.05
+
+environment:
+  num_envs: 2
+  vectorization: sync
+
+buffer:
+  capacity: 128
+  batch_size: 4
+  sequence_length: 4
+  sequence_stride: 1
+  pad_end_of_episode: false
+
+logging:
+  use_tensorboard: true
+  log_interval: 1
+
+training:
+  total_timesteps: 100
+  checkpoint_frequency: 0
+  eval_frequency: 0
+  resume_path: null
+  phases:
+    - name: data_collection
+      type: online
+      buffer: replay
+      duration_steps: 16
+      workflow_hooks:
+        - collect
+
+    - name: train_world_model
+      type: offline
+      buffer: replay
+      duration_updates: 2
+      workflow_hooks:
+        - update_world_model
+
+    - name: planning_eval
+      type: eval_only
+      duration_cycles: 1
+      workflow_hooks: []

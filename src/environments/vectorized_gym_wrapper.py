@@ -15,13 +15,17 @@ Key features:
 
 import numpy as np
 import logging
-import psutil 
 from typing import Dict, Any, Tuple, Optional, Union, Callable, List
 import torch
 
 from src.environments.base import BaseEnvironment, SpaceSpec
 
 logger = logging.getLogger(__name__)
+
+try:
+    import psutil
+except ImportError:  # Optional; only used for async/sync auto-selection.
+    psutil = None
 
 
 class VectorizedGymWrapper(BaseEnvironment):
@@ -157,6 +161,9 @@ class VectorizedGymWrapper(BaseEnvironment):
             return True
         elif self.vectorization == 'auto':
             # Auto-detection logic based on research findings
+            if psutil is None:
+                logger.info("psutil not installed; auto-selected sync vectorization")
+                return False
             available_memory_gb = psutil.virtual_memory().total / (1024**3)
             cpu_count = psutil.cpu_count()
 

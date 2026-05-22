@@ -1,4 +1,4 @@
-_target_: src.components.world_models.controllers.mpc_planner.MPCPlanner
+_target_: src.components.controllers.mpc_planner.MPCPlanner
 representation_dim: ${_dims.representation}
 action_dim: ${_dims.action}
 horizon: 12
@@ -7,3 +7,4 @@ top_k: 64
 iterations: 6
 std_init: 1.0
 std_min: 0.05
+use_continuation: false

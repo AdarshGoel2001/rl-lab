@@ -1,0 +1,13 @@
+_target_: src.buffers.world_model_sequence.WorldModelSequenceBuffer
+
+dataset_path: datasets/cartpole_random_seed42.npz
+read_only: false
+
+capacity: 100000
+batch_size: 64
+gamma: 0.99
+sequence_length: 16
+sequence_stride: 1
+pad_end_of_episode: false
+return_computer: null
+device: ${experiment.device}

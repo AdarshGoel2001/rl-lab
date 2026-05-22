@@ -1,0 +1,11 @@
+# DeepMind Control Suite: Cartpole Swingup
+# Low-dimensional state observations for a MacBook PlaNet proof.
+# obs_dim: 5, action_dim: 1
+
+_target_: src.environments.dmc_wrapper.DMCWrapper
+name: cartpole_swingup
+from_pixels: false
+frame_skip: 8
+normalize_obs: false
+normalize_reward: false
+max_episode_steps: 125

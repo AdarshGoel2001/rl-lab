@@ -10,6 +10,7 @@ defaults:
   - /buffer: disk  # Disk-based buffer - auto-generates path, persists data
   - /environment: carracing
   - _self_
+  - optional /budget: null
 
 experiment:
   name: og_wm_carracing

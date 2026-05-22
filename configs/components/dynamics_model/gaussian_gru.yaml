@@ -1,0 +1,10 @@
+# Simple GRU Gaussian dynamics model
+
+_target_: src.components.dynamics.gaussian_gru.GaussianGRUDynamics
+
+latent_dim: ${_dims.latent}
+action_dim: ${_dims.action}
+hidden_dim: ${_dims.hidden}
+num_gaussians: 1
+dropout: 0.0
+device: ${experiment.device}

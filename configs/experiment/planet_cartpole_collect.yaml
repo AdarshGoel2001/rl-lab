@@ -1,0 +1,107 @@
+# @package _global_
+# Collect reusable CartPole transitions for PlaNet-style world-model training.
+
+defaults:
+  - /workflow: planet
+  - /components/representation_learner@components.representation_learner: rssm
+  - /components/prediction_head@components.reward_predictor: reward
+  - /components/prediction_head@components.continue_predictor: continue
+  - /controller@controllers.actor: random_policy
+  - /controller@controllers.planner: mpc_planner
+  - /buffer: persistent_world_model_sequence
+  - /environment: cartpole
+  - _self_
+  - optional /budget: null
+
+experiment:
+  name: planet_cartpole_collect
+  seed: 42
+  device: auto
+  paradigm: world_model
+
+_dims:
+  observation: 4
+  encoder_output: 4
+  action: 2
+  stochastic: 16
+  deterministic: 64
+  representation: 80
+  hidden: 128
+
+algorithm:
+  collect_length: 64
+  gamma: 0.99
+  free_nats: 0.0
+  kl_scale: 0.1
+  max_grad_norm: 100.0
+  world_model_lr: 1.0e-3
+
+optimizers:
+  world_model:
+    _target_: torch.optim.Adam
+    _partial_: true
+    lr: ${algorithm.world_model_lr}
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+
+components:
+  representation_learner:
+    feature_dim: ${_dims.encoder_output}
+    action_dim: ${_dims.action}
+    deterministic_dim: ${_dims.deterministic}
+    stochastic_dim: ${_dims.stochastic}
+    hidden_dim: ${_dims.hidden}
+    min_std: 0.1
+
+  reward_predictor:
+    input_dim: ${_dims.representation}
+    hidden_dim: 64
+
+  continue_predictor:
+    input_dim: ${_dims.representation}
+    hidden_dim: 64
+
+controllers:
+  actor:
+    action_dim: ${_dims.action}
+    action_low: [0.0, 0.0]
+    action_high: [1.0, 1.0]
+
+  planner:
+    representation_dim: ${_dims.representation}
+    action_dim: ${_dims.action}
+    horizon: 8
+    num_samples: 32
+    top_k: 4
+    iterations: 1
+    std_init: 0.75
+    std_min: 0.05
+
+environment:
+  num_envs: 4
+  vectorization: sync
+
+buffer:
+  dataset_path: datasets/cartpole_random_seed42.npz
+  capacity: 20000
+  batch_size: 64
+  sequence_length: 16
+  sequence_stride: 1
+  pad_end_of_episode: false
+
+logging:
+  use_tensorboard: true
+  log_interval: 1
+
+training:
+  total_timesteps: 8192
+  checkpoint_frequency: 0
+  eval_frequency: 0
+  resume_path: null
+  phases:
+    - name: collect_random
+      type: online
+      buffer: replay
+      duration_steps: 8192
+      workflow_hooks:
+        - collect

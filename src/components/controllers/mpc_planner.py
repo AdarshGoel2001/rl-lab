@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-import math
 from typing import Any, Optional
 
 import torch
+import torch.nn as nn
 from torch import Tensor
 
-from .base import BaseController
 
-
-class MPCPlanner(BaseController):
+class MPCPlanner(nn.Module):
     """Cross-entropy method planner that queries workflow imagination."""
 
     def __init__(
@@ -25,6 +23,7 @@ class MPCPlanner(BaseController):
         iterations: int = 6,
         std_init: float = 1.0,
         std_min: float = 0.05,
+        use_continuation: bool = False,
         device: Optional[str] = None,
         **_: Any,
     ) -> None:
@@ -35,7 +34,9 @@ class MPCPlanner(BaseController):
         self.num_samples = num_samples
         self.top_k = min(top_k, num_samples)
         self.iterations = iterations
+        self.std_init = std_init
         self.std_min = std_min
+        self.use_continuation = use_continuation
 
         self.device = torch.device(device) if device is not None else torch.device("cpu")
 
@@ -79,8 +80,8 @@ class MPCPlanner(BaseController):
         low: Tensor,
         high: Tensor,
     ) -> Tensor:
-        mean = self.action_mean.clone()
-        std = self.action_std.clone()
+        mean = torch.zeros(self.horizon, self.action_dim, device=self.device)
+        std = torch.full((self.horizon, self.action_dim), self.std_init, device=self.device)
 
         low = low.view(1, 1, -1)
         high = high.view(1, 1, -1)
@@ -99,12 +100,19 @@ class MPCPlanner(BaseController):
                     horizon=self.horizon,
                     action_sequence=candidate.unsqueeze(0),
                 )
-                rewards = rollout["rewards"].squeeze(0)
-                bootstrap = rollout["bootstrap"].squeeze(0)
                 discount = workflow.gamma if hasattr(workflow, "gamma") else 0.99
-                discounts = torch.pow(discount, torch.arange(self.horizon, device=self.device, dtype=rewards.dtype))
-                rollout_rewards = rewards.squeeze(-1)
-                value = torch.sum(discounts * rollout_rewards) + (discount ** self.horizon) * bootstrap.squeeze(-1)
+                value = self._score_rollout(
+                    {
+                        "rewards": rollout["rewards"].squeeze(0),
+                        **(
+                            {"continues": rollout["continues"].squeeze(0)}
+                            if self.use_continuation and "continues" in rollout
+                            else {}
+                        ),
+                        "bootstrap": rollout["bootstrap"].squeeze(0),
+                    },
+                    gamma=discount,
+                )
                 values.append(value)
 
             values_tensor = torch.stack(values)
@@ -114,7 +122,28 @@ class MPCPlanner(BaseController):
             mean = elite_actions.mean(dim=0)
             std = elite_actions.std(dim=0)
 
-        self.action_mean.copy_(mean.detach())
-        self.action_std.copy_(std.detach())
-
         return mean
+
+    def _score_rollout(self, rollout: dict[str, Tensor], *, gamma: float) -> Tensor:
+        rewards = rollout["rewards"].to(self.device).squeeze(-1)
+        if not self.use_continuation:
+            return rewards.sum()
+
+        continues = rollout.get("continues")
+        if continues is None:
+            continues_tensor = torch.ones_like(rewards)
+        else:
+            continues_tensor = continues.to(self.device).squeeze(-1).clamp(0.0, 1.0)
+        bootstrap = rollout.get("bootstrap")
+
+        discount = torch.ones((), device=self.device, dtype=rewards.dtype)
+        value = torch.zeros((), device=self.device, dtype=rewards.dtype)
+        gamma_tensor = torch.as_tensor(gamma, device=self.device, dtype=rewards.dtype)
+
+        for reward, cont in zip(rewards, continues_tensor):
+            value = value + discount * reward
+            discount = discount * gamma_tensor * cont
+
+        if bootstrap is None:
+            return value
+        return value + discount * bootstrap.to(self.device).squeeze()

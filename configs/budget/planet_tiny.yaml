@@ -1,0 +1,45 @@
+# @package _global_
+# CPU/MPS smoke budget for PlaNet-style CartPole state experiments.
+
+experiment:
+  name: planet_cartpole_tiny
+
+algorithm:
+  collect_length: 8
+
+environment:
+  num_envs: 2
+  vectorization: sync
+
+buffer:
+  capacity: 128
+  batch_size: 4
+  sequence_length: 4
+  sequence_stride: 1
+
+logging:
+  log_interval: 1
+
+training:
+  total_timesteps: 100
+  checkpoint_frequency: 0
+  eval_frequency: 0
+  phases:
+    - name: data_collection
+      type: online
+      buffer: replay
+      duration_steps: 16
+      workflow_hooks:
+        - collect
+
+    - name: train_world_model
+      type: offline
+      buffer: replay
+      duration_updates: 2
+      workflow_hooks:
+        - update_world_model
+
+    - name: planning_eval
+      type: eval_only
+      duration_cycles: 1
+      workflow_hooks: []

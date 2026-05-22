@@ -47,6 +47,9 @@ datasets/
 experiments/
 runs/
 reports/
+.hydra/
+outputs/
+local_artifacts/
 # logs/
 # outputs/
 

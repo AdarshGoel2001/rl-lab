@@ -1,4 +1,4 @@
-_target_: src.components.world_models.representation_learners.rssm.RSSMRepresentationLearner
+_target_: src.components.representation_learners.rssm.RSSMRepresentationLearner
 feature_dim: ${_dims.encoder_output}
 deterministic_dim: 200
 stochastic_dim: 32

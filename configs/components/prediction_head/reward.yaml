@@ -1,0 +1,6 @@
+_target_: src.components.prediction_heads.mlp.MLPHead
+input_dim: ${_dims.representation}
+output_dim: 1
+hidden_dim: 64
+num_layers: 2
+activation: elu

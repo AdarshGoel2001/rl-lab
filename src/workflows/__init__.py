@@ -6,6 +6,7 @@ from .utils.controllers import ControllerManager
 from .dreamer import DreamerWorkflow
 from .tdmpc import TDMPCWorkflow
 from .og_wm import OriginalWorldModelsWorkflow
+from .planet import PlaNetWorkflow
 
 __all__ = [
     "WorldModelWorkflow",
@@ -18,4 +19,5 @@ __all__ = [
     "DreamerWorkflow",
     "TDMPCWorkflow",
     "OriginalWorldModelsWorkflow",
+    "PlaNetWorkflow",
 ]

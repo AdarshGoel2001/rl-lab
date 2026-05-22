@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict, deque
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -27,6 +28,9 @@ class WorldModelSequenceBuffer(BaseBuffer):
         config.setdefault("sequence_stride", None)
         config.setdefault("num_envs", 1)
         config.setdefault("pad_end_of_episode", False)
+
+        self.dataset_path = self._resolve_dataset_path(config.get("dataset_path") or config.get("path"))
+        self.read_only = bool(config.get("read_only", False))
 
         self.gamma = float(config["gamma"])
         self.sequence_length = int(config["sequence_length"])
@@ -65,6 +69,9 @@ class WorldModelSequenceBuffer(BaseBuffer):
             self._env_buffers.append(defaultdict(lambda: deque(maxlen=self.capacity_per_env)))
 
     def add(self, **kwargs: Any) -> None:
+        if self.read_only:
+            raise RuntimeError("WorldModelSequenceBuffer is read-only; cannot add new samples.")
+
         if "trajectory" in kwargs:
             trajectory = kwargs["trajectory"]
         else:
@@ -174,8 +181,22 @@ class WorldModelSequenceBuffer(BaseBuffer):
         return len(self._enumerate_sequences()) >= self.batch_size
 
     def clear(self) -> None:
+        if self.read_only:
+            raise RuntimeError("WorldModelSequenceBuffer is read-only; cannot clear loaded data.")
         self._setup_storage()
         self._size = 0
+
+    def initialize(self, context: Any = None) -> None:
+        del context
+        if self.read_only:
+            if self.dataset_path is None:
+                raise ValueError("read_only WorldModelSequenceBuffer requires dataset_path.")
+            self._load_npz(self.dataset_path)
+
+    def finalize(self) -> None:
+        if self.read_only or self.dataset_path is None:
+            return
+        self._save_npz(self.dataset_path)
 
     # ------------------------------------------------------------------
     # Checkpoint helpers
@@ -264,6 +285,85 @@ class WorldModelSequenceBuffer(BaseBuffer):
                 env_arrays[key] = np.stack(values, axis=0)
             cache[env_idx] = env_arrays
         return cache
+
+    def _save_npz(self, path: Path) -> None:
+        env_cache = self._env_arrays_cache()
+        if not env_cache:
+            raise RuntimeError("Cannot save an empty WorldModelSequenceBuffer.")
+
+        keys = sorted({key for env_arrays in env_cache.values() for key in env_arrays})
+        payload: Dict[str, np.ndarray] = {
+            "__num_envs": np.asarray(self.num_envs, dtype=np.int64),
+            "__sequence_length": np.asarray(self.sequence_length, dtype=np.int64),
+            "__sequence_stride": np.asarray(self.sequence_stride, dtype=np.int64),
+        }
+
+        for key in keys:
+            per_env = []
+            for env_idx in range(self.num_envs):
+                env_arrays = env_cache.get(env_idx, {})
+                if key not in env_arrays:
+                    continue
+                per_env.append(env_arrays[key])
+            if not per_env:
+                continue
+            lengths = {array.shape[0] for array in per_env}
+            if len(lengths) != 1:
+                raise ValueError(
+                    f"Cannot save key '{key}' with uneven per-env lengths: {sorted(lengths)}"
+                )
+            payload[key] = np.stack(per_env, axis=0)
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        np.savez_compressed(path, **payload)
+
+    def _load_npz(self, path: Path) -> None:
+        if not path.exists():
+            raise FileNotFoundError(f"World-model dataset not found at '{path}'.")
+
+        loaded = np.load(path, allow_pickle=False)
+        data_keys = [key for key in loaded.files if not key.startswith("__")]
+        if not data_keys:
+            raise ValueError(f"World-model dataset '{path}' does not contain sample arrays.")
+
+        first = loaded[data_keys[0]]
+        if first.ndim < 2:
+            raise ValueError(
+                f"World-model dataset arrays must have shape [env, time, ...], got {first.shape}"
+            )
+
+        self.num_envs = int(first.shape[0])
+        self._setup_storage()
+
+        time_dim = int(first.shape[1])
+        for key in data_keys:
+            array = loaded[key]
+            if array.shape[0] != self.num_envs or array.shape[1] != time_dim:
+                raise ValueError(
+                    f"Dataset key '{key}' shape {array.shape} does not match "
+                    f"[{self.num_envs}, {time_dim}, ...]"
+                )
+            for env_idx in range(self.num_envs):
+                env_buf = self._env_buffers[env_idx]
+                for t in range(time_dim):
+                    env_buf[key].append(np.asarray(array[env_idx, t]))
+
+        self._size = self._total_steps()
+
+    @staticmethod
+    def _resolve_dataset_path(path_value: Any) -> Optional[Path]:
+        if path_value is None or str(path_value) == "":
+            return None
+        path = Path(str(path_value))
+        if path.is_absolute():
+            return path
+        try:
+            from hydra.core.hydra_config import HydraConfig
+
+            root = Path(HydraConfig.get().runtime.cwd)
+        except (ImportError, ValueError):
+            root = Path.cwd()
+        return (root / path).resolve()
 
     def _build_mask(
         self,
