@@ -63,7 +63,8 @@ training:
   total_timesteps: 100000
   checkpoint_frequency: 0
   eval_frequency: 0
-  num_eval_episodes: 5
+  # Total eval episodes. Must be divisible by eval environment num_envs.
+  num_eval_episodes: 4
   max_eval_steps: 500
   resume_path: null
   phases:

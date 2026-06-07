@@ -5,7 +5,6 @@ from .vectorized_gym_wrapper import VectorizedGymWrapper
 from .minigrid_wrapper import MiniGridWrapper
 from .atari_wrapper import AtariEnvironment
 from .carracing_wrapper import CarRacingWorldModelWrapper
-from .vizdoom_wrapper import VizDoomWorldModelWrapper
 
 __all__ = [
     'BaseEnvironment',
@@ -15,5 +14,4 @@ __all__ = [
     'MiniGridWrapper',
     'AtariEnvironment',
     'CarRacingWorldModelWrapper',
-    'VizDoomWorldModelWrapper',
 ]

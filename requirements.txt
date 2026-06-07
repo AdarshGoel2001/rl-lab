@@ -1,8 +1,8 @@
-# RL Lab Framework - Universal Requirements
+# RL Lab Requirements
 # Compatible with macOS (Intel/Apple Silicon), Linux (CPU/CUDA), and Windows
 # PyTorch will auto-detect and use available acceleration (CUDA, MPS, CPU)
 
-# Core RL Framework
+# Core
 torch>=2.0.0
 numpy>=1.24.0
 gymnasium[box2d]>=0.28.0
@@ -25,8 +25,7 @@ black>=23.3.0
 # Essential Dependencies
 scipy>=1.11.0
 
-# Optional Dependencies (install as needed)
-# Uncomment the ones you need:
+# Optional dependencies can be added when a chapter needs them.
 
 # Experiment Tracking
 # wandb>=0.15.0
@@ -34,11 +33,10 @@ scipy>=1.11.0
 # Hyperparameter Optimization  
 # optuna>=3.2.0
 
-# Advanced RL Environments
+# Active and near-term environments
 minigrid>=2.3.1             # MiniGrid gridworld environments
 ale-py>=0.9.0               # Arcade Learning Environment for Atari (includes ROMs)
 gymnasium[atari]>=1.0.0     # Gymnasium with Atari support
-vizdoom>=1.2.4              # ViZDoom pixel-based FPS scenarios
 dm-control>=1.0.14          # DeepMind Control Suite (requires MuJoCo)
 mujoco>=2.3.0               # MuJoCo physics simulator
 # pybullet>=3.2.5           # PyBullet physics simulator

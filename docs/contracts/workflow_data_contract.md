@@ -26,6 +26,42 @@ update_world_model(batch: Any, *, phase: Mapping[str, Any]) -> dict[str, float]
 Only implement `collect_step`, `update_controller`, or `imagine` when the
 workflow genuinely needs them.
 
+## Evaluation Boundary
+
+Evaluation is an orchestrator-to-workflow interface.
+
+```text
+orchestrator owns eval cadence, config lookup, metric logging, and best-checkpoint decisions
+workflow owns eval semantics, action selection, environment stepping, and returned metrics
+```
+
+If a config schedules evaluation, the selected workflow must implement `evaluate()`.
+`training.num_eval_episodes` means total eval episodes. For vectorized eval
+environments, the orchestrator reads `eval_environment.num_envs`, requires
+`num_eval_episodes` to be divisible by that value, and passes
+`num_eval_batches` to the workflow.
+
+Workflow signatures should accept generic arguments such as
+`num_eval_batches`, `max_steps_per_episode`, and `deterministic`. The workflow
+owns what happens inside each eval batch.
+
+Expected eval accounting metrics:
+
+```text
+episodes: total completed eval episodes
+eval_episode_batches: number of workflow eval batches
+eval_num_envs: number of parallel eval environments
+eval_total_episodes: configured total eval episodes
+```
+
+Do not evaluate by routing through `collect_step`. `collect_step` is for
+training data collection and may mutate rollout state, write replay trajectories,
+or apply exploration settings. `evaluate()` should assess the algorithm without
+silently polluting training collection state.
+
+Reusable env-loop helpers are allowed later, but workflows should opt into them
+explicitly. Do not hide algorithm-specific evaluation inside the orchestrator.
+
 ## CollectResult
 
 `collect_step` should return `CollectResult`:

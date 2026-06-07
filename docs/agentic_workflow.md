@@ -12,9 +12,9 @@ abstractions alone.
    controller, buffer, environment, or workflow.
 3. Add a Hydra config next to the closest existing config.
 4. Add a smoke test that exercises forward/backward or config resolution.
-5. Run `python scripts/validate_experiment.py <experiment> --budget tiny` before
+5. Run `python scripts/validate_experiment.py <experiment> --budget planet_tiny` before
    running training.
-6. Run `python scripts/train.py +experiment=<experiment> budget=tiny` only after
+6. Run `python scripts/train.py +experiment=<experiment> budget=planet_tiny` only after
    config validation passes.
 7. Do not add registries, schemas, dashboards, databases, or new orchestration
    layers unless at least two working experiments need them.
@@ -26,18 +26,29 @@ Read contract -> inspect closest live implementation -> add minimal component
 -> add config -> add smoke test -> validate config -> run tiny budget -> compare artifacts
 ```
 
+After any serious remote run, read `docs/contracts/run_artifacts.md` and update
+the manifest before writing narrative claims.
+
+For multi-agent chapter work, use `docs/agent_team_operating_model.md`. Start
+from `docs/repo_map.md` so each agent knows which files are live, support
+material, or future material.
+
+For the full paper-to-run-to-narrative path, use
+`docs/research_lifecycle.md`. For durable claims that should be backed by
+tests or scripts, use `docs/executable_doc_audit.md`.
+
 ## Commands
 
 Validate the current World Models baseline without training:
 
 ```bash
-python scripts/validate_experiment.py og_wm_carracing --budget tiny
+python scripts/validate_experiment.py planet_cartpole --budget planet_tiny
 ```
 
 Run the tiny smoke experiment:
 
 ```bash
-python scripts/train.py +experiment=og_wm_carracing budget=tiny
+python scripts/train.py +experiment=planet_cartpole budget=planet_tiny
 ```
 
 Run tests:

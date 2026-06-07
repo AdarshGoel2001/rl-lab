@@ -1,7 +1,7 @@
-"""MDN-RNN dynamics scaffold mirroring the World Models 'M' component.
+"""Support MDN-RNN dynamics module for future recurrent world-model chapters.
 
-Use this as homework: flesh out the recurrent core, mixture density heads,
-training losses, and imagination helpers when you're ready.
+This module has smoke coverage, but it is not part of the active PlaNet chapter.
+Revalidate its contract before wiring it into a workflow.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import torch.nn as nn
 from torch.distributions import MixtureSameFamily, Categorical, Normal
 
 class MDNRNNDynamics(nn.Module):
-    """Placeholder Mixture Density RNN that predicts the next latent distribution."""
+    """Mixture-density recurrent model that predicts the next latent distribution."""
 
     def __init__(self, config: Optional[Dict[str, Any]] = None, **kwargs: Any) -> None:
         super().__init__()

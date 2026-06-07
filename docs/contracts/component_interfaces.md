@@ -17,13 +17,21 @@ Every component should:
 
 ## Representation Learner
 
-Live examples:
+Active example:
+
+- `src.components.representation_learners.rssm.RSSMRepresentationLearner`
+
+Support examples:
 
 - `src.components.representation_learners.conv_vae.ConvVAERepresentationLearner`
 - `src.components.representation_learners.identity.IdentityRepresentationLearner`
 
-Expected methods depend on the workflow. The OG World Models workflow expects a
-VAE-style learner:
+Expected methods depend on the workflow. PlaNet uses the RSSM learner through
+`observe`, `observe_sequence`, `imagine_step`, and `initial_state` style calls.
+The stable state container is `RSSMState`.
+
+Pixel and identity learners are support material for future chapters. A
+VAE-style learner may expose:
 
 ```python
 observe(features: torch.Tensor) -> dict[str, torch.Tensor]
@@ -48,19 +56,21 @@ mean
 logvar
 ```
 
-Dreamer-style learners may return `LatentStep` or `LatentSequence`, but those
-objects are not currently the OG World Models path. Do not assume the two
-families are interchangeable without a workflow adapter.
+Do not assume RSSM states, VAE latents, and identity features are
+interchangeable without a workflow adapter.
 
 ## Dynamics Model
 
-Live examples:
+Support examples:
 
 - `src.components.dynamics.mdn_rnn.MDNRNNDynamics`
 - `src.components.dynamics.gaussian_gru.GaussianGRUDynamics`
 - `src.components.dynamics.deterministic_mlp.DeterministicMLPDynamics`
 
-The OG World Models workflow expects an MDN-RNN-style sequence API:
+No current live workflow uses these dynamics components directly. They remain
+tested support material for future chapters.
+
+An MDN-RNN-style sequence API looks like:
 
 ```python
 observe_sequence(
@@ -91,7 +101,7 @@ reward_preds: (B, T, 1)
 done_logits: (B, T, 1)
 ```
 
-For collection-time recurrent state updates, OG World Models also calls:
+For collection-time recurrent state updates, recurrent dynamics may expose:
 
 ```python
 observe(
@@ -114,14 +124,20 @@ hidden: workflow-specific recurrent state
 
 `DeterministicMLPDynamics` is a different contract used by planning-style
 workflows. It has `forward(state, action)` and is not a drop-in replacement for
-the OG MDN-RNN config.
+MDN-RNN sequence configs.
 
 ## Controller
 
-Live examples:
+Active examples:
 
 - `src.components.controllers.random_policy.RandomPolicyController`
-- `src.components.controllers.cma_es.CMAESController`
+- `src.components.controllers.mpc_planner.MPCPlanner`
+
+Support examples:
+
+Future actor-critic, diffusion, or evolutionary controllers should be
+reimplemented against the active workflow and component contracts instead of
+resurrecting old scaffolds.
 
 Minimal controller protocol:
 
@@ -129,17 +145,17 @@ Minimal controller protocol:
 act(*args, **kwargs) -> torch.Tensor
 ```
 
-Controller shape expectations are workflow-specific. The current OG World
-Models data-collection phase uses the random policy actor to produce continuous
-CarRacing actions with:
+Controller shape expectations are workflow-specific. The current PlaNet chapter
+uses random policy for seed collection and `MPCPlanner` for CEM planning in RSSM
+latent space.
+
+For DMC cartpole swingup, action bounds are:
 
 ```text
-action_dim: 3
-action_low: [-1.0, 0.0, 0.0]
-action_high: [1.0, 1.0, 1.0]
+action_dim: 1
+action_low: [-1.0]
+action_high: [1.0]
 ```
-
-The CMA-ES controller is scaffold only. Do not present it as a working optimizer.
 
 ## Workflow
 
@@ -153,9 +169,9 @@ update_controller(batch: Any, *, phase: Mapping[str, Any]) -> dict[str, float]
 imagine(...) -> dict[str, Any]
 ```
 
-`update_controller()` and `imagine()` are optional in the base class. In
-`OriginalWorldModelsWorkflow`, they intentionally remain `NotImplementedError`
-until dream rollouts and controller training are implemented.
+`update_controller()` and `imagine()` are optional in the base class. The active
+PlaNet workflow implements `imagine()` for CEM planning and leaves learned
+controller updates out of scope.
 
 ### Recipe-Specific Notes
 
@@ -190,5 +206,5 @@ training.phases
 Use this command before training:
 
 ```bash
-python scripts/validate_experiment.py og_wm_carracing --budget tiny
+python scripts/validate_experiment.py planet_cartpole --budget planet_tiny
 ```

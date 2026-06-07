@@ -1,2 +1,0 @@
-# Diffusion Policy Workflow Config
-_target_: src.workflows.diffusion_policy_workflow.DiffusionPolicyWorkflow

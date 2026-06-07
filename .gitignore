@@ -46,10 +46,14 @@ datasets/
 # Experiment outputs (if you want to ignore them)
 experiments/
 runs/
-reports/
+reports/*
+!reports/world_model_runs.csv
 .hydra/
 outputs/
 local_artifacts/
+remote_artifacts/
+remote_code_patches/
+research_notes/
 # logs/
 # outputs/
 

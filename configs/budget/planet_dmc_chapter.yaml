@@ -1,0 +1,117 @@
+# @package _global_
+# Low-compute but real PlaNet chapter attempt for DMC Cartpole Swingup.
+#
+# This is intentionally stronger than planet_tiny and the base experiment:
+# it has enough seed data, model updates, planner-guided collection, and eval
+# episodes to make a meaningful solved/not-solved claim.
+
+experiment:
+  name: planet_dmc_swingup_chapter
+
+algorithm:
+  collect_length: 16
+  gamma: 0.99
+  free_nats: 3.0
+  kl_scale: 1.0
+  max_grad_norm: 1000.0
+  world_model_lr: 1.0e-3
+
+buffer:
+  capacity: 20000
+  batch_size: 32
+  sequence_length: 25
+  sequence_stride: 1
+  pad_end_of_episode: false
+
+controllers:
+  planner:
+    horizon: 8
+    num_samples: 48
+    top_k: 6
+    iterations: 2
+    std_init: 0.75
+    std_min: 0.05
+    use_continuation: true
+
+logging:
+  use_tensorboard: true
+  log_interval: 1
+  log_frequency: 1
+
+training:
+  total_timesteps: 20000
+  checkpoint_frequency: 0
+  eval_frequency: 0
+  num_eval_episodes: 5
+  max_eval_steps: 125
+  resume_path: null
+  phases:
+    - name: collect_random_seed
+      type: online
+      buffer: replay
+      duration_steps: 1024
+      collect_length: 16
+      controller: actor
+      workflow_hooks:
+        - collect
+
+    - name: train_world_model_seed
+      type: offline
+      buffer: replay
+      duration_updates: 256
+      workflow_hooks:
+        - update_world_model
+
+    - name: collect_with_planner_1
+      type: online
+      buffer: replay
+      duration_steps: 512
+      collect_length: 16
+      controller: planner
+      workflow_hooks:
+        - collect
+
+    - name: train_world_model_1
+      type: offline
+      buffer: replay
+      duration_updates: 256
+      workflow_hooks:
+        - update_world_model
+
+    - name: collect_with_planner_2
+      type: online
+      buffer: replay
+      duration_steps: 512
+      collect_length: 16
+      controller: planner
+      workflow_hooks:
+        - collect
+
+    - name: train_world_model_2
+      type: offline
+      buffer: replay
+      duration_updates: 256
+      workflow_hooks:
+        - update_world_model
+
+    - name: collect_with_planner_3
+      type: online
+      buffer: replay
+      duration_steps: 512
+      collect_length: 16
+      controller: planner
+      workflow_hooks:
+        - collect
+
+    - name: train_world_model_3
+      type: offline
+      buffer: replay
+      duration_updates: 256
+      workflow_hooks:
+        - update_world_model
+
+    - name: final_eval
+      type: eval_only
+      duration_cycles: 1
+      workflow_hooks:
+        - evaluate

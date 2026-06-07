@@ -78,6 +78,11 @@ class CheckpointManager:
             name = f"step_{step}"
 
         checkpoint_path = self.checkpoint_dir / f"{name}.pt"
+        if checkpoint_path.exists() or checkpoint_path.is_symlink():
+            raise FileExistsError(
+                f"Refusing to overwrite checkpoint '{checkpoint_path}'. "
+                "Checkpoint files are immutable; save with a unique name."
+            )
 
         # Add metadata and RNG states (step comes from state["global_step"])
         checkpoint_data = {
@@ -284,10 +289,21 @@ class CheckpointManager:
 
     def _cleanup_old_checkpoints(self) -> None:
         """Remove old checkpoints to free disk space."""
+        protected_targets = set()
+        for link_name in ("latest.pt", "best.pt"):
+            link = self.checkpoint_dir / link_name
+            if link.exists() or link.is_symlink():
+                try:
+                    protected_targets.add(link.resolve())
+                except OSError:
+                    logger.warning(f"Could not resolve checkpoint link for cleanup: {link}")
+
         checkpoint_files = [
             f
             for f in self.checkpoint_dir.glob("*.pt")
-            if not f.is_symlink() and f.name not in ["latest.pt", "best.pt"]
+            if not f.is_symlink()
+            and f.name not in ["latest.pt", "best.pt"]
+            and f.resolve() not in protected_targets
         ]
 
         if len(checkpoint_files) <= self.max_checkpoints:

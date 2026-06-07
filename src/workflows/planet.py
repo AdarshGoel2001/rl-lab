@@ -42,6 +42,9 @@ class PlaNetWorkflow(WorldModelWorkflow):
         self.gamma = 0.99
         self.free_nats = 0.0
         self.kl_scale = 1.0
+        self.reward_loss_scale = 1.0
+        self.continue_loss_scale = 1.0
+        self.observation_loss_scale = 1.0
         self.exploration_noise = 0.0
         self.max_grad_norm: Optional[float] = None
         self.action_low: Optional[torch.Tensor] = None
@@ -72,6 +75,9 @@ class PlaNetWorkflow(WorldModelWorkflow):
         self.gamma = float(getattr(algorithm, "gamma", 0.99))
         self.free_nats = float(getattr(algorithm, "free_nats", 0.0))
         self.kl_scale = float(getattr(algorithm, "kl_scale", 1.0))
+        self.reward_loss_scale = float(getattr(algorithm, "reward_loss_scale", 1.0))
+        self.continue_loss_scale = float(getattr(algorithm, "continue_loss_scale", 1.0))
+        self.observation_loss_scale = float(getattr(algorithm, "observation_loss_scale", 1.0))
         self.exploration_noise = float(getattr(algorithm, "exploration_noise", 0.0))
         self.max_grad_norm = getattr(algorithm, "max_grad_norm", None)
 
@@ -184,7 +190,7 @@ class PlaNetWorkflow(WorldModelWorkflow):
         if self.free_nats > 0.0:
             kl_values = torch.clamp(kl_values - self.free_nats, min=0.0)
         kl_loss = kl_values.mean()
-        total_loss = reward_loss + self.kl_scale * kl_loss
+        total_loss = self.reward_loss_scale * reward_loss + self.kl_scale * kl_loss
 
         continue_loss = None
         if self.continue_predictor is not None:
@@ -194,13 +200,13 @@ class PlaNetWorkflow(WorldModelWorkflow):
                 continue_logits.squeeze(-1),
                 continue_target,
             )
-            total_loss = total_loss + continue_loss
+            total_loss = total_loss + self.continue_loss_scale * continue_loss
 
         observation_loss = None
         if self.observation_predictor is not None:
             observation_pred = self.observation_predictor(latent)
             observation_loss = F.mse_loss(observation_pred, observations)
-            total_loss = total_loss + observation_loss
+            total_loss = total_loss + self.observation_loss_scale * observation_loss
 
         self.world_model_optimizer.zero_grad()
         total_loss.backward()
@@ -213,11 +219,15 @@ class PlaNetWorkflow(WorldModelWorkflow):
             "world_model/total_loss": float(total_loss.item()),
             "world_model/reward_loss": float(reward_loss.item()),
             "world_model/kl_loss": float(kl_loss.item()),
+            "world_model/reward_loss_scale": float(self.reward_loss_scale),
+            "world_model/kl_scale": float(self.kl_scale),
         }
         if continue_loss is not None:
             metrics["world_model/continue_loss"] = float(continue_loss.item())
+            metrics["world_model/continue_loss_scale"] = float(self.continue_loss_scale)
         if observation_loss is not None:
             metrics["world_model/observation_loss"] = float(observation_loss.item())
+            metrics["world_model/observation_loss_scale"] = float(self.observation_loss_scale)
         return metrics
 
     def imagine(
@@ -296,7 +306,7 @@ class PlaNetWorkflow(WorldModelWorkflow):
 
     def evaluate(
         self,
-        num_episodes: int = 5,
+        num_eval_batches: int = 5,
         max_steps_per_episode: int = 500,
         deterministic: bool = True,
     ) -> Dict[str, float]:
@@ -311,8 +321,10 @@ class PlaNetWorkflow(WorldModelWorkflow):
 
         returns: list[float] = []
         lengths: list[int] = []
-        for episode in range(int(num_episodes)):
-            reset = env.reset(seed=episode)
+        eval_episode_batches = int(num_eval_batches)
+        eval_num_envs = int(getattr(env, "num_envs", 1) or 1)
+        for episode_batch in range(eval_episode_batches):
+            reset = env.reset(seed=episode_batch)
             obs = reset[0] if isinstance(reset, tuple) else reset
             obs = np.asarray(obs, dtype=np.float32)
             if obs.ndim == 1:
@@ -355,13 +367,17 @@ class PlaNetWorkflow(WorldModelWorkflow):
             returns.extend(float(value) for value in episode_return)
             lengths.extend(int(value) for value in episode_length)
 
+        eval_total_episodes = len(returns)
         return {
             "return_mean": float(np.mean(returns)) if returns else 0.0,
             "return_std": float(np.std(returns)) if returns else 0.0,
             "return_max": float(np.max(returns)) if returns else 0.0,
             "return_min": float(np.min(returns)) if returns else 0.0,
             "length_mean": float(np.mean(lengths)) if lengths else 0.0,
-            "episodes": float(len(returns)),
+            "episodes": float(eval_total_episodes),
+            "eval_episode_batches": float(eval_episode_batches),
+            "eval_num_envs": float(eval_num_envs),
+            "eval_total_episodes": float(eval_total_episodes),
         }
 
     def _rssm_state_from_tensor(self, latent: torch.Tensor) -> RSSMState:
@@ -384,3 +400,6 @@ class PlaNetWorkflow(WorldModelWorkflow):
 
     def get_state(self) -> Dict[str, Any]:
         return {"world_model_updates": self.world_model_updates}
+
+    def set_state(self, state: Mapping[str, Any]) -> None:
+        self.world_model_updates = int(state.get("world_model_updates", 0))

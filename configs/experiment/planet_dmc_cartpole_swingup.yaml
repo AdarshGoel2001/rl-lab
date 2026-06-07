@@ -103,11 +103,15 @@ logging:
 
 training:
   total_timesteps: 1024
+  max_checkpoints: 5
   checkpoint_frequency: 0
   eval_frequency: 0
   num_eval_episodes: 1
   max_eval_steps: 125
   resume_path: null
+  # exact is fault tolerance for the same interrupted run.
+  # Use warm_start_optimizer for research continuation from a previous checkpoint.
+  resume_mode: exact  # exact | warm_start | warm_start_optimizer
   phases:
     - name: collect_random_seed
       type: online

@@ -1,5 +1,5 @@
 """
-Setup script for RL Lab framework
+Setup script for RL Lab.
 
 This installs the framework in development mode so you can
 import modules and run experiments.
@@ -20,17 +20,17 @@ if requirements_path.exists():
                 requirements.append(line)
 
 # Read description
-readme_path = Path(__file__).parent / "CLAUDE.md"
+readme_path = Path(__file__).parent / "README.md"
 if readme_path.exists():
     with open(readme_path, encoding='utf-8') as f:
         long_description = f.read()
 else:
-    long_description = "Modular reinforcement learning research framework"
+    long_description = "Executable low-compute world-model research chronology"
 
 setup(
     name="rl-lab",
     version="0.1.0",
-    description="Modular reinforcement learning research framework",
+    description="Executable low-compute world-model research chronology",
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="RL Researcher",

@@ -37,6 +37,18 @@ def test_mpc_planner_instantiates_with_buffers():
     assert planner.action_std.shape == (3, 2)
 
 
+def test_planet_workflow_state_round_trips_world_model_update_count():
+    workflow = PlaNetWorkflow()
+    workflow.world_model_updates = 17
+
+    state = workflow.get_state()
+
+    restored = PlaNetWorkflow()
+    restored.set_state(state)
+
+    assert restored.world_model_updates == 17
+
+
 def test_mpc_planner_scores_rollouts_with_reward_sum_by_default():
     planner = MPCPlanner(representation_dim=12, action_dim=2, horizon=3, num_samples=2, top_k=1)
     rewards = torch.ones(3, 1)
@@ -159,6 +171,55 @@ def test_planet_world_model_trains_without_continue_predictor():
 
     assert metrics["world_model/total_loss"] > 0.0
     assert "world_model/continue_loss" not in metrics
+
+
+def test_planet_world_model_uses_configurable_loss_scales():
+    rssm = RSSMRepresentationLearner(
+        feature_dim=4,
+        action_dim=2,
+        deterministic_dim=8,
+        stochastic_dim=4,
+        hidden_dim=16,
+        min_std=0.1,
+        device="cpu",
+    )
+    reward = MLPHead(input_dim=12, output_dim=1, hidden_dim=16)
+    continuation = MLPHead(input_dim=12, output_dim=1, hidden_dim=16)
+    optimizer = torch.optim.Adam(
+        list(rssm.parameters()) + list(reward.parameters()) + list(continuation.parameters()),
+        lr=1e-3,
+    )
+
+    workflow = PlaNetWorkflow()
+    workflow.device = "cpu"
+    workflow.rssm = rssm
+    workflow.reward_predictor = reward
+    workflow.continue_predictor = continuation
+    workflow.world_model_optimizer = optimizer
+    workflow.action_dim = 2
+    workflow.free_nats = 0.0
+    workflow.kl_scale = 0.5
+    workflow.reward_loss_scale = 10.0
+    workflow.continue_loss_scale = 2.0
+    workflow.observation_loss_scale = 1.0
+
+    batch = {
+        "observations": torch.randn(2, 4, 4),
+        "actions": torch.nn.functional.one_hot(torch.randint(0, 2, (2, 4)), num_classes=2).float(),
+        "rewards": torch.randn(2, 4),
+        "dones": torch.zeros(2, 4, dtype=torch.bool),
+    }
+
+    metrics = workflow.update_world_model(batch, phase={"name": "train_world_model"})
+    expected_total = (
+        10.0 * metrics["world_model/reward_loss"]
+        + 0.5 * metrics["world_model/kl_loss"]
+        + 2.0 * metrics["world_model/continue_loss"]
+    )
+
+    assert metrics["world_model/reward_loss_scale"] == 10.0
+    assert metrics["world_model/continue_loss_scale"] == 2.0
+    assert abs(metrics["world_model/total_loss"] - expected_total) < 1e-5
 
 
 def test_planet_binds_and_trains_observation_predictor_when_present():
@@ -285,6 +346,115 @@ def test_mpc_planner_does_not_warm_start_cem_across_act_calls():
     assert torch.allclose(planner.action_std, initial_std)
 
 
+def test_mpc_planner_checkpoint_state_excludes_cem_working_distribution():
+    planner = MPCPlanner(
+        representation_dim=2,
+        action_dim=1,
+        horizon=8,
+        num_samples=6,
+        top_k=2,
+        iterations=2,
+    )
+
+    state = planner.state_dict()
+
+    assert "action_mean" not in state
+    assert "action_std" not in state
+
+
+def test_mpc_planner_load_ignores_legacy_cem_buffers_with_different_horizon():
+    planner = MPCPlanner(
+        representation_dim=2,
+        action_dim=1,
+        horizon=12,
+        num_samples=6,
+        top_k=2,
+        iterations=2,
+    )
+    legacy_state = {
+        "action_mean": torch.zeros(8, 1),
+        "action_std": torch.ones(8, 1),
+    }
+
+    incompatible = planner.load_state_dict(legacy_state)
+
+    assert incompatible.missing_keys == []
+    assert incompatible.unexpected_keys == []
+    assert planner.action_mean.shape == (12, 1)
+    assert planner.action_std.shape == (12, 1)
+
+
+def test_mpc_planner_batches_candidate_imagination_per_iteration():
+    class CountingWorkflow:
+        gamma = 0.99
+
+        def __init__(self):
+            self.calls = 0
+
+        def get_action_bounds(self):
+            return torch.zeros(1), torch.ones(1)
+
+        def imagine(self, *, latent, horizon, action_sequence):
+            self.calls += 1
+            assert latent.shape[0] == action_sequence.shape[0]
+            assert action_sequence.shape == (6, horizon, 1)
+            return {
+                "rewards": action_sequence.clone(),
+                "bootstrap": torch.zeros(action_sequence.shape[0], 1),
+            }
+
+    workflow = CountingWorkflow()
+    planner = MPCPlanner(
+        representation_dim=2,
+        action_dim=1,
+        horizon=2,
+        num_samples=6,
+        top_k=2,
+        iterations=2,
+        std_init=0.5,
+    )
+
+    planner.act(torch.zeros(1, 2), workflow=workflow)
+
+    assert workflow.calls == 2
+
+
+def test_mpc_planner_batches_candidates_across_parallel_envs():
+    class CountingWorkflow:
+        gamma = 0.99
+
+        def __init__(self):
+            self.calls = 0
+
+        def get_action_bounds(self):
+            return torch.zeros(1), torch.ones(1)
+
+        def imagine(self, *, latent, horizon, action_sequence):
+            self.calls += 1
+            assert latent.shape == (15, 2)
+            assert action_sequence.shape == (15, horizon, 1)
+            return {
+                "rewards": action_sequence.clone(),
+                "bootstrap": torch.zeros(action_sequence.shape[0], 1),
+            }
+
+    workflow = CountingWorkflow()
+    planner = MPCPlanner(
+        representation_dim=2,
+        action_dim=1,
+        horizon=2,
+        num_samples=5,
+        top_k=2,
+        iterations=2,
+        std_init=0.5,
+    )
+
+    action = planner.act(torch.zeros(3, 2), workflow=workflow)
+
+    assert workflow.calls == 2
+    assert action.shape == (3, 1)
+
+
 def test_mpc_planner_uses_planet_imagination():
     rssm = RSSMRepresentationLearner(
         feature_dim=4,
@@ -374,11 +544,76 @@ def test_planet_evaluate_logs_planner_return_with_fake_env():
     workflow.action_high = torch.ones(2)
     workflow.gamma = 0.99
 
-    metrics = workflow.evaluate(num_episodes=2, max_steps_per_episode=5)
+    metrics = workflow.evaluate(num_eval_batches=2, max_steps_per_episode=5)
 
     assert metrics["return_mean"] == 3.0
     assert metrics["length_mean"] == 3.0
     assert metrics["episodes"] == 2.0
+    assert metrics["eval_episode_batches"] == 2.0
+    assert metrics["eval_num_envs"] == 1.0
+    assert metrics["eval_total_episodes"] == 2.0
+
+
+def test_planet_evaluate_logs_vectorized_episode_multiplication():
+    class FakeVectorEnv:
+        num_envs = 3
+        is_vectorized = True
+
+        def __init__(self):
+            self.steps = 0
+
+        def reset(self, seed=None):
+            self.steps = 0
+            return torch.zeros(3, 4).numpy()
+
+        def step(self, action):
+            self.steps += 1
+            done = self.steps >= 2
+            return (
+                torch.zeros(3, 4).numpy(),
+                torch.ones(3).numpy(),
+                torch.tensor([done, done, done]).numpy(),
+                [{}, {}, {}],
+            )
+
+    rssm = RSSMRepresentationLearner(
+        feature_dim=4,
+        action_dim=2,
+        deterministic_dim=8,
+        stochastic_dim=4,
+        hidden_dim=16,
+        min_std=0.1,
+        device="cpu",
+    )
+    workflow = PlaNetWorkflow()
+    workflow.device = "cpu"
+    workflow.environment = FakeVectorEnv()
+    workflow.eval_environment = workflow.environment
+    workflow.rssm = rssm
+    workflow.reward_predictor = MLPHead(input_dim=12, output_dim=1, hidden_dim=16)
+    workflow.continue_predictor = MLPHead(input_dim=12, output_dim=1, hidden_dim=16)
+    workflow.controllers = {
+        "planner": MPCPlanner(
+            representation_dim=12,
+            action_dim=2,
+            horizon=2,
+            num_samples=4,
+            top_k=2,
+            iterations=1,
+        )
+    }
+    workflow.action_dim = 2
+    workflow.action_low = torch.zeros(2)
+    workflow.action_high = torch.ones(2)
+    workflow.gamma = 0.99
+
+    metrics = workflow.evaluate(num_eval_batches=2, max_steps_per_episode=5)
+
+    assert metrics["eval_episode_batches"] == 2.0
+    assert metrics["eval_num_envs"] == 3.0
+    assert metrics["eval_total_episodes"] == 6.0
+    assert metrics["episodes"] == 6.0
+    assert metrics["return_mean"] == 2.0
 
 
 def test_planet_collect_step_can_use_planner_controller():

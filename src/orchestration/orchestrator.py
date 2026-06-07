@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import copy
+import json
 import logging
+import os
 import random
+import socket
+import sys
 import time
+from datetime import datetime, timezone
 from numbers import Number
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
@@ -73,6 +78,7 @@ class Orchestrator:
             "controller_manager": controller_manager,
         }
         self.global_step = 0
+        self.best_eval_return = float("-inf")
 
         if experiment_dir:
             self.experiment_dir = Path(experiment_dir)
@@ -89,10 +95,24 @@ class Orchestrator:
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 self.experiment_dir = Path("experiments") / f"{config.experiment.name}_{timestamp}"
         self.experiment_dir.mkdir(parents=True, exist_ok=True)
+        self._run_status_path = self.experiment_dir / "run_status.json"
+        self._run_started_at = self._utc_now()
+        self._run_status_phase: Optional[str] = None
+        self._run_status_action: Optional[str] = None
+        self._run_status_hook_state: Optional[str] = None
+        self._run_status_metrics: Dict[str, float] = {}
+        self._checkpoint_name_counts: Dict[str, int] = {}
+
+        training_cfg = getattr(self.config, "training", None)
+        max_checkpoints = 5
+        if training_cfg is not None:
+            configured_max_checkpoints = getattr(training_cfg, "max_checkpoints", None)
+            if configured_max_checkpoints is not None:
+                max_checkpoints = int(configured_max_checkpoints)
 
         self.checkpoint_manager = CheckpointManager(
             self.experiment_dir,
-            max_checkpoints=5,
+            max_checkpoints=max_checkpoints,
         )
         self.experiment_logger = create_logger(
             self.experiment_dir,
@@ -102,6 +122,7 @@ class Orchestrator:
 
         self._context: Optional[WorkflowContext] = None
         self._initialized = False
+        self._write_run_status(status="initializing")
 
     def ensure_context(self) -> WorkflowContext:
         if self._context is None:
@@ -247,6 +268,7 @@ class Orchestrator:
         self.initialize()
         logger.info("Starting orchestrated world-model training loop")
         try:
+            self._write_run_status(status="running", hook_state="starting")
             total_steps = int(self.config.training.total_timesteps)
             log_freq = int(getattr(self.config.logging, "log_frequency", 0) or 0)
             eval_freq = int(getattr(self.config.training, "eval_frequency", 0) or 0)
@@ -277,6 +299,12 @@ class Orchestrator:
                     continue
 
                 phase_config = phase_def.to_mapping(progress=scheduler.get_state())
+                self._write_run_status(
+                    status="running",
+                    phase=phase_def.name,
+                    action=action,
+                    hook_state="running",
+                )
 
                 if action == "collect":
                     collect_result = self.workflow.collect_step(self.global_step, phase=phase_config)
@@ -295,6 +323,13 @@ class Orchestrator:
                     self._update_context(global_step=self.global_step)
                     scheduler.advance(action, steps=int(collect_result.steps))
                     last_batch = None
+                    self._write_run_status(
+                        status="running",
+                        phase=phase_def.name,
+                        action=action,
+                        hook_state="completed",
+                        metrics=self._prefix_metrics(collect_result.metrics, "collect"),
+                    )
 
                 elif action == "update_world_model":
                     buffer = self._resolve_buffer(phase_config)
@@ -304,6 +339,12 @@ class Orchestrator:
                             phase_def.name,
                         )
                         scheduler.advance(action)
+                        self._write_run_status(
+                            status="running",
+                            phase=phase_def.name,
+                            action=action,
+                            hook_state="skipped",
+                        )
                         continue
 
                     batch = buffer.sample()
@@ -314,6 +355,13 @@ class Orchestrator:
                     scheduler.advance(action, updates=1)
                     self.global_step += 1
                     self._update_context(global_step=self.global_step)
+                    self._write_run_status(
+                        status="running",
+                        phase=phase_def.name,
+                        action=action,
+                        hook_state="completed",
+                        metrics=self._prefix_metrics(last_update_metrics, "train"),
+                    )
 
                 elif action == "update_controller":
                     buffer = self._resolve_buffer(phase_config)
@@ -323,6 +371,12 @@ class Orchestrator:
                             phase_def.name,
                         )
                         scheduler.advance(action)
+                        self._write_run_status(
+                            status="running",
+                            phase=phase_def.name,
+                            action=action,
+                            hook_state="skipped",
+                        )
                         continue
                     batch = buffer.sample()
                     controller_metrics = self.workflow.update_controller(batch, phase=phase_config) or {}
@@ -331,16 +385,37 @@ class Orchestrator:
                     scheduler.advance(action, updates=1)
                     self.global_step += 1
                     self._update_context(global_step=self.global_step)
+                    self._write_run_status(
+                        status="running",
+                        phase=phase_def.name,
+                        action=action,
+                        hook_state="completed",
+                        metrics=self._prefix_metrics(controller_metrics, "controller"),
+                    )
 
                 elif action == "evaluate":
                     eval_metrics = self._run_evaluation(phase_config)
                     if eval_metrics:
                         self.experiment_logger.log_metrics(eval_metrics, self.global_step, prefix="eval")
+                        self._maybe_save_best_checkpoint(eval_metrics)
                     scheduler.advance(action)
+                    self._write_run_status(
+                        status="running",
+                        phase=phase_def.name,
+                        action=action,
+                        hook_state="completed",
+                        metrics=self._prefix_metrics(eval_metrics, "eval"),
+                    )
 
                 else:
                     logger.warning("Encountered unknown scheduler action '%s'; advancing.", action)
                     scheduler.advance(action)
+                    self._write_run_status(
+                        status="running",
+                        phase=phase_def.name,
+                        action=action,
+                        hook_state="skipped",
+                    )
 
                 if log_freq > 0 and (self.global_step - last_log) >= log_freq:
                     workflow_metrics = self.workflow.get_state()
@@ -353,9 +428,23 @@ class Orchestrator:
                     last_ckpt = self.global_step
 
                 if eval_freq > 0 and (self.global_step - last_eval) >= eval_freq:
+                    self._write_run_status(
+                        status="running",
+                        phase="scheduled_eval",
+                        action="evaluate",
+                        hook_state="running",
+                    )
                     eval_metrics = self._run_evaluation({"type": "eval_only", "name": "scheduled_eval"})
                     if eval_metrics:
                         self.experiment_logger.log_metrics(eval_metrics, self.global_step, prefix="eval")
+                        self._maybe_save_best_checkpoint(eval_metrics)
+                    self._write_run_status(
+                        status="running",
+                        phase="scheduled_eval",
+                        action="evaluate",
+                        hook_state="completed",
+                        metrics=self._prefix_metrics(eval_metrics, "eval"),
+                    )
                     last_eval = self.global_step
 
             duration = max(time.time() - start_time, 1e-6)
@@ -364,14 +453,25 @@ class Orchestrator:
             workflow_metrics = self.workflow.get_state()
             if workflow_metrics:
                 self.experiment_logger.log_metrics(workflow_metrics, self.global_step, prefix="workflow")
-            self._save_checkpoint(final=True)
+            final_checkpoint = self._save_checkpoint(final=True)
+            self._write_run_summary(
+                status="completed",
+                final_metrics=final_metrics,
+                workflow_metrics=workflow_metrics,
+                final_checkpoint=final_checkpoint,
+            )
             self.experiment_logger.finish()
+            self._write_run_status(status="completed")
+        except Exception as exc:
+            self._write_run_summary(status="failed", error=str(exc))
+            self._write_run_status(status="failed", error=str(exc))
+            raise
         finally:
             self.cleanup()
         return final_metrics
 
     def train(self) -> Dict[str, float]:
-        """Compatibility shim so orchestrator can be driven by legacy trainer interface."""
+        """Run training through the public trainer-facing entrypoint."""
         return self.run()
 
     # ------------------------------------------------------------------
@@ -414,191 +514,177 @@ class Orchestrator:
         buffer_name = phase_config.get("buffer", "replay")
         return self.buffers.get(buffer_name)
 
-    def _run_evaluation(self, phase_config: Mapping[str, Any]) -> Dict[str, float]:
-        """Run evaluation using workflow.evaluate() if available."""
-        workflow = self.workflow
+    def _utc_now(self) -> str:
+        return datetime.now(timezone.utc).isoformat()
 
-        # Prefer workflow.evaluate() if it exists
-        if hasattr(workflow, "evaluate") and callable(workflow.evaluate):
-            training_cfg = getattr(self.config, "training", None)
-            num_episodes = 10
-            max_steps = 1000
+    def _prefix_metrics(self, metrics: Optional[Mapping[str, Any]], prefix: str) -> Dict[str, float]:
+        prefixed: Dict[str, float] = {}
+        for key, value in (metrics or {}).items():
+            if not isinstance(value, Number) and not isinstance(value, np.generic):
+                continue
+            metric_key = str(key)
+            if prefix and not metric_key.startswith(prefix + "/"):
+                metric_key = f"{prefix}/{metric_key}"
+            prefixed[metric_key] = float(value)
+        return prefixed
 
-            if training_cfg is not None:
-                num_episodes = int(getattr(training_cfg, "num_eval_episodes", num_episodes) or num_episodes)
-                max_steps = int(getattr(training_cfg, "max_eval_steps", max_steps) or max_steps)
+    def _write_run_status(
+        self,
+        *,
+        status: str,
+        phase: Optional[str] = None,
+        action: Optional[str] = None,
+        hook_state: Optional[str] = None,
+        metrics: Optional[Mapping[str, Any]] = None,
+        error: Optional[str] = None,
+    ) -> None:
+        """Write a small machine-readable status snapshot for polling agents."""
+        if phase is not None:
+            self._run_status_phase = phase
+        if action is not None:
+            self._run_status_action = action
+        if hook_state is not None:
+            self._run_status_hook_state = hook_state
+        for key, value in self._prefix_metrics(metrics, "").items():
+            self._run_status_metrics[key] = value
 
-            logger.info(f"Running evaluation: {num_episodes} episodes")
-            metrics = workflow.evaluate(
-                num_episodes=num_episodes,
-                max_steps_per_episode=max_steps,
-                deterministic=True,
-            )
-            logger.info(f"Evaluation complete: mean_return={metrics.get('return_mean', 'N/A'):.2f}")
-            return metrics
-
-        # Fall back to _run_evaluation_phase
-        return self._run_evaluation_phase(phase_config)
-
-    def _run_evaluation_phase(self, phase_config: Mapping[str, Any]) -> Dict[str, float]:
-        raise NotImplementedError("Evaluation phase not implemented")
-        context = self.ensure_context()
-        eval_environment = context.eval_environment
-        if eval_environment is None:
-            logger.warning("No evaluation environment available; skipping evaluation phase.")
-            return {}
-
-        eval_config = self._prepare_evaluation_config(phase_config)
-        episodes_target = max(int(eval_config.get("num_episodes", 1) or 1), 1)
-        max_episode_steps = eval_config.get("max_episode_steps")
-        eval_phase_payload = {
-            "type": eval_config.get("type", "eval_only"),
-            "name": eval_config.get("name", "evaluation"),
-            "deterministic": bool(eval_config.get("deterministic", True)),
-            "controller_role": eval_config.get("controller_role"),
-            "num_episodes": episodes_target,
-            "max_episode_steps": max_episode_steps,
+        payload: Dict[str, Any] = {
+            "schema_version": 1,
+            "run_id": self.experiment_dir.name,
+            "status": status,
+            "host": socket.gethostname(),
+            "pid": os.getpid(),
+            "command": " ".join(sys.argv),
+            "experiment_dir": str(self.experiment_dir),
+            "workflow_name": self.workflow.__class__.__name__,
+            "global_step": int(self.global_step),
+            "phase": self._run_status_phase,
+            "action": self._run_status_action,
+            "hook_state": self._run_status_hook_state,
+            "started_at": self._run_started_at,
+            "updated_at": self._utc_now(),
+            "last_metrics": dict(sorted(self._run_status_metrics.items())),
         }
+        if error is not None:
+            payload["error"] = error
 
-        workflow = self.workflow
-        episode_snapshot = workflow._snapshot_episode_tracking()
-        original_state = {
-            "environment": getattr(workflow, "environment", None),
-            "is_vectorized": getattr(workflow, "is_vectorized", False),
-            "num_envs": getattr(workflow, "num_envs", 1),
-            "current_obs": getattr(workflow, "current_obs", None),
-            "current_dones": getattr(workflow, "current_dones", None),
-            "episode_tracking": episode_snapshot,
-        }
-
-        workflow.environment = eval_environment
-        workflow.is_vectorized = bool(getattr(eval_environment, "is_vectorized", False))
-        workflow.num_envs = int(getattr(eval_environment, "num_envs", 1))
-        workflow.current_obs = None
-        workflow.current_dones = None
-        workflow._reset_episode_tracking(
-            workflow.num_envs,
-            clear_history=True,
-            history=episode_snapshot.get("history_len"),
-        )
-
-        start_time = time.time()
-
-        collected_returns: list[float] = []
-        collected_lengths: list[float] = []
-        total_steps = 0
-        total_iterations = 0
-
-        safety_limit = max(episodes_target * 10, 10)
-
+        tmp_path = self._run_status_path.with_suffix(".json.tmp")
         try:
-            while len(collected_returns) < episodes_target and total_iterations < safety_limit:
-                result = workflow.collect_step(self.global_step, phase=eval_phase_payload)
-                total_iterations += 1
-                if result is None:
-                    break
+            tmp_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+            tmp_path.replace(self._run_status_path)
+        except Exception as exc:
+            logger.debug("Failed to write run status: %s", exc)
 
-                steps = int(getattr(result, "steps", 0))
-                total_steps += max(steps, 0)
+    def _checkpoint_target(self, name: str) -> Optional[str]:
+        path = self.checkpoint_manager.checkpoint_dir / name
+        if not path.exists() and not path.is_symlink():
+            return None
+        try:
+            return str(path.resolve())
+        except OSError:
+            return str(path)
 
-                extras = getattr(result, "extras", {}) or {}
-                eval_stats = extras.get("evaluation") or {}
-                collected_returns.extend(eval_stats.get("returns", []))
-                collected_lengths.extend(eval_stats.get("lengths", []))
-
-                if max_episode_steps is not None and total_steps >= max_episode_steps * episodes_target:
-                    break
-
-                if steps <= 0 and not eval_stats:
-                    # Avoid infinite loops if no progress is made.
-                    break
-        finally:
-            workflow.environment = original_state["environment"]
-            workflow.is_vectorized = original_state["is_vectorized"]
-            workflow.num_envs = original_state["num_envs"]
-            workflow.current_obs = original_state["current_obs"]
-            workflow.current_dones = original_state["current_dones"]
-            workflow._restore_episode_tracking(original_state["episode_tracking"])
-
-        duration = time.time() - start_time
-
-        if len(collected_returns) > episodes_target:
-            collected_returns = collected_returns[:episodes_target]
-        if len(collected_lengths) > episodes_target:
-            collected_lengths = collected_lengths[:episodes_target]
-
-        metrics: Dict[str, Any] = {
-            "phase": eval_config.get("name", "evaluation"),
-            "step": float(self.global_step),
-            "episodes": float(len(collected_returns)),
-            "episodes_target": float(episodes_target),
-            "steps": float(total_steps),
-            "duration": float(duration),
+    def _write_run_summary(
+        self,
+        *,
+        status: str,
+        final_metrics: Optional[Mapping[str, Any]] = None,
+        workflow_metrics: Optional[Mapping[str, Any]] = None,
+        final_checkpoint: Optional[Path] = None,
+        error: Optional[str] = None,
+    ) -> None:
+        """Write final run facts for post-run inspection and manifest updates."""
+        payload: Dict[str, Any] = {
+            "schema_version": 1,
+            "run_id": self.experiment_dir.name,
+            "status": status,
+            "workflow_name": self.workflow.__class__.__name__,
+            "experiment_dir": str(self.experiment_dir),
+            "global_step": int(self.global_step),
+            "best_eval_return": (
+                float(self.best_eval_return)
+                if np.isfinite(self.best_eval_return)
+                else None
+            ),
+            "started_at": self._run_started_at,
+            "completed_at": self._utc_now(),
+            "final_metrics": self._normalize_metrics(final_metrics or {}),
+            "workflow_metrics": self._normalize_metrics(workflow_metrics or {}),
+            "checkpoints": {
+                "final": str(final_checkpoint) if final_checkpoint is not None else self._checkpoint_target("final.pt"),
+                "latest": self._checkpoint_target("latest.pt"),
+                "best": self._checkpoint_target("best.pt"),
+            },
         }
+        if error is not None:
+            payload["error"] = error
 
-        if collected_returns:
-            returns_array = np.asarray(collected_returns, dtype=np.float32)
-            metrics.update(
-                {
-                    "return_mean": float(returns_array.mean()),
-                    "return_std": float(returns_array.std()),
-                    "return_max": float(returns_array.max()),
-                    "return_min": float(returns_array.min()),
-                }
+        summary_path = self.experiment_dir / "run_summary.json"
+        tmp_path = summary_path.with_suffix(".json.tmp")
+        try:
+            tmp_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+            tmp_path.replace(summary_path)
+        except Exception as exc:
+            logger.debug("Failed to write run summary: %s", exc)
+
+    def _run_evaluation(self, phase_config: Mapping[str, Any]) -> Dict[str, float]:
+        """Run evaluation through the workflow-owned evaluation interface."""
+        workflow = self.workflow
+
+        if not hasattr(workflow, "evaluate") or not callable(workflow.evaluate):
+            raise NotImplementedError(
+                f"{workflow.__class__.__name__} must implement evaluate() when evaluation is configured."
             )
-        else:
-            metrics.update(
-                {
-                    "return_mean": float("nan"),
-                    "return_std": float("nan"),
-                    "return_max": float("nan"),
-                    "return_min": float("nan"),
-                }
-            )
 
-        if collected_lengths:
-            lengths_array = np.asarray(collected_lengths, dtype=np.float32)
-            metrics["episode_length_mean"] = float(lengths_array.mean())
-        else:
-            metrics["episode_length_mean"] = float("nan")
-
-        normalized = self._normalize_metrics(metrics)
-        normalized.setdefault("phase", str(eval_config.get("name", "evaluation")))
-        normalized.setdefault("step", float(self.global_step))
-        normalized.setdefault("duration", float(duration))
-        return normalized
-
-    def _prepare_evaluation_config(self, phase_config: Mapping[str, Any]) -> Dict[str, Any]:
-        raise NotImplementedError("Evaluation phase not implemented")
-        payload = dict(phase_config or {})
-        nested = payload.pop("evaluation", None)
-        if isinstance(nested, Mapping):
-            payload.update(nested)
-
-        name = str(payload.get("name", payload.get("type", "evaluation")))
         training_cfg = getattr(self.config, "training", None)
-        default_episodes = 1
-        default_max_steps = None
-        default_controller = None
+        total_episodes = 10
+        max_steps = 1000
 
         if training_cfg is not None:
-            default_episodes = int(getattr(training_cfg, "num_eval_episodes", default_episodes) or default_episodes)
-            default_max_steps = getattr(training_cfg, "max_eval_steps", None)
-            default_controller = getattr(training_cfg, "eval_controller_role", None)
+            total_episodes = int(getattr(training_cfg, "num_eval_episodes", total_episodes) or total_episodes)
+            max_steps = int(getattr(training_cfg, "max_eval_steps", max_steps) or max_steps)
 
-        controller_role = payload.get("controller_role", default_controller)
-        manager = self.controller_manager
-        if controller_role is None and manager is not None and "planner" in set(manager.roles()):
-            controller_role = "planner"
+        eval_batches, eval_num_envs, eval_total_episodes = self._resolve_eval_workload(total_episodes)
+        logger.info(
+            "Running evaluation: %s total episodes as %s batch(es) across %s env(s)",
+            eval_total_episodes,
+            eval_batches,
+            eval_num_envs,
+        )
+        metrics = workflow.evaluate(
+            num_eval_batches=eval_batches,
+            max_steps_per_episode=max_steps,
+            deterministic=True,
+        )
+        metrics = dict(metrics or {})
+        metrics.setdefault("episodes", float(eval_total_episodes))
+        metrics.setdefault("eval_episode_batches", float(eval_batches))
+        metrics.setdefault("eval_num_envs", float(eval_num_envs))
+        metrics.setdefault("eval_total_episodes", float(eval_total_episodes))
+        mean_return = metrics.get("return_mean")
+        if isinstance(mean_return, Number):
+            logger.info("Evaluation complete: mean_return=%.2f", float(mean_return))
+        else:
+            logger.info("Evaluation complete")
+        return metrics
 
-        return {
-            "name": name,
-            "type": payload.get("type", "eval_only"),
-            "num_episodes": int(payload.get("num_episodes", default_episodes)),
-            "deterministic": bool(payload.get("deterministic", True)),
-            "controller_role": controller_role,
-            "max_episode_steps": payload.get("max_episode_steps", default_max_steps),
-        }
+    def _resolve_eval_workload(self, total_episodes: int) -> tuple[int, int, int]:
+        """Convert configured total eval episodes into vector-env batches."""
+        total_episodes = int(total_episodes)
+        if total_episodes <= 0:
+            raise ValueError("training.num_eval_episodes must be positive.")
+
+        context = self.ensure_context()
+        eval_environment = context.eval_environment or context.train_environment
+        eval_num_envs = int(getattr(eval_environment, "num_envs", 1) or 1)
+        if eval_num_envs <= 0:
+            raise ValueError("Evaluation environment num_envs must be positive.")
+        if total_episodes % eval_num_envs != 0:
+            raise ValueError(
+                "training.num_eval_episodes must be divisible by the eval environment num_envs "
+                f"({total_episodes} requested total episodes, {eval_num_envs} envs)."
+            )
+        return total_episodes // eval_num_envs, eval_num_envs, total_episodes
 
     def _normalize_metrics(self, metrics: Mapping[str, Any]) -> Dict[str, float]:
         normalized: Dict[str, float] = {}
@@ -611,21 +697,61 @@ class Orchestrator:
                 normalized[key] = float(value.reshape(()).item())
         return normalized
 
-    def _save_checkpoint(self, *, final: bool = False) -> None:
+    def _maybe_save_best_checkpoint(self, metrics: Mapping[str, Any]) -> None:
+        value = metrics.get("return_mean")
+        if value is None:
+            return
+        try:
+            return_mean = float(value)
+        except (TypeError, ValueError):
+            return
+        if not np.isfinite(return_mean):
+            return
+        if return_mean <= self.best_eval_return:
+            return
+
+        self.best_eval_return = return_mean
+        logger.info(
+            "New best eval return %.2f at step %s; saving best checkpoint.",
+            return_mean,
+            self.global_step,
+        )
+        self._save_checkpoint(
+            name=self._next_checkpoint_name(f"best_step_{self.global_step}"),
+            is_best=True,
+        )
+
+    def _next_checkpoint_name(self, base_name: str) -> str:
+        count = self._checkpoint_name_counts.get(base_name, 0)
+        while True:
+            candidate = base_name if count == 0 else f"{base_name}_{count}"
+            path = self.checkpoint_manager.checkpoint_dir / f"{candidate}.pt"
+            if not path.exists() and not path.is_symlink():
+                self._checkpoint_name_counts[base_name] = count + 1
+                return candidate
+            count += 1
+
+    def _save_checkpoint(
+        self,
+        *,
+        final: bool = False,
+        name: Optional[str] = None,
+        is_best: bool = False,
+    ) -> Path:
         """Save checkpoint with loop-based component/optimizer discovery."""
         context = self.ensure_context()
 
         # 1. Collect component states (loop-based discovery)
         components_state = {}
-        for name, component in context.components.components.items():
+        for component_name, component in context.components.components.items():
             if component is not None and isinstance(component, torch.nn.Module):
-                components_state[name] = component.state_dict()
+                components_state[component_name] = component.state_dict()
 
         # 2. Collect optimizer states (loop-based discovery)
         optimizers_state = {}
-        for name, optimizer in (context.optimizers or {}).items():
+        for optimizer_name, optimizer in (context.optimizers or {}).items():
             if optimizer is not None:
-                optimizers_state[name] = optimizer.state_dict()
+                optimizers_state[optimizer_name] = optimizer.state_dict()
 
         # 3. Collect controller states
         controllers_state = {}
@@ -638,7 +764,11 @@ class Orchestrator:
         # 5. Collect workflow custom state
         workflow_custom = self.workflow.get_state()
 
-        # 6. Assemble checkpoint (buffers rely on finalize() for persistence)
+        # 6. Collect buffer state. Exact resume is only honest when replay state
+        # can be restored from the checkpoint, not just from optimizer/model state.
+        buffers_state = self._collect_buffer_states(context.buffers)
+
+        # 7. Assemble checkpoint
         state = {
             "version": 1,
             "global_step": self.global_step,
@@ -648,14 +778,49 @@ class Orchestrator:
             "controllers": controllers_state,
             "optimizers": optimizers_state,
             "workflow_custom": workflow_custom,
+            "buffers": buffers_state,
+            "best_eval_return": self.best_eval_return,
         }
 
         # 8. Delegate I/O to checkpoint manager
-        name = "final" if final else f"step_{self.global_step}"
-        self.checkpoint_manager.save(state, self.global_step, name=name, is_best=final)
+        checkpoint_name = name or ("final" if final else f"step_{self.global_step}")
+        return self.checkpoint_manager.save(state, self.global_step, name=checkpoint_name, is_best=is_best)
 
-    def load_checkpoint(self, path: Path) -> None:
-        """Load checkpoint and restore all state."""
+    def _collect_buffer_states(self, buffers: Mapping[str, Any]) -> Dict[str, Any]:
+        states: Dict[str, Any] = {}
+        for name, buffer in buffers.items():
+            get_state = getattr(buffer, "get_state", None)
+            if callable(get_state):
+                states[name] = get_state()
+        return states
+
+    def _restore_buffer_states(self, buffers: Mapping[str, Any], states: Mapping[str, Any]) -> None:
+        for name, buffer in buffers.items():
+            if name not in states:
+                raise RuntimeError(
+                    f"Exact resume requires checkpoint buffer state for '{name}'. "
+                    "Use warm_start_optimizer for research continuation when replay state is unavailable."
+                )
+            set_state = getattr(buffer, "set_state", None)
+            if not callable(set_state):
+                raise RuntimeError(
+                    f"Exact resume requires buffer '{name}' to implement set_state(). "
+                    "Use warm_start_optimizer for research continuation when replay state is unavailable."
+                )
+            set_state(states[name])
+
+    def load_checkpoint(self, path: Path, *, mode: str = "exact") -> None:
+        """Load checkpoint and restore state according to the requested mode.
+
+        Modes:
+            exact: restore training state for fault-tolerant continuation.
+            warm_start: restore learned weights/controllers, use new schedule and optimizer.
+            warm_start_optimizer: restore learned weights/controllers/optimizers, use new schedule.
+        """
+        valid_modes = {"exact", "warm_start", "warm_start_optimizer"}
+        if mode not in valid_modes:
+            raise ValueError(f"Unknown resume mode '{mode}'. Expected one of {sorted(valid_modes)}.")
+
         # 1. Load raw checkpoint
         ckpt = self.checkpoint_manager.load(path)
         if ckpt is None:
@@ -664,13 +829,28 @@ class Orchestrator:
 
         context = self.ensure_context()
 
-        # 2. Restore global step
-        self.global_step = ckpt.get("global_step", 0)
-        logger.info(f"Restoring checkpoint from step {self.global_step}")
+        exact_resume = mode == "exact"
+        load_optimizer_state = mode in {"exact", "warm_start_optimizer"}
+
+        # 2. Restore or reset global step
+        checkpoint_step = ckpt.get("global_step", 0)
+        if exact_resume:
+            self.global_step = checkpoint_step
+            self.best_eval_return = float(ckpt.get("best_eval_return", float("-inf")))
+        else:
+            self.global_step = 0
+            self.best_eval_return = float("-inf")
+        logger.info(
+            "Restoring checkpoint from step %s with mode '%s' (run step now %s)",
+            checkpoint_step,
+            mode,
+            self.global_step,
+        )
 
         # 3. Restore phase scheduler state
-        phase_state = ckpt.get("phase_state", {})
-        self.scheduler.set_state(phase_state)
+        if exact_resume:
+            phase_state = ckpt.get("phase_state", {})
+            self.scheduler.set_state(phase_state)
 
         # 4. Restore component weights (loop-based)
         components_state = ckpt.get("components", {})
@@ -681,20 +861,21 @@ class Orchestrator:
                 logger.debug(f"Restored component: {name}")
 
         # 5. Restore optimizer states with LR override from config
-        optimizers_state = ckpt.get("optimizers", {})
-        for name, opt_state in optimizers_state.items():
-            optimizer = (context.optimizers or {}).get(name)
-            if optimizer is not None:
-                optimizer.load_state_dict(opt_state)
-                # Override LR from config
-                lr_key = f"{name}_lr"
-                config_lr = getattr(self.config.algorithm, lr_key, None)
-                if config_lr is not None:
-                    for pg in optimizer.param_groups:
-                        pg["lr"] = float(config_lr)
-                    logger.debug(f"Restored optimizer {name} with LR override: {config_lr}")
-                else:
-                    logger.debug(f"Restored optimizer {name} (no LR override)")
+        if load_optimizer_state:
+            optimizers_state = ckpt.get("optimizers", {})
+            for name, opt_state in optimizers_state.items():
+                optimizer = (context.optimizers or {}).get(name)
+                if optimizer is not None:
+                    optimizer.load_state_dict(opt_state)
+                    # Override LR from config
+                    lr_key = f"{name}_lr"
+                    config_lr = getattr(self.config.algorithm, lr_key, None)
+                    if config_lr is not None:
+                        for pg in optimizer.param_groups:
+                            pg["lr"] = float(config_lr)
+                        logger.debug(f"Restored optimizer {name} with LR override: {config_lr}")
+                    else:
+                        logger.debug(f"Restored optimizer {name} (no LR override)")
 
         # 6. Restore controller states
         controllers_state = ckpt.get("controllers", {})
@@ -703,17 +884,24 @@ class Orchestrator:
             logger.debug("Restored controller states")
 
         # 7. Restore workflow custom state
-        workflow_custom = ckpt.get("workflow_custom", {})
-        self.workflow.set_state(workflow_custom)
-        logger.debug("Restored workflow custom state")
+        if exact_resume:
+            workflow_custom = ckpt.get("workflow_custom", {})
+            self.workflow.set_state(workflow_custom)
+            logger.debug("Restored workflow custom state")
 
-        # 8. Update context global_step (buffers rely on finalize() for persistence)
+        # 8. Restore buffers for fault-tolerant continuation.
+        if exact_resume:
+            self._restore_buffer_states(context.buffers, ckpt.get("buffers", {}))
+            logger.debug("Restored buffer states")
+
+        # 9. Update context global_step
         self._update_context(global_step=self.global_step)
 
-        # 9. Restore RNG states
-        self.checkpoint_manager.restore_rng_states(ckpt)
+        # 10. Restore RNG states
+        if exact_resume:
+            self.checkpoint_manager.restore_rng_states(ckpt)
 
-        logger.info(f"Checkpoint restored successfully from step {self.global_step}")
+        logger.info("Checkpoint restored successfully with mode '%s'", mode)
 
     def save_experiment_config(self) -> None:
         config_dir = self.experiment_dir / "configs"

@@ -1,6 +1,6 @@
 defaults:
   - _self_
-  # Experiment must be provided: e.g. experiment=dreamer_cartpole
+  # Experiment must be provided: e.g. +experiment=planet_dmc_cartpole_swingup
 
 hydra:
   run:

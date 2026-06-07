@@ -1,95 +1,106 @@
 # RL Lab
 
-RL Lab is a modular world-models framework for experimenting with interchangeable vision, dynamics, and controller modules on top of an Orchestrator and phase scheduler. The current working baseline is an in-progress reproduction-style implementation inspired by Ha & Schmidhuber 2018: a convolutional VAE for visual representation learning, an MDN-RNN for latent dynamics, and scaffolding for a future CMA-ES controller.
+RL Lab is an executable chronology of world-model papers under a low-compute
+constraint. The repo implements small, honest versions of important world-model
+ideas, runs them on a shared evaluation ladder, and records what improved over
+time.
 
-## Status
+## Current Chapter
 
-| Area | Status | Notes |
-| --- | --- | --- |
-| VAE vision module | ✅ Implemented | Convolutional encoder/decoder with reconstruction and KL losses. |
-| MDN-RNN dynamics module | ✅ Implemented | LSTM dynamics with mixture latent prediction, reward loss, and done loss. |
-| Gaussian GRU dynamics module | ✅ Implemented | Simpler single-Gaussian recurrent baseline swappable through Hydra. |
-| PlaNet tiny recipe | ✅ Implemented | State-based CartPole RSSM + reward/continue heads + CEM-compatible imagination smoke. |
-| Rollout collection | ✅ Implemented | Random-policy CarRacing rollouts feed the replay/disk buffer. |
-| Training loops | ✅ Implemented | Hydra config drives phase-based VAE and MDN-RNN updates. |
-| CMA-ES controller | 🟡 Partial / scaffold | Interface exists, optimizer is intentionally not implemented yet. |
-| Dream rollouts | 🔴 Not implemented | `imagine()` remains a documented `NotImplementedError`. |
-| Controller update step | 🔴 Not implemented | `update_controller()` remains a documented `NotImplementedError`. |
-| Known failure modes | ⚠️ Known | VAE pretraining collapse on extended training is tracked in `NOTES.md`. |
+The current completed chapter is PlaNet-style RSSM + CEM on state-observation
+DMC cartpole_swingup.
 
-## Architecture
+Latest completed chapter result:
 
-1. `scripts/train.py` loads Hydra config and instantiates environments, buffers, components, controllers, and optimizers.
-2. `Orchestrator` owns the training lifecycle: context creation, loop execution, checkpointing, logging, and cleanup.
-3. `PhaseScheduler` decides which workflow hook runs next: collect, update world model, update controller, or evaluate.
-4. `OriginalWorldModelsWorkflow` contains algorithm logic for collection, VAE updates, and MDN-RNN updates.
-5. Components stay swappable through config: VAE, dynamics model, controller, buffer, and environment are all separate modules.
+- run id: `planet_dmc_swingup_paper_authentic_20260602_123034`
+- eval mean: `637.53`
+- eval max: `820.11`
+- modality: state, not pixels
+- manifest: `reports/world_model_runs.csv`
 
-## Setup
+This is not a full pixel PlaNet reproduction. It is the first serious Layer 2
+state world-model anchor for this repo.
 
-Use the existing conda environment:
+## How The System Works
 
-```bash
-conda activate rl-lab
-```
+- `scripts/train.py` wires Hydra configs, environments, buffers, components,
+  controllers, optimizers, and the workflow.
+- `src/orchestration/orchestrator.py` owns the loop, logging, checkpointing,
+  resume modes, and buffer routing.
+- `src/orchestration/phase_scheduler.py` chooses collect, update, and eval
+  actions from the YAML phase schedule.
+- `src/workflows/*.py` contain algorithm logic.
+- `src/components/` contains duck-typed model pieces.
 
-If CarRacing is missing Box2D in that environment, install it with:
+Infrastructure stays outside algorithms. Workflows should not own checkpointing
+or logging setup. The orchestrator should not contain algorithm-specific loss or
+planning logic.
 
-```bash
-conda install -n rl-lab -c conda-forge box2d-py swig
-```
+## Agent Start Here
 
-## Runnable Commands
+1. Read `docs/roadmap/world_model_chronology.md`.
+2. Read `docs/roadmap/eval_ladder.md`.
+3. Read `docs/roadmap/run_manifest.md`.
+4. Read `docs/repo_map.md`.
+5. Read `docs/repo_inventory.md`.
+6. Read `docs/research_lifecycle.md`.
+7. Read `docs/agent_team_operating_model.md`.
+8. Read `docs/contracts/workflow_data_contract.md`.
+9. Read `docs/contracts/run_artifacts.md`.
+10. Inspect the closest existing workflow, config, and test before changing code.
 
-```bash
-pytest -q
-```
+## Running Locally
 
-```bash
-python scripts/train.py +experiment=og_wm_carracing budget=tiny
-```
-
-The tiny budget keeps the CarRacing framing but runs only enough rollout and update steps to produce smoke-test artifacts: `metrics.csv`, `loss_curves.png`, and `reconstruction_grid.png` in the Hydra experiment output directory.
-
-Validate an experiment config without running training:
-
-```bash
-python scripts/validate_experiment.py og_wm_carracing --budget tiny
-```
-
-Swap in the simpler Gaussian GRU dynamics baseline:
+Use local runs for smoke tests and config checks.
 
 ```bash
-python scripts/train.py +experiment=og_wm_carracing budget=tiny components/dynamics_model=gaussian_gru
+python -m pytest -q
 ```
 
-Run the tiny PlaNet-style recipe on CartPole state observations:
+```bash
+python scripts/validate_experiment.py planet_cartpole --budget planet_tiny
+```
 
 ```bash
 python scripts/train.py +experiment=planet_cartpole budget=planet_tiny
 ```
 
-Run a small Mac-safe PlaNet CartPole solve attempt with TensorBoard metrics:
+## Running On WSL GPU
+
+Use the WSL GPU machine for serious training. The Mac repo remains the source of
+truth; send patches to the GPU, run there, and pull artifacts back.
 
 ```bash
-python scripts/train.py +experiment=planet_cartpole budget=planet_solve
+scripts/GPU/gpu_status.sh
 ```
-
-View TensorBoard logs:
 
 ```bash
-tensorboard --logdir experiments
+scripts/GPU/gpu_sync_patch.sh
 ```
 
-## Agentic Extension
+```bash
+scripts/GPU/gpu_pull_latest.sh --run experiments/<run_name> --analyze
+```
 
-Agent-facing contracts and task templates live under `docs/`:
+After a serious remote run, update `reports/world_model_runs.csv` from the run
+artifacts instead of from memory.
 
-- `docs/agentic_workflow.md` defines the extension loop and anti-bloat rules.
-- `docs/contracts/component_interfaces.md` documents component shape and method contracts.
-- `docs/contracts/workflow_data_contract.md` documents workflow, phase, and trajectory boundaries.
-- `docs/agent_tasks/` contains bounded task templates for adding model components.
+## Diagnostics
 
-## What This Is And Isn't
+Model-specific diagnostics live under `scripts/research/diagnostics/`. The
+current PlaNet diagnostic entrypoint is:
 
-This is an honest, in-progress ML systems repo showing a modular world-models training stack and a runnable Original World Models baseline. It is not a finished agent, does not yet train a controller, and does not yet perform dream rollouts for policy optimization. The goal of the current state is reproducibility, inspectable artifacts, and a clear foundation for extending the framework.
+```bash
+python scripts/research/diagnostics/diagnose_planet_checkpoint.py --help
+```
+
+Diagnostics should write artifacts or TensorBoard scalars when they support a
+chapter claim.
+
+## What Not To Do
+
+- Do not add broad abstractions before one concrete run needs them.
+- Do not implement many papers in parallel.
+- Do not make narrative claims before the manifest row exists.
+- Do not treat `latest.pt` or `best.pt` as immutable checkpoint files; they are
+  pointers.

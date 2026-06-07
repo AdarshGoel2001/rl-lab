@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.orchestration import Orchestrator
 from src.utils.config import resolve_device
-from src.workflows import DreamerWorkflow
+from src.workflows import WorldModelWorkflow
 from src.workflows.utils.context import ControllerManager, WorldModelComponents
 
 logger = logging.getLogger(__name__)
@@ -50,6 +50,30 @@ def set_seeds(seed: int | None) -> None:
 
 def config_to_dict(cfg: DictConfig) -> Dict[str, Any]:
     return OmegaConf.to_container(cfg, resolve=True)  # type: ignore[return-value]
+
+
+def load_resume_checkpoint(orchestrator: Orchestrator, cfg: DictConfig) -> None:
+    """Load a configured checkpoint or fail before accidentally starting fresh."""
+    resume_path = cfg.training.get("resume_path", None)
+    if not resume_path:
+        return
+
+    resume_mode = str(cfg.training.get("resume_mode", "exact"))
+    resume_path = Path(resume_path)
+    if resume_path.exists():
+        logger.info("Resuming from checkpoint: %s (mode=%s)", resume_path, resume_mode)
+        orchestrator.load_checkpoint(resume_path, mode=resume_mode)
+        return
+
+    if bool(cfg.training.get("allow_missing_resume", False)):
+        logger.warning("Resume path not found, starting fresh because allow_missing_resume=true: %s", resume_path)
+        return
+
+    raise FileNotFoundError(
+        f"training.resume_path does not exist: {resume_path}. "
+        "Refusing to start a fresh run from an intended resume path. "
+        "Set training.allow_missing_resume=true only for an intentional fallback."
+    )
 
 
 
@@ -83,7 +107,7 @@ def build_optimizers(
     components: WorldModelComponents,
     controllers: Dict[str, Any],
 ) -> Dict[str, torch.optim.Optimizer]:
-    """Build optimizers based on config, falling back to legacy defaults."""
+    """Build optimizers from config, with a simple world-model default."""
     optimizers: Dict[str, torch.optim.Optimizer] = {}
     optimizer_cfg = getattr(cfg, "optimizers", None)
 
@@ -156,7 +180,7 @@ def main(cfg: DictConfig) -> None:
 
     set_seeds(cfg.experiment.get("seed", None))
 
-    workflow: DreamerWorkflow = instantiate(cfg.workflow)
+    workflow: WorldModelWorkflow = instantiate(cfg.workflow)
     components = build_world_model_components(cfg, device)
     controllers, controller_manager = build_controllers(cfg, device)
     optimizers = build_optimizers(cfg, components, controllers)
@@ -194,15 +218,7 @@ def main(cfg: DictConfig) -> None:
         eval_environment=eval_environment,
     )
 
-    # Handle checkpoint resume if specified
-    resume_path = cfg.training.get("resume_path", None)
-    if resume_path:
-        resume_path = Path(resume_path)
-        if resume_path.exists():
-            logger.info(f"Resuming from checkpoint: {resume_path}")
-            orchestrator.load_checkpoint(resume_path)
-        else:
-            logger.warning(f"Resume path not found, starting fresh: {resume_path}")
+    load_resume_checkpoint(orchestrator, cfg)
 
     logger.info("Starting training loop...")
     results = orchestrator.train()

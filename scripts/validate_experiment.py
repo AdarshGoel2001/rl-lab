@@ -113,8 +113,8 @@ def validate_experiment_config(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("experiment", help="Hydra experiment name, e.g. og_wm_carracing")
-    parser.add_argument("--budget", default=None, help="Optional budget group, e.g. tiny")
+    parser.add_argument("experiment", help="Hydra experiment name, e.g. planet_cartpole")
+    parser.add_argument("--budget", default=None, help="Optional budget group, e.g. planet_tiny")
     args, overrides = parser.parse_known_args(argv)
     if overrides and overrides[0] == "--":
         overrides = overrides[1:]

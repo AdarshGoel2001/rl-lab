@@ -1,0 +1,11 @@
+# DeepMind Control Suite: Cartpole Swingup, synchronous vectorized state observations.
+# obs_dim: 5, action_dim: 1
+
+_target_: src.environments.dmc_vectorized_wrapper.DMCVectorizedWrapper
+name: cartpole_swingup
+from_pixels: false
+frame_skip: 8
+normalize_obs: false
+normalize_reward: false
+max_episode_steps: 125
+num_envs: 4

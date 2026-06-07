@@ -1,8 +1,7 @@
-"""Placeholder ConvVAE representation learner for the OG World Models pipeline.
+"""Support ConvVAE representation learner for future pixel-world chapters.
 
-This file is deliberately unfinished—fill in the TODOs to implement the full
-encoder/decoder pair, latent sampling, and training losses described in the
-paper once you're ready. Treat every TODO like a homework checkbox.
+This module has smoke coverage, but it is not part of the active PlaNet chapter.
+Revalidate its contract before using it in a new workflow.
 """
 
 from __future__ import annotations
@@ -15,7 +14,7 @@ from torch.distributions import Independent, Normal
 
 
 class ConvVAERepresentationLearner(nn.Module):
-    """Scaffold for the V module (conv encoder + decoder + latent sampler)."""
+    """Convolutional VAE encoder/decoder with a Gaussian latent."""
 
     def __init__(self, config: Optional[Dict[str, Any]] = None, **kwargs: Any) -> None:
         super().__init__()
