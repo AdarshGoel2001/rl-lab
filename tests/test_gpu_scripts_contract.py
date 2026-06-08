@@ -84,6 +84,8 @@ def test_gpu_scripts_keep_remote_loop_simple():
     assert "gpu_run_snapshot_remote.py" in snapshot
     assert "gpu_common.sh" in snapshot
     assert "gpu_ssh" in snapshot
+    assert "base64" in snapshot
+    assert "dd if=" in snapshot
     assert "run_status.json" in snapshot_remote
     assert "train.log" in snapshot_remote
     assert "Evaluation complete" in snapshot_remote
