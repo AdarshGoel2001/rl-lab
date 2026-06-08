@@ -117,6 +117,7 @@ def test_research_lifecycle_documents_paper_to_narrative_path():
         "research_notes/rough_notes/<chapter>_brief.md",
         "scripts/GPU/gpu_sync_patch.sh",
         "scripts/GPU/gpu_run_snapshot.sh",
+        "scripts/GPU/gpu_tail.sh 120",
         "scripts/GPU/gpu_pull_latest.sh",
         "Heavy checkpoints stay on the GPU",
         "reports/world_model_runs.csv",
@@ -124,6 +125,7 @@ def test_research_lifecycle_documents_paper_to_narrative_path():
         "Review checklist",
     ]:
         assert phrase in text
+    assert "scripts/GPU/gpu_tail.sh <session>" not in text
 
 
 def test_handoff_template_contains_required_agent_state():

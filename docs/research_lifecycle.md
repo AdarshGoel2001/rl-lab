@@ -98,7 +98,7 @@ During the run, poll cheap status first:
 ```bash
 scripts/GPU/gpu_status.sh
 scripts/GPU/gpu_run_snapshot.sh --run experiments/<run_name>
-scripts/GPU/gpu_tail.sh <session>
+scripts/GPU/gpu_tail.sh 120
 scripts/GPU/gpu_metrics.sh --run experiments/<run_name>
 ```
 
