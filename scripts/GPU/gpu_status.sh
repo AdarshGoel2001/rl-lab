@@ -9,15 +9,17 @@ REMOTE_REPO_Q="$(gpu_quote "$GPU_REMOTE_REPO")"
 NVIDIA_SMI_Q="$(gpu_quote "$NVIDIA_SMI")"
 
 gpu_ssh "
-  set -e
+  set +e
   cd $REMOTE_REPO_Q
   printf '== host ==\n'
   hostname
   whoami
-  printf '\n== git ==\n'
-  git status --short --branch
   printf '\n== gpu ==\n'
-  $NVIDIA_SMI_Q || true
+  if [ -x $NVIDIA_SMI_Q ]; then
+    $NVIDIA_SMI_Q
+  else
+    echo 'nvidia-smi not found at $NVIDIA_SMI'
+  fi
   printf '\n== tmux ==\n'
   tmux ls 2>/dev/null || true
   printf '\n== latest experiments ==\n'
@@ -28,5 +30,11 @@ gpu_ssh "
     python -m json.tool \"\$latest/run_status.json\" 2>/dev/null || cat \"\$latest/run_status.json\"
   else
     echo 'no run_status.json found'
+  fi
+  printf '\n== git ==\n'
+  if [ \"\${RL_LAB_GPU_STATUS_GIT:-0}\" = \"1\" ]; then
+    git status --short --branch || echo 'git status failed'
+  else
+    echo 'skipped; set RL_LAB_GPU_STATUS_GIT=1 to run git status on WSL'
   fi
 "

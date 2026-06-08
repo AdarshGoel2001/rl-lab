@@ -2,11 +2,15 @@ import csv
 import json
 
 import numpy as np
+import pytest
+import torch
 from tensorboard.backend.event_processing import event_accumulator
 
 from scripts.research.diagnostics.diagnose_planet_checkpoint import (
     compute_horizon_return_metrics,
     compute_regression_metrics,
+    diagnostic_orchestrator_dir,
+    validate_planet_checkpoint_schema,
     write_diagnostic_outputs,
 )
 
@@ -133,3 +137,37 @@ def test_write_diagnostic_outputs_logs_scalars_to_tensorboard(tmp_path):
     assert horizon_event.step == 2
     assert horizon_event.value == 1.5
     assert outputs["tensorboard_logdir"] == tb_dir
+
+
+def test_validate_planet_checkpoint_schema_rejects_missing_component_weights(tmp_path):
+    checkpoint = tmp_path / "bad.pt"
+    torch.save({"global_step": 10, "components": {"reward_predictor": {}}}, checkpoint)
+
+    with pytest.raises(ValueError, match="missing required component weights"):
+        validate_planet_checkpoint_schema(checkpoint)
+
+
+def test_validate_planet_checkpoint_schema_accepts_required_component_weights(tmp_path):
+    checkpoint = tmp_path / "good.pt"
+    torch.save(
+        {
+            "global_step": 10,
+            "components": {
+                "representation_learner": {"weight": torch.zeros(1)},
+                "reward_predictor": {"weight": torch.zeros(1)},
+            },
+        },
+        checkpoint,
+    )
+
+    metadata = validate_planet_checkpoint_schema(checkpoint)
+
+    assert metadata["global_step"] == 10
+    assert metadata["component_names"] == ["representation_learner", "reward_predictor"]
+
+
+def test_diagnostic_orchestrator_dir_lives_under_diagnostic_output(tmp_path):
+    checkpoint = tmp_path / "run" / "checkpoints" / "best.pt"
+    out_dir = tmp_path / "run" / "diagnostics" / "planet_reward_open_loop"
+
+    assert diagnostic_orchestrator_dir(checkpoint=checkpoint, out_dir=out_dir) == out_dir / "_orchestrator"

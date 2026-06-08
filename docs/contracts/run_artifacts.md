@@ -55,12 +55,18 @@ should be recorded as a failure note.
 After a serious run, local repo state should include:
 
 - a row in `reports/world_model_runs.csv`;
+- pulled config, logs, TensorBoard events, summaries, and diagnostics when available;
+- checkpoint metadata such as remote path, size, hash, and pointer target;
 - a rough note when training exposed infrastructure or research lessons;
 - diagnostic output when the run informs a chapter claim;
 - a narrative update only after the manifest row exists.
 
 The run folder is raw evidence. `run_summary.json` is the compressed factual
 view. `reports/world_model_runs.csv` is the chronology table across runs.
+Local evidence does not need to include heavyweight checkpoint `.pt` files by
+default. Keep checkpoint payloads on the GPU during active work, run
+checkpoint-heavy diagnostics where the checkpoint lives, and pull back the small
+diagnostic outputs.
 
 ## Commit Policy
 
@@ -154,15 +160,19 @@ Launch remote runs with explicit session names and Hydra overrides:
 scripts/GPU/gpu_run.sh --session <name> --experiment <experiment> --budget <budget> -- <override...>
 ```
 
-Pull named run artifacts, then export TensorBoard scalars locally when needed:
+Pull named run evidence, then export TensorBoard scalars locally when needed:
 
 ```bash
 scripts/GPU/gpu_pull_latest.sh --run experiments/<run_name> --analyze
 ```
 
-Use `--checkpoint` when a local agent needs to inspect `latest.pt`, `best.pt`,
-`step_*.pt`, or `best_step_*.pt` directly. `--analyze` implies
-`--checkpoint`.
+By default this is logs-first: configs, summaries, diagnostics, TensorBoard
+event files, and `checkpoint_manifest.json`. The manifest records checkpoint
+remote paths, sizes, and hashes without copying heavyweight `.pt` payloads.
+
+Use `--checkpoint` only when a local agent explicitly needs to inspect
+`latest.pt`, `best.pt`, `step_*.pt`, or `best_step_*.pt` directly. `--analyze`
+does not imply `--checkpoint`.
 
 Only pull code from WSL when those remote edits are intentional:
 

@@ -37,6 +37,7 @@ from src.utils.config import resolve_device  # noqa: E402
 
 MetricDict = Dict[str, float]
 CsvRow = Dict[str, Any]
+PLANET_REQUIRED_CHECKPOINT_COMPONENTS = ("representation_learner", "reward_predictor")
 
 
 def compute_regression_metrics(predicted: np.ndarray, actual: np.ndarray, *, prefix: str) -> MetricDict:
@@ -185,7 +186,9 @@ def diagnose_planet_checkpoint(
     checkpoint_path = Path(checkpoint).expanduser()
     if not checkpoint_path.exists():
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+    checkpoint_metadata = validate_planet_checkpoint_schema(checkpoint_path)
     checkpoint_global_step = read_checkpoint_global_step(checkpoint_path)
+    output_dir = Path(out_dir) if out_dir is not None else checkpoint_path.parent.parent / "diagnostics"
 
     cfg = compose_experiment_config(
         experiment=experiment,
@@ -195,7 +198,11 @@ def diagnose_planet_checkpoint(
         seed=seed,
         overrides=overrides or (),
     )
-    orchestrator = build_initialized_orchestrator(cfg, checkpoint_path)
+    orchestrator = build_initialized_orchestrator(
+        cfg,
+        checkpoint_path,
+        experiment_dir=diagnostic_orchestrator_dir(checkpoint=checkpoint_path, out_dir=output_dir),
+    )
     workflow = orchestrator.workflow
 
     trajectory = collect_diagnostic_trajectory(
@@ -221,11 +228,11 @@ def diagnose_planet_checkpoint(
         "num_envs": int(trajectory["observations"].shape[1]),
         "open_loop_horizon": int(open_loop_horizon),
         "checkpoint_global_step": float(checkpoint_global_step),
+        "checkpoint_metadata": checkpoint_metadata,
     }
     summary.update(reward_metrics)
     summary.update(horizon_metrics)
 
-    output_dir = Path(out_dir) if out_dir is not None else checkpoint_path.parent.parent / "diagnostics"
     tb_logdir = None
     if tensorboard:
         tb_logdir = (
@@ -291,7 +298,62 @@ def read_checkpoint_global_step(checkpoint_path: Path) -> int:
         return 0
 
 
-def build_initialized_orchestrator(cfg: DictConfig, checkpoint_path: Path) -> Orchestrator:
+def validate_planet_checkpoint_schema(
+    checkpoint_path: str | Path,
+    *,
+    required_components: Sequence[str] = PLANET_REQUIRED_CHECKPOINT_COMPONENTS,
+) -> Dict[str, Any]:
+    """Fail before diagnostics if the checkpoint cannot contain learned PlaNet weights."""
+    path = Path(checkpoint_path).expanduser()
+    try:
+        try:
+            checkpoint = torch.load(path, map_location="cpu", weights_only=False)
+        except TypeError:
+            checkpoint = torch.load(path, map_location="cpu")
+    except Exception as exc:
+        raise ValueError(f"Could not read checkpoint for diagnostics: {path}") from exc
+
+    components = checkpoint.get("components") if isinstance(checkpoint, Mapping) else None
+    if not isinstance(components, Mapping):
+        raise ValueError(f"Checkpoint {path} is missing required component weights: components")
+
+    component_names = sorted(str(name) for name in components.keys())
+    missing = [name for name in required_components if name not in components]
+    if missing:
+        raise ValueError(
+            f"Checkpoint {path} is missing required component weights: {', '.join(missing)}. "
+            f"Found: {', '.join(component_names) if component_names else 'none'}."
+        )
+
+    empty = [
+        name
+        for name in required_components
+        if isinstance(components.get(name), Mapping) and len(components.get(name, {})) == 0
+    ]
+    if empty:
+        raise ValueError(
+            f"Checkpoint {path} has empty required component weights: {', '.join(empty)}."
+        )
+
+    return {
+        "global_step": int(checkpoint.get("global_step", 0)),
+        "component_names": component_names,
+        "required_component_names": list(required_components),
+    }
+
+
+def diagnostic_orchestrator_dir(*, checkpoint: str | Path, out_dir: str | Path) -> Path:
+    """Put diagnostic orchestrator side effects under diagnostics, not experiments/."""
+    _ = Path(checkpoint)
+    return Path(out_dir) / "_orchestrator"
+
+
+def build_initialized_orchestrator(
+    cfg: DictConfig,
+    checkpoint_path: Path,
+    *,
+    experiment_dir: str | Path | None = None,
+) -> Orchestrator:
     device = resolve_device(cfg.experiment.device)
     set_seeds(cfg.experiment.get("seed", None))
 
@@ -316,6 +378,7 @@ def build_initialized_orchestrator(cfg: DictConfig, checkpoint_path: Path) -> Or
     orchestrator = Orchestrator(
         cfg,
         workflow,
+        experiment_dir=Path(experiment_dir) if experiment_dir is not None else None,
         components=components,
         optimizers=optimizers,
         controllers=controllers,

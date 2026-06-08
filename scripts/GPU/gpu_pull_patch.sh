@@ -92,9 +92,9 @@ remote_result="$(
   git diff --binary HEAD -- $REMOTE_PATHSPECS > $REMOTE_PATCH_Q
   while IFS= read -r -d '' path; do
     git diff --binary --no-index -- /dev/null \"\$path\" >> $REMOTE_PATCH_Q || {
-      status=\$?
-      if [ \"\$status\" -ne 1 ]; then
-        exit \"\$status\"
+      diff_status=\$?
+      if [ \"\$diff_status\" -ne 1 ]; then
+        exit \"\$diff_status\"
       fi
     }
   done < <(git ls-files --others --exclude-standard -z -- $REMOTE_PATHSPECS)

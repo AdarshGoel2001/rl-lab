@@ -78,7 +78,7 @@ python scripts/train.py +experiment=<experiment> budget=planet_tiny
 ```
 
 For serious GPU runs, keep the Mac repo as the source of truth. Send code by
-patch, run on WSL, then pull artifacts back.
+patch, run on WSL, then pull lightweight evidence back.
 
 ```bash
 scripts/GPU/gpu_status.sh
@@ -100,6 +100,8 @@ Required habits:
 - preserve `.hydra/config.yaml` and `.hydra/overrides.yaml`;
 - keep TensorBoard event files under `runs/`;
 - make `latest.pt` and `best.pt` point to immutable checkpoint targets;
+- pull logs, configs, TensorBoard events, diagnostics, and checkpoint metadata
+  by default, not heavyweight checkpoint `.pt` files;
 - record dirty/WIP patches under `pre_run/`;
 - update `reports/world_model_runs.csv` before writing narrative claims;
 - run model-specific diagnostics when a result will support a chapter claim.

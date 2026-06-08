@@ -86,9 +86,9 @@ git diff --binary HEAD -- "${PATHSPECS[@]}" > "$tmp_patch"
 while IFS= read -r -d '' path; do
   # git diff --no-index exits 1 when it successfully finds differences.
   git diff --binary --no-index -- /dev/null "$path" >> "$tmp_patch" || {
-    status=$?
-    if [ "$status" -ne 1 ]; then
-      exit "$status"
+    diff_status=$?
+    if [ "$diff_status" -ne 1 ]; then
+      exit "$diff_status"
     fi
   }
 done < <(git ls-files --others --exclude-standard -z -- "${PATHSPECS[@]}")
@@ -120,10 +120,10 @@ gpu_ssh "
     git reset --hard
     git clean -fd -- . ':(exclude)experiments' ':(exclude)runs' ':(exclude)datasets'
   else
-    status=\$(git status --porcelain -- . ':(exclude)experiments' ':(exclude)runs' ':(exclude)datasets')
-    if [ -n \"\$status\" ]; then
+    repo_status=\$(git status --porcelain -- . ':(exclude)experiments' ':(exclude)runs' ':(exclude)datasets')
+    if [ -n \"\$repo_status\" ]; then
       echo 'remote repo has source/config/test/doc changes; rerun with --reset-remote if Mac is source of truth' >&2
-      echo \"\$status\" >&2
+      echo \"\$repo_status\" >&2
       exit 1
     fi
   fi

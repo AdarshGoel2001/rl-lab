@@ -20,6 +20,7 @@ remote_artifacts/wsl/<experiment-name>/.
 Default files:
   train.log
   logs/bash_output.log
+  TensorBoard event files under runs/
   run_status.json
   run_summary.json
   .hydra/config.yaml
@@ -28,13 +29,14 @@ Default files:
   pre_run/
   diagnostics/
   checkpoints/final.json
+  checkpoint_manifest.json with remote checkpoint paths, sizes, and hashes
   metrics.csv
   loss_curves.png
   reconstruction_grid.png
 
 Options:
   --run PATH     Pull this remote experiment path instead of the latest one.
-  --checkpoint  Also copy checkpoint .pt/.json files and TensorBoard event files.
+  --checkpoint  Also copy heavyweight checkpoint .pt/.json files.
   --analyze     After pull, export TensorBoard scalar summaries and plots locally.
 
 Environment:
@@ -56,7 +58,6 @@ while [ "$#" -gt 0 ]; do
       ;;
     --analyze)
       ANALYZE=1
-      INCLUDE_CHECKPOINT=1
       shift
       ;;
     -h|--help)
@@ -128,6 +129,9 @@ include_args=(
   --include='/pre_run/***'
   --include='/diagnostics/'
   --include='/diagnostics/***'
+  --include='/runs/'
+  --include='/runs/**/'
+  --include='/runs/**/events.out.tfevents*'
   --include='/logs/'
   --include='/logs/bash_output.log'
   --include='/checkpoints/'
@@ -145,11 +149,6 @@ if [ "$INCLUDE_CHECKPOINT" = "1" ]; then
   include_args+=(--include='/checkpoints/best_step_*.pt')
   include_args+=(--include='/checkpoints/best_step_*.json')
   include_args+=(--include='/checkpoints/final.json')
-  include_args+=(--include='/tensorboard/')
-  include_args+=(--include='/tensorboard/***')
-  include_args+=(--include='/runs/')
-  include_args+=(--include='/runs/**/')
-  include_args+=(--include='/runs/**/events.out.tfevents*')
 fi
 
 include_args+=(--exclude='*')
@@ -159,14 +158,63 @@ rsync -az --prune-empty-dirs -e "$RSYNC_SSH" \
   "$GPU_SSH_HOST:$remote_source/" \
   "$dest/"
 
-if [ "$INCLUDE_CHECKPOINT" = "1" ]; then
-  mkdir -p "$dest/runs"
-  rsync -az --prune-empty-dirs -e "$RSYNC_SSH" \
-    --include='*/' \
-    --include='events.out.tfevents*' \
-    --exclude='*' \
-    "$GPU_SSH_HOST:$GPU_REMOTE_REPO/runs/$experiment_name/" \
-    "$dest/runs/" 2>/dev/null || true
+mkdir -p "$dest/runs"
+rsync -az --prune-empty-dirs -e "$RSYNC_SSH" \
+  --include='*/' \
+  --include='events.out.tfevents*' \
+  --exclude='*' \
+  "$GPU_SSH_HOST:$GPU_REMOTE_REPO/runs/$experiment_name/" \
+  "$dest/runs/" 2>/dev/null || true
+
+REMOTE_SOURCE_Q="$(gpu_quote "$remote_source")"
+if gpu_ssh "REMOTE_SOURCE=$REMOTE_SOURCE_Q python3 -" > "$dest/checkpoint_manifest.json.tmp" <<'PY'
+import hashlib
+import json
+import os
+from pathlib import Path
+
+root = Path(os.environ["REMOTE_SOURCE"])
+checkpoint_dir = root / "checkpoints"
+entries = []
+
+if checkpoint_dir.exists():
+    for path in sorted(checkpoint_dir.rglob("*")):
+        if not (path.is_file() or path.is_symlink()):
+            continue
+        relpath = str(path.relative_to(root))
+        item = {
+            "path": relpath,
+            "kind": "symlink" if path.is_symlink() else "file",
+        }
+        try:
+            stat_result = path.stat()
+            item["size_bytes"] = stat_result.st_size
+            if path.is_symlink():
+                item["link_target"] = os.readlink(path)
+            if path.is_file():
+                digest = hashlib.sha256()
+                with path.open("rb") as fh:
+                    for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                        digest.update(chunk)
+                item["sha256"] = digest.hexdigest()
+        except Exception as exc:
+            item["error"] = str(exc)
+        entries.append(item)
+
+print(json.dumps({
+    "schema_version": 1,
+    "remote_run": str(root),
+    "checkpoint_dir": str(checkpoint_dir),
+    "entries": entries,
+}, indent=2, sort_keys=True))
+PY
+then
+  mv "$dest/checkpoint_manifest.json.tmp" "$dest/checkpoint_manifest.json"
+else
+  rm -f "$dest/checkpoint_manifest.json.tmp"
+  printf '{"schema_version":1,"remote_run":%s,"entries":[],"error":"checkpoint manifest collection failed"}\n' \
+    "$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$remote_source")" \
+    > "$dest/checkpoint_manifest.json"
 fi
 
 if [ "$ANALYZE" = "1" ]; then

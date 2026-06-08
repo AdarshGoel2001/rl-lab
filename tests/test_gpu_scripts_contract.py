@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -45,6 +46,8 @@ def test_gpu_scripts_keep_remote_loop_simple():
     assert "/usr/lib/wsl/lib/nvidia-smi" in status
     assert "tmux ls" in status
     assert "run_status.json" in status
+    assert "RL_LAB_GPU_STATUS_GIT" in status
+    assert status.index("== gpu ==") < status.index("== git ==")
 
     assert "tmux new-session" in run
     assert "gpu_common.sh" in run
@@ -86,6 +89,7 @@ def test_gpu_scripts_keep_remote_loop_simple():
     assert "git apply --check" in sync
     assert "--reset-remote" in sync
     assert "git reset --hard" in sync
+    assert not re.search(r"(^|[^A-Za-z0-9_])status=", sync)
 
     assert "rsync" in pull
     assert "--run" in pull
@@ -103,11 +107,16 @@ def test_gpu_scripts_keep_remote_loop_simple():
     assert "/pre_run/" in pull
     assert "/diagnostics/" in pull
     assert "checkpoints/final.json" in pull
+    assert "checkpoint_manifest.json" in pull
     assert "/checkpoints/latest.pt" in pull
     assert "/checkpoints/best.pt" in pull
     assert "/checkpoints/best_step_*.pt" in pull
     assert "/checkpoints/step_*.pt" in pull
     assert "--checkpoint" in pull
+    assert "--analyze" in pull
+    analyze_case = re.search(r"--analyze\)(.*?)shift", pull, re.S)
+    assert analyze_case is not None
+    assert "INCLUDE_CHECKPOINT=1" not in analyze_case.group(1)
     assert "/runs/" in pull
     assert "/runs/**/events.out.tfevents*" in pull
 
@@ -118,3 +127,4 @@ def test_gpu_scripts_keep_remote_loop_simple():
     assert "remote_code_patches" in pull_patch
     assert "--paths" in pull_patch
     assert "--exclude" in pull_patch
+    assert not re.search(r"(^|[^A-Za-z0-9_])status=", pull_patch)
