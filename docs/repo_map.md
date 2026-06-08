@@ -63,6 +63,7 @@ Remote GPU tools:
 scripts/GPU/gpu_status.sh
 scripts/GPU/gpu_sync_patch.sh
 scripts/GPU/gpu_run.sh
+scripts/GPU/gpu_run_snapshot.sh
 scripts/GPU/gpu_pull_latest.sh
 scripts/GPU/gpu_pull_patch.sh
 scripts/GPU/gpu_tail.sh

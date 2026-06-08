@@ -19,7 +19,10 @@ def test_readme_points_agents_to_current_research_loop():
         "docs/roadmap/world_model_chronology.md",
         "docs/contracts/run_artifacts.md",
         "scripts/GPU/gpu_status.sh",
+        "scripts/GPU/gpu_run_snapshot.sh --run experiments/<run_name>",
         "scripts/GPU/gpu_pull_latest.sh --run experiments/<run_name> --analyze",
+        "Control is SSH",
+        "Heavy checkpoints stay on the GPU",
     ]:
         assert phrase in text
 
@@ -43,6 +46,7 @@ def test_agents_is_the_single_agent_entrypoint():
         "scripts/GPU/gpu_status.sh",
         "scripts/GPU/gpu_sync_patch.sh --paths",
         "scripts/GPU/gpu_run.sh --session",
+        "scripts/GPU/gpu_run_snapshot.sh --run",
         "scripts/GPU/gpu_pull_latest.sh --run",
         "scripts/GPU/gpu_pull_patch.sh",
         "orchestrator owns infrastructure",
@@ -82,6 +86,7 @@ def test_repo_map_marks_live_workflow_and_future_material():
         "docs/agent_handoff_template.md",
         "src/workflows/planet.py",
         "configs/workflow/planet.yaml",
+        "scripts/GPU/gpu_run_snapshot.sh",
         "Support And Future Material",
         "Do not assume their presence means the corresponding algorithm is implemented.",
         "Do not leave dead Hydra experiment entrypoints around as examples.",
@@ -111,7 +116,9 @@ def test_research_lifecycle_documents_paper_to_narrative_path():
         "paper brief -> implementation plan -> tiny validation -> GPU run",
         "research_notes/rough_notes/<chapter>_brief.md",
         "scripts/GPU/gpu_sync_patch.sh",
+        "scripts/GPU/gpu_run_snapshot.sh",
         "scripts/GPU/gpu_pull_latest.sh",
+        "Heavy checkpoints stay on the GPU",
         "reports/world_model_runs.csv",
         "Narrative Update",
         "Review checklist",

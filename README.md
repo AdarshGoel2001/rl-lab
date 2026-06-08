@@ -79,11 +79,32 @@ scripts/GPU/gpu_sync_patch.sh
 ```
 
 ```bash
+scripts/GPU/gpu_run.sh --session <name> --experiment <experiment> --budget <budget> -- <override...>
+```
+
+```bash
+scripts/GPU/gpu_run_snapshot.sh --run experiments/<run_name>
+```
+
+```bash
 scripts/GPU/gpu_pull_latest.sh --run experiments/<run_name> --analyze
 ```
 
 After a serious remote run, update `reports/world_model_runs.csv` from the run
 artifacts instead of from memory.
+
+## GPU Communication Model
+
+Control is SSH: check status, sync code, start tmux runs, and execute bounded
+remote commands. Live monitoring should start with `gpu_run_snapshot.sh`, which
+returns small JSON from the remote run without copying TensorBoard events,
+replay data, or checkpoint payloads.
+
+Heavy checkpoints stay on the GPU by default. Run checkpoint-heavy diagnostics
+where the checkpoints live, then pull back configs, logs, summaries,
+diagnostics, TensorBoard scalars, and checkpoint metadata. Use
+`gpu_pull_latest.sh --checkpoint` only when a local agent truly needs checkpoint
+payloads.
 
 ## Diagnostics
 

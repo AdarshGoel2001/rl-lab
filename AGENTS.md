@@ -4,7 +4,6 @@ This is the single agent entrypoint for RL Lab. Read it before changing code or
 starting experiments.
 
 ## Purpose
-
 RL Lab is an executable chronology of world-model papers under a low-compute
 constraint. The repo should let an agent move from paper idea to implementation,
 training run, diagnostics, manifest row, and narrative update without relying on
@@ -66,7 +65,6 @@ orchestrator. Do not put checkpoint I/O, TensorBoard setup, or experiment
 directory policy inside workflows.
 
 ## Experiment Flow
-
 Use configs, not new training scripts:
 
 ```bash

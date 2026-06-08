@@ -97,9 +97,15 @@ During the run, poll cheap status first:
 
 ```bash
 scripts/GPU/gpu_status.sh
+scripts/GPU/gpu_run_snapshot.sh --run experiments/<run_name>
 scripts/GPU/gpu_tail.sh <session>
 scripts/GPU/gpu_metrics.sh --run experiments/<run_name>
 ```
+
+Control is SSH: health checks, tmux launches, and bounded remote commands.
+Use snapshots for live metrics, diagnostics for model-specific inspection, and
+artifact pulls for evidence after the run. Heavy checkpoints stay on the GPU by
+default; pull checkpoint payloads only when local inspection requires them.
 
 Stop and explain before continuing if eval return contradicts the expected
 trend, losses become unusable, checkpoints are ambiguous, or the run cannot
