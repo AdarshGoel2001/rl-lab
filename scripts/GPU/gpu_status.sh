@@ -27,7 +27,34 @@ gpu_ssh "
   find experiments -maxdepth 1 -mindepth 1 -type d -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -10 | cut -d' ' -f2-
   printf '\n== latest run status ==\n'
   if [ -n \"\$latest\" ] && [ -f \"\$latest/run_status.json\" ]; then
-    python -m json.tool \"\$latest/run_status.json\" 2>/dev/null || cat \"\$latest/run_status.json\"
+    python3 - \"\$latest/run_status.json\" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+try:
+    payload = json.loads(path.read_text(encoding='utf-8'))
+except Exception as exc:
+    print(f'failed to read run_status.json: {exc}')
+    raise SystemExit(0)
+
+metrics = payload.get('last_metrics') or {}
+rows = [
+    ('status', payload.get('status')),
+    ('run_id', payload.get('run_id')),
+    ('workflow', payload.get('workflow_name')),
+    ('global_step', payload.get('global_step')),
+    ('phase', payload.get('phase')),
+    ('action', payload.get('action')),
+    ('hook_state', payload.get('hook_state')),
+    ('eval_return_mean', metrics.get('eval/return_mean')),
+    ('updated_at', payload.get('updated_at')),
+]
+for key, value in rows:
+    if value is not None:
+        print(f'{key}: {value}')
+PY
   else
     echo 'no run_status.json found'
   fi

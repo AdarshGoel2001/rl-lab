@@ -53,6 +53,13 @@ def test_gpu_scripts_keep_remote_loop_simple():
     assert "/usr/lib/wsl/lib/nvidia-smi" in status
     assert "tmux ls" in status
     assert "run_status.json" in status
+    assert "('status', payload.get('status'))" in status
+    assert "('run_id', payload.get('run_id'))" in status
+    assert "('workflow', payload.get('workflow_name'))" in status
+    assert "('global_step', payload.get('global_step'))" in status
+    assert "('eval_return_mean', metrics.get('eval/return_mean'))" in status
+    assert "print(f'{key}: {value}')" in status
+    assert "python -m json.tool" not in status
     assert "RL_LAB_GPU_STATUS_GIT" in status
     assert status.index("== gpu ==") < status.index("== git ==")
 
