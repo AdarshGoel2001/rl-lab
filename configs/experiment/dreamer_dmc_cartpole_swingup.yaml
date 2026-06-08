@@ -1,0 +1,185 @@
+# @package _global_
+# Minimal Dreamer V1 experiment for DMC Cartpole Swingup state observations.
+
+defaults:
+  - /workflow: dreamer_v1
+  - /components/representation_learner@components.representation_learner: rssm
+  - /components/prediction_head@components.reward_predictor: reward
+  - /components/prediction_head@components.continue_predictor: continue
+  - /components/prediction_head@components.observation_predictor: observation
+  - /controller@controllers.seed_actor: random_policy
+  - /controller@controllers.actor: dreamer_actor
+  - /controller@controllers.critic: dreamer_critic
+  - /buffer: world_model_sequence
+  - /environment: dmc_cartpole_swingup
+  - _self_
+  - optional /budget: null
+
+experiment:
+  name: dreamer_dmc_cartpole_swingup
+  seed: 42
+  device: auto
+  paradigm: world_model
+
+_dims:
+  observation: 5
+  encoder_output: 5
+  action: 1
+  stochastic: 16
+  deterministic: 64
+  representation: 80
+  hidden: 128
+  actor_hidden: 128
+  critic_hidden: 128
+
+algorithm:
+  collect_length: 16
+  gamma: 0.99
+  lambda_: 0.95
+  free_nats: 3.0
+  kl_scale: 1.0
+  max_grad_norm: 100.0
+  imagination_horizon: 5
+  world_model_lr: 6.0e-4
+  actor_lr: 8.0e-5
+  critic_lr: 8.0e-5
+
+optimizers:
+  world_model:
+    _target_: torch.optim.Adam
+    _partial_: true
+    lr: ${algorithm.world_model_lr}
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+  actor:
+    _target_: torch.optim.Adam
+    _partial_: true
+    lr: ${algorithm.actor_lr}
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+  critic:
+    _target_: torch.optim.Adam
+    _partial_: true
+    lr: ${algorithm.critic_lr}
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+
+components:
+  representation_learner:
+    feature_dim: ${_dims.encoder_output}
+    action_dim: ${_dims.action}
+    deterministic_dim: ${_dims.deterministic}
+    stochastic_dim: ${_dims.stochastic}
+    hidden_dim: ${_dims.hidden}
+    min_std: 0.1
+
+  reward_predictor:
+    input_dim: ${_dims.representation}
+    hidden_dim: ${_dims.hidden}
+
+  continue_predictor:
+    input_dim: ${_dims.representation}
+    hidden_dim: ${_dims.hidden}
+
+  observation_predictor:
+    input_dim: ${_dims.representation}
+    output_dim: ${_dims.observation}
+    hidden_dim: ${_dims.hidden}
+
+controllers:
+  seed_actor:
+    action_dim: ${_dims.action}
+    action_low: [-1.0]
+    action_high: [1.0]
+
+  actor:
+    action_dim: ${_dims.action}
+    latent_dim: ${_dims.representation}
+    hidden_dim: ${_dims.actor_hidden}
+    num_layers: 2
+    action_low: [-1.0]
+    action_high: [1.0]
+    init_std: 0.3
+
+  critic:
+    latent_dim: ${_dims.representation}
+    hidden_dim: ${_dims.critic_hidden}
+    num_layers: 2
+
+environment:
+  num_envs: 1
+
+buffer:
+  capacity: 4096
+  batch_size: 16
+  sequence_length: 16
+  sequence_stride: 1
+  pad_end_of_episode: false
+
+logging:
+  use_tensorboard: true
+  log_interval: 1
+
+training:
+  total_timesteps: 1024
+  max_checkpoints: 5
+  checkpoint_frequency: 0
+  eval_frequency: 0
+  num_eval_episodes: 1
+  max_eval_steps: 125
+  resume_path: null
+  resume_mode: exact
+  phases:
+    - name: collect_random_seed
+      type: online
+      buffer: replay
+      duration_steps: 256
+      collect_length: 16
+      controller: seed_actor
+      workflow_hooks:
+        - collect
+
+    - name: train_world_model_seed
+      type: offline
+      buffer: replay
+      duration_updates: 16
+      workflow_hooks:
+        - update_world_model
+
+    - name: train_controller_seed
+      type: offline
+      buffer: replay
+      duration_updates: 16
+      imagination_horizon: ${algorithm.imagination_horizon}
+      workflow_hooks:
+        - update_controller
+
+    - name: collect_with_actor_1
+      type: online
+      buffer: replay
+      duration_steps: 256
+      collect_length: 16
+      controller: actor
+      workflow_hooks:
+        - collect
+
+    - name: train_world_model_1
+      type: offline
+      buffer: replay
+      duration_updates: 16
+      workflow_hooks:
+        - update_world_model
+
+    - name: train_controller_1
+      type: offline
+      buffer: replay
+      duration_updates: 16
+      imagination_horizon: ${algorithm.imagination_horizon}
+      workflow_hooks:
+        - update_controller
+
+    - name: final_eval
+      type: eval_only
+      duration_cycles: 1
+      workflow_hooks:
+        - evaluate

@@ -1,0 +1,6 @@
+_target_: src.components.controllers.dreamer_critic.DreamerCritic
+
+latent_dim: ${_dims.representation}
+hidden_dim: 300
+num_layers: 3
+device: ${experiment.device}

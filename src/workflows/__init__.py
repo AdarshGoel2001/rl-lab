@@ -4,6 +4,7 @@ from .utils.base import WorldModelWorkflow, CollectResult, PhaseConfig, Batch
 from .utils.context import WorkflowContext, WorldModelComponents
 from .utils.controllers import ControllerManager
 from .planet import PlaNetWorkflow
+from .dreamer import DreamerV1Workflow, lambda_returns
 
 __all__ = [
     "WorldModelWorkflow",
@@ -14,4 +15,6 @@ __all__ = [
     "WorldModelComponents",
     "ControllerManager",
     "PlaNetWorkflow",
+    "DreamerV1Workflow",
+    "lambda_returns",
 ]

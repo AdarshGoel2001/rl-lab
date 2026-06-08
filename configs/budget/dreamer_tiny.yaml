@@ -1,0 +1,83 @@
+# @package _global_
+# CPU-friendly Dreamer V1 validation budget for DMC Cartpole state observations.
+
+experiment:
+  name: dreamer_dmc_cartpole_tiny
+  device: cpu
+
+algorithm:
+  collect_length: 8
+  imagination_horizon: 3
+
+environment:
+  num_envs: 1
+
+buffer:
+  capacity: 128
+  batch_size: 4
+  sequence_length: 4
+  sequence_stride: 1
+
+logging:
+  log_interval: 1
+
+training:
+  total_timesteps: 100
+  checkpoint_frequency: 0
+  eval_frequency: 0
+  num_eval_episodes: 1
+  max_eval_steps: 25
+  phases:
+    - name: collect_random_seed
+      type: online
+      buffer: replay
+      duration_steps: 16
+      collect_length: 8
+      controller: seed_actor
+      workflow_hooks:
+        - collect
+
+    - name: train_world_model_seed
+      type: offline
+      buffer: replay
+      duration_updates: 2
+      workflow_hooks:
+        - update_world_model
+
+    - name: train_controller_seed
+      type: offline
+      buffer: replay
+      duration_updates: 2
+      imagination_horizon: ${algorithm.imagination_horizon}
+      workflow_hooks:
+        - update_controller
+
+    - name: collect_with_actor_1
+      type: online
+      buffer: replay
+      duration_steps: 16
+      collect_length: 8
+      controller: actor
+      workflow_hooks:
+        - collect
+
+    - name: train_world_model_1
+      type: offline
+      buffer: replay
+      duration_updates: 2
+      workflow_hooks:
+        - update_world_model
+
+    - name: train_controller_1
+      type: offline
+      buffer: replay
+      duration_updates: 2
+      imagination_horizon: ${algorithm.imagination_horizon}
+      workflow_hooks:
+        - update_controller
+
+    - name: final_eval
+      type: eval_only
+      duration_cycles: 1
+      workflow_hooks:
+        - evaluate

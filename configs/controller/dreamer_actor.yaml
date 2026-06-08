@@ -1,0 +1,12 @@
+_target_: src.components.controllers.dreamer_actor.DreamerActor
+
+action_dim: ???
+latent_dim: ${_dims.representation}
+hidden_dim: 300
+num_layers: 3
+action_low: [-1.0]
+action_high: [1.0]
+min_std: 0.0001
+init_std: 5.0
+mean_scale: 5.0
+device: ${experiment.device}
