@@ -94,6 +94,13 @@ def _params_changed(before, module: nn.Module) -> bool:
     return any(not torch.allclose(old, new.detach()) for old, new in zip(before, module.parameters()))
 
 
+def _grad_norm(module: nn.Module) -> float:
+    grads = [param.grad.detach().flatten() for param in module.parameters() if param.grad is not None]
+    if not grads:
+        return 0.0
+    return float(torch.linalg.vector_norm(torch.cat(grads)).item())
+
+
 def test_lambda_returns_accumulates_simple_discounted_case():
     rewards = torch.ones(1, 3, 1)
     values = torch.zeros(1, 3, 1)
@@ -192,6 +199,18 @@ def test_controller_update_changes_actor_and_critic_without_world_model_step():
     assert _params_changed(actor_before, workflow.controllers["actor"])
     assert _params_changed(critic_before, workflow.controllers["critic"])
     assert workflow.world_model_optimizer.step_calls == world_step_calls
+
+
+def test_controller_update_reports_and_clips_actor_critic_gradients():
+    workflow = _make_workflow()
+    workflow.max_grad_norm = 1.0e-6
+
+    metrics = workflow.update_controller(_fake_batch(), phase={"horizon": 3})
+
+    assert metrics["controller/actor_grad_norm"] >= 0.0
+    assert metrics["controller/critic_grad_norm"] >= 0.0
+    assert _grad_norm(workflow.controllers["actor"]) <= workflow.max_grad_norm * 1.01
+    assert _grad_norm(workflow.controllers["critic"]) <= workflow.max_grad_norm * 1.01
 
 
 def test_dreamer_evaluate_uses_deterministic_actor_not_collect_step():

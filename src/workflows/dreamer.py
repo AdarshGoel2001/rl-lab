@@ -61,6 +61,7 @@ class DreamerV1Workflow(PlaNetWorkflow):
         self.critic_optimizer: Optional[torch.optim.Optimizer] = None
         self.lambda_ = 0.95
         self.imagination_horizon = 15
+        self.max_grad_norm: Optional[float] = None
         self.controller_updates = 0
 
     def initialize(self, context: WorkflowContext) -> None:
@@ -80,6 +81,8 @@ class DreamerV1Workflow(PlaNetWorkflow):
         algorithm = getattr(self.config, "algorithm", None)
         self.lambda_ = float(getattr(algorithm, "lambda_", getattr(algorithm, "lambda", self.lambda_)))
         self.imagination_horizon = int(getattr(algorithm, "imagination_horizon", self.imagination_horizon))
+        max_grad_norm = getattr(algorithm, "max_grad_norm", self.max_grad_norm)
+        self.max_grad_norm = None if max_grad_norm is None else float(max_grad_norm)
 
     def update_controller(self, batch: Batch, *, phase: PhaseConfig) -> Dict[str, float]:
         if self.rssm is None:
@@ -117,6 +120,7 @@ class DreamerV1Workflow(PlaNetWorkflow):
             critic_values = critic(critic_rollout["states"].detach())
             critic_loss = F.mse_loss(critic_values, critic_targets)
             critic_loss.backward()
+            critic_grad_norm = self._clip_grad_norm(critic)
             self.critic_optimizer.step()
 
             with self._temporarily_frozen([critic]):
@@ -138,12 +142,15 @@ class DreamerV1Workflow(PlaNetWorkflow):
                 )
                 actor_loss = -actor_returns.mean()
                 actor_loss.backward()
+                actor_grad_norm = self._clip_grad_norm(actor)
                 self.actor_optimizer.step()
 
         self.controller_updates += 1
         return {
             "controller/actor_loss": float(actor_loss.item()),
             "controller/critic_loss": float(critic_loss.item()),
+            "controller/actor_grad_norm": actor_grad_norm,
+            "controller/critic_grad_norm": critic_grad_norm,
             "controller/lambda_return_mean": float(actor_returns.detach().mean().item()),
             "controller/imagination_horizon": float(horizon),
         }
@@ -405,6 +412,12 @@ class DreamerV1Workflow(PlaNetWorkflow):
         if isinstance(action, tuple):
             action = action[0]
         return action
+
+    def _clip_grad_norm(self, module: torch.nn.Module) -> float:
+        if self.max_grad_norm is None or self.max_grad_norm <= 0.0:
+            return 0.0
+        grad_norm = torch.nn.utils.clip_grad_norm_(module.parameters(), self.max_grad_norm)
+        return float(grad_norm.item())
 
     @staticmethod
     @contextmanager
