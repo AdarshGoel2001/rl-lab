@@ -125,6 +125,16 @@ and recent logs. They should not become model-specific TensorBoard
 interpreters. Scalar summaries, plots, reconstructions, and checkpoint probes
 belong in diagnostics scripts under `scripts/research/diagnostics/`.
 
+During live runs, prefer a tiny snapshot before pulling artifacts:
+
+```bash
+scripts/GPU/gpu_run_snapshot.sh --run experiments/<run_name>
+```
+
+This returns bounded JSON from `run_status.json`, recent eval lines in
+`train.log`, summaries, and checkpoint file metadata. It does not copy
+TensorBoard events, replay data, or checkpoint payloads.
+
 Workflow-internal progress is a later v2 contract. The current status file
 records phase/action boundaries from the orchestrator; a long workflow hook may
 still need its own nested progress fields later.
@@ -133,15 +143,17 @@ still need its own nested progress fields later.
 
 When inspecting a completed or interrupted run:
 
-1. read `run_summary.json` if it exists;
-2. read `run_status.json` if the run is active or interrupted;
-3. inspect the resolved config from `.hydra/config.yaml` or `pre_run/resolved_config.yaml`;
-4. export TensorBoard scalars from `runs/`;
-5. record final and best eval metrics;
-6. verify checkpoint links resolve to immutable targets;
-7. run model-specific diagnostics if available;
-8. update `reports/world_model_runs.csv`;
-9. update roadmap or chapter narrative only after the manifest row exists.
+1. run `scripts/GPU/gpu_run_snapshot.sh --run experiments/<run_name>` if the run
+   is still remote;
+2. read `run_summary.json` if it exists;
+3. read `run_status.json` if the run is active or interrupted;
+4. inspect the resolved config from `.hydra/config.yaml` or `pre_run/resolved_config.yaml`;
+5. export TensorBoard scalars from `runs/`;
+6. record final and best eval metrics;
+7. verify checkpoint links resolve to immutable targets;
+8. run model-specific diagnostics if available;
+9. update `reports/world_model_runs.csv`;
+10. update roadmap or chapter narrative only after the manifest row exists.
 
 ## GPU Code And Artifact Movement
 

@@ -84,6 +84,7 @@ patch, run on WSL, then pull lightweight evidence back.
 scripts/GPU/gpu_status.sh
 scripts/GPU/gpu_sync_patch.sh --paths "src scripts tests configs"
 scripts/GPU/gpu_run.sh --session <name> --experiment <experiment> --budget <budget> -- <override...>
+scripts/GPU/gpu_run_snapshot.sh --run experiments/<run_name>
 scripts/GPU/gpu_pull_latest.sh --run experiments/<run_name> --analyze
 ```
 

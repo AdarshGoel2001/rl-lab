@@ -13,6 +13,8 @@ def test_gpu_scripts_exist_and_are_executable():
         "gpu_run.sh",
         "gpu_tail.sh",
         "gpu_metrics.sh",
+        "gpu_run_snapshot.sh",
+        "gpu_run_snapshot_remote.py",
         "gpu_sync_patch.sh",
         "gpu_pull_latest.sh",
         "gpu_pull_patch.sh",
@@ -21,7 +23,7 @@ def test_gpu_scripts_exist_and_are_executable():
     for name in expected:
         script = GPU_DIR / name
         assert script.exists(), f"Missing {script}"
-        if name != "gpu_common.sh":
+        if name not in {"gpu_common.sh", "gpu_run_snapshot_remote.py"}:
             assert script.stat().st_mode & 0o111, f"{script} should be executable"
 
 
@@ -30,6 +32,8 @@ def test_gpu_scripts_keep_remote_loop_simple():
     run = (GPU_DIR / "gpu_run.sh").read_text()
     tail = (GPU_DIR / "gpu_tail.sh").read_text()
     metrics = (GPU_DIR / "gpu_metrics.sh").read_text()
+    snapshot = (GPU_DIR / "gpu_run_snapshot.sh").read_text()
+    snapshot_remote = (GPU_DIR / "gpu_run_snapshot_remote.py").read_text()
     sync = (GPU_DIR / "gpu_sync_patch.sh").read_text()
     pull = (GPU_DIR / "gpu_pull_latest.sh").read_text()
     pull_patch = (GPU_DIR / "gpu_pull_patch.sh").read_text()
@@ -74,6 +78,16 @@ def test_gpu_scripts_keep_remote_loop_simple():
     assert "run_status.json" in metrics
     assert 'find \\"\\$latest\\" -type f' in metrics
     assert 'find \\"\\$latest\\" runs' not in metrics
+
+    assert "--run" in snapshot
+    assert "RUN_PATH" in snapshot
+    assert "gpu_run_snapshot_remote.py" in snapshot
+    assert "gpu_common.sh" in snapshot
+    assert "gpu_ssh" in snapshot
+    assert "run_status.json" in snapshot_remote
+    assert "train.log" in snapshot_remote
+    assert "Evaluation complete" in snapshot_remote
+    assert "checkpoint_files" in snapshot_remote
 
     assert "git diff --binary HEAD" in sync
     assert "git ls-files --others --exclude-standard" in sync
