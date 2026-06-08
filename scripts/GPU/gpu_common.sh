@@ -8,8 +8,10 @@ GPU_SERVER_ALIVE_INTERVAL="${RL_LAB_GPU_SERVER_ALIVE_INTERVAL:-${AGENT_GPU_SERVE
 GPU_SERVER_ALIVE_COUNT_MAX="${RL_LAB_GPU_SERVER_ALIVE_COUNT_MAX:-${AGENT_GPU_SERVER_ALIVE_COUNT_MAX:-1}}"
 
 GPU_SSH_OPTS=(
+  -o BatchMode=yes
   -o ClearAllForwardings=yes
   -o ConnectTimeout="$GPU_CONNECT_TIMEOUT"
+  -o RequestTTY=no
   -o ServerAliveInterval="$GPU_SERVER_ALIVE_INTERVAL"
   -o ServerAliveCountMax="$GPU_SERVER_ALIVE_COUNT_MAX"
 )
@@ -23,7 +25,7 @@ gpu_scp() {
 }
 
 gpu_rsync_ssh() {
-  printf 'ssh -o ClearAllForwardings=yes -o ConnectTimeout=%q -o ServerAliveInterval=%q -o ServerAliveCountMax=%q' \
+  printf 'ssh -T -o BatchMode=yes -o ClearAllForwardings=yes -o ConnectTimeout=%q -o RequestTTY=no -o ServerAliveInterval=%q -o ServerAliveCountMax=%q' \
     "$GPU_CONNECT_TIMEOUT" \
     "$GPU_SERVER_ALIVE_INTERVAL" \
     "$GPU_SERVER_ALIVE_COUNT_MAX"

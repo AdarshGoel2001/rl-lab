@@ -42,6 +42,9 @@ def test_gpu_scripts_keep_remote_loop_simple():
     assert "gpu_ssh" in common
     assert "gpu_scp" in common
     assert "gpu_rsync_ssh" in common
+    assert "ssh -T" in common
+    assert "RequestTTY=no" in common
+    assert "BatchMode=yes" in common
     assert "ConnectTimeout" in common
     assert "RL_LAB_GPU_SSH_HOST" in common
 
