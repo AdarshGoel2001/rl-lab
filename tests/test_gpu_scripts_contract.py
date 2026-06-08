@@ -92,6 +92,8 @@ def test_gpu_scripts_keep_remote_loop_simple():
     assert not re.search(r"(^|[^A-Za-z0-9_])status=", sync)
 
     assert "rsync" in pull
+    assert "base64" in pull
+    assert "falling back to base64 file copy" in pull
     assert "--run" in pull
     assert "RUN_PATH" in pull
     assert "--analyze" in pull

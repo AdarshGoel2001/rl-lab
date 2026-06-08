@@ -9,6 +9,190 @@ INCLUDE_CHECKPOINT=0
 RUN_PATH=""
 ANALYZE=0
 RSYNC_SSH="$(gpu_rsync_ssh)"
+FALLBACK_MAX_BYTES="${RL_LAB_GPU_FALLBACK_MAX_BYTES:-50000}"
+SKIPPED_FILE_LOG=""
+
+append_base64_file_to_file() {
+  local b64_file="$1"
+  local out_file="$2"
+  python3 -c '
+import base64
+import sys
+from pathlib import Path
+
+payload_path = Path(sys.argv[1])
+out_path = Path(sys.argv[2])
+payload = payload_path.read_bytes()
+with out_path.open("ab") as handle:
+    handle.write(base64.b64decode(payload))
+' "$b64_file" "$out_file"
+}
+
+pull_remote_file_base64() {
+  local remote_file="$1"
+  local local_file="$2"
+  local remote_file_q
+  local tmp_file
+  local tmp_b64_file
+  local size_bytes
+  local chunk_size=512
+  local chunks
+  local chunk_index
+
+  remote_file_q="$(gpu_quote "$remote_file")"
+  tmp_file="$local_file.tmp"
+  tmp_b64_file="$local_file.b64.tmp"
+  mkdir -p "$(dirname "$local_file")"
+  rm -f "$tmp_file" "$tmp_b64_file"
+  size_bytes="$(gpu_ssh "stat -c %s $remote_file_q" </dev/null)"
+  if [ "$size_bytes" -gt "$FALLBACK_MAX_BYTES" ]; then
+    echo "skipping large fallback file: $remote_file ($size_bytes bytes)" >&2
+    if [ -n "$SKIPPED_FILE_LOG" ]; then
+      printf '%s\t%s\t%s\n' "$size_bytes" "$remote_file" "$local_file" >> "$SKIPPED_FILE_LOG"
+    fi
+    return 0
+  fi
+  chunks=$(( (size_bytes + chunk_size - 1) / chunk_size ))
+  : > "$tmp_file"
+  for ((chunk_index = 0; chunk_index < chunks; chunk_index++)); do
+    gpu_ssh "dd if=$remote_file_q bs=$chunk_size skip=$chunk_index count=1 status=none | base64 -w0" > "$tmp_b64_file" </dev/null
+    append_base64_file_to_file "$tmp_b64_file" "$tmp_file"
+  done
+  rm -f "$tmp_b64_file"
+  mv "$tmp_file" "$local_file"
+}
+
+list_run_evidence_files() {
+  local root="$1"
+  local include_checkpoint="$2"
+  local root_q
+  root_q="$(gpu_quote "$root")"
+  gpu_ssh "
+    cd $root_q
+    {
+      for rel in train.log run_status.json run_summary.json metrics.csv loss_curves.png reconstruction_grid.png logs/bash_output.log checkpoints/final.json; do
+        [ -f \"\$rel\" ] && printf '%s\n' \"\$rel\"
+      done
+      for dir in .hydra pre_run diagnostics; do
+        [ -d \"\$dir\" ] && find \"\$dir\" -type f -printf '%p\n'
+      done
+      [ -d runs ] && find runs -type f -name 'events.out.tfevents*' -printf '%p\n'
+      if [ '$include_checkpoint' = '1' ] && [ -d checkpoints ]; then
+        find checkpoints -type f \\( -name '*.pt' -o -name '*.json' \\) -printf '%p\n'
+      fi
+    } | sed 's#^\./##' | sort -u
+  "
+}
+
+pull_run_evidence_base64() {
+  local root="$1"
+  local destination="$2"
+  local include_checkpoint="$3"
+  local rel
+
+  echo "rsync failed; falling back to base64 file copy" >&2
+  SKIPPED_FILE_LOG="$destination/pull_skipped_files.tsv"
+  : > "$SKIPPED_FILE_LOG"
+  while IFS= read -r rel; do
+    [ -n "$rel" ] || continue
+    pull_remote_file_base64 "$root/$rel" "$destination/$rel"
+  done < <(list_run_evidence_files "$root" "$include_checkpoint")
+}
+
+pull_external_runs_events_base64() {
+  local destination="$1"
+  local remote_runs_root="$GPU_REMOTE_REPO/runs/$experiment_name"
+  local remote_runs_root_q
+  local rel
+
+  remote_runs_root_q="$(gpu_quote "$remote_runs_root")"
+  while IFS= read -r rel; do
+    [ -n "$rel" ] || continue
+    pull_remote_file_base64 "$remote_runs_root/$rel" "$destination/runs/$rel"
+  done < <(
+    gpu_ssh "REMOTE_RUNS_ROOT=$remote_runs_root_q python3 -" <<'PY'
+import os
+from pathlib import Path
+
+root = Path(os.environ["REMOTE_RUNS_ROOT"])
+if root.exists():
+    for path in sorted(root.rglob("events.out.tfevents*")):
+        if path.is_file():
+            print(path.relative_to(root))
+PY
+  )
+}
+
+write_checkpoint_manifest() {
+  local root="$1"
+  local manifest_path="$2"
+  local root_q
+  local rel
+  local remote_file
+  local remote_file_q
+  local kind
+  local size_bytes
+  local sha256
+  local link_target
+  local tsv_path
+
+  root_q="$(gpu_quote "$root")"
+  tsv_path="$manifest_path.tsv.tmp"
+  : > "$tsv_path"
+
+  while IFS= read -r rel; do
+    [ -n "$rel" ] || continue
+    remote_file="$root/$rel"
+    remote_file_q="$(gpu_quote "$remote_file")"
+    kind="$(gpu_ssh "if [ -L $remote_file_q ]; then echo symlink; else echo file; fi" </dev/null)"
+    size_bytes="$(gpu_ssh "stat -Lc %s $remote_file_q" </dev/null)"
+    sha256="$(gpu_ssh "if [ -f $remote_file_q ]; then sha256sum $remote_file_q | cut -d ' ' -f1; fi" </dev/null)"
+    link_target="$(gpu_ssh "if [ -L $remote_file_q ]; then readlink $remote_file_q; fi" </dev/null)"
+    printf '%s\t%s\t%s\t%s\t%s\n' "$rel" "$kind" "$size_bytes" "$sha256" "$link_target" >> "$tsv_path"
+  done < <(
+    gpu_ssh "
+      cd $root_q
+      [ -d checkpoints ] && find checkpoints \\( -type f -o -type l \\) -printf '%p\n' | sort
+    "
+  )
+
+  python3 - "$root" "$tsv_path" "$manifest_path" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+remote_root = sys.argv[1]
+tsv_path = Path(sys.argv[2])
+manifest_path = Path(sys.argv[3])
+entries = []
+if tsv_path.exists():
+    for line in tsv_path.read_text(encoding="utf-8").splitlines():
+        fields = (line.split("\t") + ["", "", "", "", ""])[:5]
+        relpath, kind, size_bytes, sha256, link_target = fields
+        entry = {"path": relpath, "kind": kind}
+        if size_bytes:
+            entry["size_bytes"] = int(size_bytes)
+        if sha256:
+            entry["sha256"] = sha256
+        if link_target:
+            entry["link_target"] = link_target
+        entries.append(entry)
+manifest_path.write_text(
+    json.dumps(
+        {
+            "schema_version": 1,
+            "remote_run": remote_root,
+            "checkpoint_dir": f"{remote_root}/checkpoints",
+            "entries": entries,
+        },
+        indent=2,
+        sort_keys=True,
+    ),
+    encoding="utf-8",
+)
+PY
+  rm -f "$tsv_path"
+}
 
 usage() {
   cat <<'USAGE'
@@ -33,6 +217,7 @@ Default files:
   metrics.csv
   loss_curves.png
   reconstruction_grid.png
+  pull_skipped_files.tsv when fallback transfer skips large files
 
 Options:
   --run PATH     Pull this remote experiment path instead of the latest one.
@@ -43,6 +228,8 @@ Environment:
   RL_LAB_GPU_SSH_HOST       SSH host alias. Default: wsl
   RL_LAB_GPU_REPO           Remote repo path. Default: /home/omkar/adarsh/rl-lab
   RL_LAB_GPU_ARTIFACTS_DIR  Local destination root. Default: remote_artifacts/wsl
+  RL_LAB_GPU_FALLBACK_MAX_BYTES
+                            Max bytes copied by chunked fallback. Default: 50000
 USAGE
 }
 
@@ -153,10 +340,12 @@ fi
 
 include_args+=(--exclude='*')
 
-rsync -az --prune-empty-dirs -e "$RSYNC_SSH" \
+if ! rsync -az --prune-empty-dirs -e "$RSYNC_SSH" \
   "${include_args[@]}" \
   "$GPU_SSH_HOST:$remote_source/" \
-  "$dest/"
+  "$dest/"; then
+  pull_run_evidence_base64 "$remote_source" "$dest" "$INCLUDE_CHECKPOINT"
+fi
 
 mkdir -p "$dest/runs"
 rsync -az --prune-empty-dirs -e "$RSYNC_SSH" \
@@ -164,54 +353,9 @@ rsync -az --prune-empty-dirs -e "$RSYNC_SSH" \
   --include='events.out.tfevents*' \
   --exclude='*' \
   "$GPU_SSH_HOST:$GPU_REMOTE_REPO/runs/$experiment_name/" \
-  "$dest/runs/" 2>/dev/null || true
+  "$dest/runs/" 2>/dev/null || pull_external_runs_events_base64 "$dest"
 
-REMOTE_SOURCE_Q="$(gpu_quote "$remote_source")"
-if gpu_ssh "REMOTE_SOURCE=$REMOTE_SOURCE_Q python3 -" > "$dest/checkpoint_manifest.json.tmp" <<'PY'
-import hashlib
-import json
-import os
-from pathlib import Path
-
-root = Path(os.environ["REMOTE_SOURCE"])
-checkpoint_dir = root / "checkpoints"
-entries = []
-
-if checkpoint_dir.exists():
-    for path in sorted(checkpoint_dir.rglob("*")):
-        if not (path.is_file() or path.is_symlink()):
-            continue
-        relpath = str(path.relative_to(root))
-        item = {
-            "path": relpath,
-            "kind": "symlink" if path.is_symlink() else "file",
-        }
-        try:
-            stat_result = path.stat()
-            item["size_bytes"] = stat_result.st_size
-            if path.is_symlink():
-                item["link_target"] = os.readlink(path)
-            if path.is_file():
-                digest = hashlib.sha256()
-                with path.open("rb") as fh:
-                    for chunk in iter(lambda: fh.read(1024 * 1024), b""):
-                        digest.update(chunk)
-                item["sha256"] = digest.hexdigest()
-        except Exception as exc:
-            item["error"] = str(exc)
-        entries.append(item)
-
-print(json.dumps({
-    "schema_version": 1,
-    "remote_run": str(root),
-    "checkpoint_dir": str(checkpoint_dir),
-    "entries": entries,
-}, indent=2, sort_keys=True))
-PY
-then
-  mv "$dest/checkpoint_manifest.json.tmp" "$dest/checkpoint_manifest.json"
-else
-  rm -f "$dest/checkpoint_manifest.json.tmp"
+if ! write_checkpoint_manifest "$remote_source" "$dest/checkpoint_manifest.json"; then
   printf '{"schema_version":1,"remote_run":%s,"entries":[],"error":"checkpoint manifest collection failed"}\n' \
     "$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$remote_source")" \
     > "$dest/checkpoint_manifest.json"
