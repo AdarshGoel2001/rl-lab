@@ -1,10 +1,95 @@
 {
   "output_dir": "experiments/dreamer_pixel_cartpole_100ep-20260612_100205/diagnostics/dreamer_pixel_curves",
   "plots": [
-    "experiments/dreamer_pixel_cartpole_100ep-20260612_100205/diagnostics/dreamer_pixel_curves/eval_return.png"
+    "experiments/dreamer_pixel_cartpole_100ep-20260612_100205/diagnostics/dreamer_pixel_curves/eval_and_collect_return.png",
+    "experiments/dreamer_pixel_cartpole_100ep-20260612_100205/diagnostics/dreamer_pixel_curves/world_model_losses.png",
+    "experiments/dreamer_pixel_cartpole_100ep-20260612_100205/diagnostics/dreamer_pixel_curves/controller_losses.png",
+    "experiments/dreamer_pixel_cartpole_100ep-20260612_100205/diagnostics/dreamer_pixel_curves/actor_actions.png",
+    "experiments/dreamer_pixel_cartpole_100ep-20260612_100205/diagnostics/dreamer_pixel_curves/imagined_returns.png"
   ],
   "run_dir": "experiments/dreamer_pixel_cartpole_100ep-20260612_100205",
   "tags": {
+    "collect/mean_step_reward": {
+      "count": 750,
+      "first_step": 0,
+      "first_value": 0.343146950006485,
+      "last_step": 19984,
+      "last_value": 0.7471185922622681,
+      "max": 3.752845048904419,
+      "min": 0.01803644560277462
+    },
+    "controller/action_abs_max": {
+      "count": 5000,
+      "first_step": 2024,
+      "first_value": 0.7735105752944946,
+      "last_step": 17215,
+      "last_value": 0.9999092221260071,
+      "max": 1.0,
+      "min": 0.7272783517837524
+    },
+    "controller/action_abs_mean": {
+      "count": 5000,
+      "first_step": 2024,
+      "first_value": 0.23991388082504272,
+      "last_step": 17215,
+      "last_value": 0.9932242631912231,
+      "max": 0.9994663596153259,
+      "min": 0.22287064790725708
+    },
+    "controller/actor_loss": {
+      "count": 5000,
+      "first_step": 2024,
+      "first_value": -6.668417930603027,
+      "last_step": 17215,
+      "last_value": -138.44265747070312,
+      "max": -6.475725173950195,
+      "min": -217.66629028320312
+    },
+    "controller/critic_loss": {
+      "count": 5000,
+      "first_step": 2024,
+      "first_value": 58.11991500854492,
+      "last_step": 17215,
+      "last_value": 0.4166072905063629,
+      "max": 4056.72265625,
+      "min": 0.3901245892047882
+    },
+    "controller/critic_target_mean": {
+      "count": 5000,
+      "first_step": 2024,
+      "first_value": 6.1703925132751465,
+      "last_step": 17215,
+      "last_value": 138.69171142578125,
+      "max": 216.58291625976562,
+      "min": 5.892610549926758
+    },
+    "controller/critic_value_mean": {
+      "count": 5000,
+      "first_step": 2024,
+      "first_value": -0.06671406328678131,
+      "last_step": 17215,
+      "last_value": 138.70486450195312,
+      "max": 216.37530517578125,
+      "min": -0.06671406328678131
+    },
+    "controller/imagined_reward_mean": {
+      "count": 5000,
+      "first_step": 2024,
+      "first_value": 1.0961896181106567,
+      "last_step": 17215,
+      "last_value": 1.3646035194396973,
+      "max": 1.6460336446762085,
+      "min": 0.8244141936302185
+    },
+    "controller/lambda_return_mean": {
+      "count": 5000,
+      "first_step": 2024,
+      "first_value": 6.668417930603027,
+      "last_step": 17215,
+      "last_value": 138.44265747070312,
+      "max": 217.66629028320312,
+      "min": 6.475725173950195
+    },
     "eval/return_mean": {
       "count": 4,
       "first_step": 4096,
@@ -13,6 +98,51 @@
       "last_value": 74.27764892578125,
       "max": 218.28428649902344,
       "min": 74.27764892578125
+    },
+    "train/world_model/continue_loss": {
+      "count": 3000,
+      "first_step": 1024,
+      "first_value": 0.7020224332809448,
+      "last_step": 16215,
+      "last_value": 0.0007378442096523941,
+      "max": 5.646164894104004,
+      "min": 5.287417025101604e-06
+    },
+    "train/world_model/kl_loss": {
+      "count": 3000,
+      "first_step": 1024,
+      "first_value": 0.0,
+      "last_step": 16215,
+      "last_value": 0.0002463971031829715,
+      "max": 25011.248046875,
+      "min": 0.0
+    },
+    "train/world_model/observation_loss": {
+      "count": 3000,
+      "first_step": 1024,
+      "first_value": 0.06276077777147293,
+      "last_step": 16215,
+      "last_value": 0.0011105870362371206,
+      "max": 0.22828063368797302,
+      "min": 0.0005657178699038923
+    },
+    "train/world_model/reward_loss": {
+      "count": 3000,
+      "first_step": 1024,
+      "first_value": 3.04341197013855,
+      "last_step": 16215,
+      "last_value": 1.5100919008255005,
+      "max": 8.251310348510742,
+      "min": 0.02982175163924694
+    },
+    "train/world_model/total_loss": {
+      "count": 3000,
+      "first_step": 1024,
+      "first_value": 3.808195114135742,
+      "last_step": 16215,
+      "last_value": 1.5121866464614868,
+      "max": 25019.8203125,
+      "min": 0.030853383243083954
     }
   }
 }
