@@ -13,6 +13,8 @@ from typing import Any, Dict, Iterable, Mapping, Optional
 import numpy as np
 import torch
 import torch.nn.functional as F
+from torch.distributions import kl_divergence
+from torch.nn.utils import clip_grad_norm_
 
 from ..components.representation_learners import LatentState, RSSMState
 from .planet import PlaNetWorkflow
@@ -59,6 +61,7 @@ class DreamerV1Workflow(PlaNetWorkflow):
         super().__init__()
         self.actor_optimizer: Optional[torch.optim.Optimizer] = None
         self.critic_optimizer: Optional[torch.optim.Optimizer] = None
+        self.observation_encoder: Optional[torch.nn.Module] = None
         self.lambda_ = 0.95
         self.imagination_horizon = 15
         self.max_grad_norm: Optional[float] = None
@@ -69,6 +72,7 @@ class DreamerV1Workflow(PlaNetWorkflow):
         optimizers = context.optimizers or {}
         self.actor_optimizer = optimizers.get("actor")
         self.critic_optimizer = optimizers.get("critic")
+        self.observation_encoder = getattr(context.components, "observation_encoder", None)
         if self.actor_optimizer is None:
             raise RuntimeError("DreamerV1Workflow requires an actor optimizer.")
         if self.critic_optimizer is None:
@@ -146,14 +150,116 @@ class DreamerV1Workflow(PlaNetWorkflow):
                 self.actor_optimizer.step()
 
         self.controller_updates += 1
+        actor_actions = actor_rollout["actions"].detach()
+        actor_rewards = actor_rollout["rewards"].detach()
+        actor_continues = actor_rollout["continues"].detach()
+        actor_values = actor_rollout["values"].detach()
+        actor_returns_detached = actor_returns.detach()
+        critic_targets_detached = critic_targets.detach()
+        critic_values_detached = critic_values.detach()
+        bootstrap_detached = actor_rollout["bootstrap"].detach()
         return {
             "controller/actor_loss": float(actor_loss.item()),
             "controller/critic_loss": float(critic_loss.item()),
             "controller/actor_grad_norm": actor_grad_norm,
             "controller/critic_grad_norm": critic_grad_norm,
-            "controller/lambda_return_mean": float(actor_returns.detach().mean().item()),
+            "controller/lambda_return_mean": float(actor_returns_detached.mean().item()),
+            "controller/lambda_return_std": float(actor_returns_detached.std(unbiased=False).item()),
             "controller/imagination_horizon": float(horizon),
+            "controller/imagined_reward_mean": float(actor_rewards.mean().item()),
+            "controller/imagined_reward_std": float(actor_rewards.std(unbiased=False).item()),
+            "controller/imagined_continue_mean": float(actor_continues.mean().item()),
+            "controller/imagined_value_mean": float(actor_values.mean().item()),
+            "controller/critic_target_mean": float(critic_targets_detached.mean().item()),
+            "controller/critic_target_std": float(critic_targets_detached.std(unbiased=False).item()),
+            "controller/critic_value_mean": float(critic_values_detached.mean().item()),
+            "controller/critic_value_std": float(critic_values_detached.std(unbiased=False).item()),
+            "controller/bootstrap_mean": float(bootstrap_detached.mean().item()),
+            "controller/action_mean": float(actor_actions.mean().item()),
+            "controller/action_std": float(actor_actions.std(unbiased=False).item()),
+            "controller/action_abs_mean": float(actor_actions.abs().mean().item()),
+            "controller/action_abs_max": float(actor_actions.abs().max().item()),
         }
+
+    def update_world_model(self, batch: Batch, *, phase: PhaseConfig) -> Dict[str, float]:
+        del phase
+        if self.rssm is None or self.reward_predictor is None:
+            raise RuntimeError("Dreamer world-model components are not initialized.")
+        if self.world_model_optimizer is None:
+            raise RuntimeError("Dreamer world-model optimizer is not initialized.")
+
+        tensor_batch = {
+            key: value.to(self.device) if isinstance(value, torch.Tensor) else torch.as_tensor(value, device=self.device)
+            for key, value in batch.items()
+        }
+        observations = tensor_batch["observations"].to(torch.float32)
+        features = self._encode_observation_sequence(observations)
+        actions = tensor_batch["actions"].to(torch.float32)
+        rewards = tensor_batch["rewards"].to(torch.float32)
+        dones = tensor_batch["dones"].to(torch.bool)
+
+        sequence = self.rssm.observe_sequence(features, actions=actions, dones=dones)
+        posterior = sequence.posterior
+        prior = sequence.prior
+        if prior is None:
+            raise RuntimeError("RSSM did not return prior states.")
+
+        latent = posterior.to_tensor()
+        if latent.shape[1] < 2:
+            raise ValueError(
+                "Dreamer world-model training requires sequence_length >= 2 "
+                "to align transition rewards with successor latent states."
+            )
+        transition_latent = latent[:, 1:]
+        transition_rewards = rewards[:, :-1]
+        transition_dones = dones[:, :-1]
+        reward_pred = self.reward_predictor(transition_latent)
+
+        reward_loss = F.mse_loss(reward_pred.squeeze(-1), transition_rewards)
+        kl_values = kl_divergence(sequence.posterior_dist, sequence.prior_dist)
+        if self.free_nats > 0.0:
+            kl_values = torch.clamp(kl_values - self.free_nats, min=0.0)
+        kl_loss = kl_values.mean()
+        total_loss = self.reward_loss_scale * reward_loss + self.kl_scale * kl_loss
+
+        continue_loss = None
+        if self.continue_predictor is not None:
+            continue_logits = self.continue_predictor(transition_latent)
+            continue_target = (~transition_dones).to(torch.float32)
+            continue_loss = F.binary_cross_entropy_with_logits(
+                continue_logits.squeeze(-1),
+                continue_target,
+            )
+            total_loss = total_loss + self.continue_loss_scale * continue_loss
+
+        observation_loss = None
+        if self.observation_predictor is not None:
+            observation_pred = self.observation_predictor(latent)
+            observation_target = self._observation_reconstruction_target(observations)
+            observation_loss = F.mse_loss(observation_pred, observation_target)
+            total_loss = total_loss + self.observation_loss_scale * observation_loss
+
+        self.world_model_optimizer.zero_grad()
+        total_loss.backward()
+        if self.max_grad_norm is not None:
+            clip_grad_norm_(self.world_model_optimizer.param_groups[0]["params"], float(self.max_grad_norm))
+        self.world_model_optimizer.step()
+        self.world_model_updates += 1
+
+        metrics = {
+            "world_model/total_loss": float(total_loss.item()),
+            "world_model/reward_loss": float(reward_loss.item()),
+            "world_model/kl_loss": float(kl_loss.item()),
+            "world_model/reward_loss_scale": float(self.reward_loss_scale),
+            "world_model/kl_scale": float(self.kl_scale),
+        }
+        if continue_loss is not None:
+            metrics["world_model/continue_loss"] = float(continue_loss.item())
+            metrics["world_model/continue_loss_scale"] = float(self.continue_loss_scale)
+        if observation_loss is not None:
+            metrics["world_model/observation_loss"] = float(observation_loss.item())
+            metrics["world_model/observation_loss_scale"] = float(self.observation_loss_scale)
+        return metrics
 
     def collect_step(self, step: int, *, phase: PhaseConfig) -> Optional[CollectResult]:
         del step
@@ -178,12 +284,13 @@ class DreamerV1Workflow(PlaNetWorkflow):
                 else:
                     if self.rssm is None:
                         raise RuntimeError("Dreamer actor collection requires an RSSM.")
+                    features = self._encode_observation_step(obs_tensor)
                     prev_action = self.prev_action
                     if prev_action is None or prev_action.shape[0] != obs_tensor.shape[0]:
                         prev_action = torch.zeros(obs_tensor.shape[0], self.action_dim, device=self.device)
                     reset_mask = torch.as_tensor(self.current_dones, dtype=torch.bool, device=self.device)
                     latent_step = self.rssm.observe(
-                        obs_tensor,
+                        features,
                         prev_action=prev_action,
                         reset_mask=reset_mask,
                         detach_posteriors=True,
@@ -338,10 +445,11 @@ class DreamerV1Workflow(PlaNetWorkflow):
 
             for _ in range(int(max_steps_per_episode)):
                 obs_tensor = torch.as_tensor(obs, dtype=torch.float32, device=self.device)
+                features = self._encode_observation_step(obs_tensor)
                 reset_mask = torch.as_tensor(done, dtype=torch.bool, device=self.device)
                 with torch.no_grad():
                     latent_step = self.rssm.observe(
-                        obs_tensor,
+                        features,
                         prev_action=prev_action,
                         reset_mask=reset_mask,
                         detach_posteriors=True,
@@ -391,11 +499,28 @@ class DreamerV1Workflow(PlaNetWorkflow):
             for key, value in batch.items()
         }
         observations = tensor_batch["observations"].to(torch.float32)
+        features = self._encode_observation_sequence(observations)
         actions = tensor_batch["actions"].to(torch.float32)
         dones = tensor_batch["dones"].to(torch.bool)
         with torch.no_grad():
-            sequence = self.rssm.observe_sequence(observations, actions=actions, dones=dones)
+            sequence = self.rssm.observe_sequence(features, actions=actions, dones=dones)
         return sequence.last_posterior.detach()
+
+    def _encode_observation_sequence(self, observations: torch.Tensor) -> torch.Tensor:
+        if self.observation_encoder is None:
+            return observations.to(torch.float32)
+        return self.observation_encoder(observations)
+
+    def _encode_observation_step(self, observations: torch.Tensor) -> torch.Tensor:
+        if self.observation_encoder is None:
+            return observations.to(torch.float32)
+        return self.observation_encoder(observations)
+
+    def _observation_reconstruction_target(self, observations: torch.Tensor) -> torch.Tensor:
+        target = observations.to(torch.float32)
+        if self.observation_encoder is not None and target.numel() and float(target.detach().max().item()) > 1.5:
+            target = target / 255.0
+        return target
 
     def _state_from_latent(self, latent: LatentState | torch.Tensor) -> RSSMState:
         if isinstance(latent, RSSMState):

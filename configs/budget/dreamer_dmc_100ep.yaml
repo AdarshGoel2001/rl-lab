@@ -1,0 +1,234 @@
+# @package _global_
+# First serious low-compute Dreamer V1 run for DMC Cartpole Swingup.
+#
+# This keeps state observations but moves Dreamer close to paper-sized RSSM,
+# actor, critic, batch, sequence, and imagination horizon. Replay capacity is
+# capped to avoid the current RAM buffer's per-sample full-cache rebuild from
+# dominating the run.
+
+experiment:
+  name: dreamer_dmc_swingup_100ep
+
+_dims:
+  stochastic: 30
+  deterministic: 200
+  representation: 230
+  hidden: 200
+  actor_hidden: 300
+  critic_hidden: 300
+
+algorithm:
+  collect_length: 16
+  gamma: 0.99
+  lambda_: 0.95
+  free_nats: 3.0
+  kl_scale: 1.0
+  max_grad_norm: 100.0
+  imagination_horizon: 15
+  world_model_lr: 6.0e-4
+  actor_lr: 8.0e-5
+  critic_lr: 8.0e-5
+
+components:
+  representation_learner:
+    deterministic_dim: ${_dims.deterministic}
+    stochastic_dim: ${_dims.stochastic}
+    hidden_dim: ${_dims.hidden}
+
+  reward_predictor:
+    input_dim: ${_dims.representation}
+    hidden_dim: ${_dims.hidden}
+
+  continue_predictor:
+    input_dim: ${_dims.representation}
+    hidden_dim: ${_dims.hidden}
+
+  observation_predictor:
+    input_dim: ${_dims.representation}
+    hidden_dim: ${_dims.hidden}
+
+controllers:
+  actor:
+    latent_dim: ${_dims.representation}
+    hidden_dim: ${_dims.actor_hidden}
+    num_layers: 3
+    init_std: 0.3
+
+  critic:
+    latent_dim: ${_dims.representation}
+    hidden_dim: ${_dims.critic_hidden}
+    num_layers: 3
+
+environment:
+  num_envs: 1
+
+buffer:
+  capacity: 50000
+  batch_size: 50
+  sequence_length: 50
+  sequence_stride: 1
+  pad_end_of_episode: false
+
+logging:
+  use_tensorboard: true
+  log_interval: 1
+  log_frequency: 1
+
+training:
+  total_timesteps: 20000
+  checkpoint_frequency: 2048
+  eval_frequency: 4096
+  num_eval_episodes: 5
+  max_eval_steps: 250
+  resume_path: null
+  resume_mode: warm_start_optimizer
+  phases:
+    - name: collect_random_seed
+      type: online
+      buffer: replay
+      duration_steps: 1024
+      collect_length: 16
+      controller: seed_actor
+      workflow_hooks:
+        - collect
+
+    - name: train_world_model_seed
+      type: offline
+      buffer: replay
+      duration_updates: 1000
+      workflow_hooks:
+        - update_world_model
+
+    - name: train_controller_seed
+      type: offline
+      buffer: replay
+      duration_updates: 1000
+      imagination_horizon: ${algorithm.imagination_horizon}
+      workflow_hooks:
+        - update_controller
+
+    - name: collect_with_actor_1
+      type: online
+      buffer: replay
+      duration_steps: 2048
+      collect_length: 16
+      controller: actor
+      workflow_hooks:
+        - collect
+
+    - name: train_world_model_1
+      type: offline
+      buffer: replay
+      duration_updates: 500
+      workflow_hooks:
+        - update_world_model
+
+    - name: train_controller_1
+      type: offline
+      buffer: replay
+      duration_updates: 1000
+      imagination_horizon: ${algorithm.imagination_horizon}
+      workflow_hooks:
+        - update_controller
+
+    - name: collect_with_actor_2
+      type: online
+      buffer: replay
+      duration_steps: 2048
+      collect_length: 16
+      controller: actor
+      workflow_hooks:
+        - collect
+
+    - name: train_world_model_2
+      type: offline
+      buffer: replay
+      duration_updates: 500
+      workflow_hooks:
+        - update_world_model
+
+    - name: train_controller_2
+      type: offline
+      buffer: replay
+      duration_updates: 1000
+      imagination_horizon: ${algorithm.imagination_horizon}
+      workflow_hooks:
+        - update_controller
+
+    - name: collect_with_actor_3
+      type: online
+      buffer: replay
+      duration_steps: 2048
+      collect_length: 16
+      controller: actor
+      workflow_hooks:
+        - collect
+
+    - name: train_world_model_3
+      type: offline
+      buffer: replay
+      duration_updates: 500
+      workflow_hooks:
+        - update_world_model
+
+    - name: train_controller_3
+      type: offline
+      buffer: replay
+      duration_updates: 1000
+      imagination_horizon: ${algorithm.imagination_horizon}
+      workflow_hooks:
+        - update_controller
+
+    - name: collect_with_actor_4
+      type: online
+      buffer: replay
+      duration_steps: 2048
+      collect_length: 16
+      controller: actor
+      workflow_hooks:
+        - collect
+
+    - name: train_world_model_4
+      type: offline
+      buffer: replay
+      duration_updates: 500
+      workflow_hooks:
+        - update_world_model
+
+    - name: train_controller_4
+      type: offline
+      buffer: replay
+      duration_updates: 1000
+      imagination_horizon: ${algorithm.imagination_horizon}
+      workflow_hooks:
+        - update_controller
+
+    - name: collect_with_actor_5
+      type: online
+      buffer: replay
+      duration_steps: 3296
+      collect_length: 16
+      controller: actor
+      workflow_hooks:
+        - collect
+
+    - name: train_world_model_5
+      type: offline
+      buffer: replay
+      duration_updates: 500
+      workflow_hooks:
+        - update_world_model
+
+    - name: train_controller_5
+      type: offline
+      buffer: replay
+      duration_updates: 1000
+      imagination_horizon: ${algorithm.imagination_horizon}
+      workflow_hooks:
+        - update_controller
+
+    - name: final_eval
+      type: eval_only
+      duration_cycles: 1
+      workflow_hooks:
+        - evaluate

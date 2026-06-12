@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 
 from src.components.prediction_heads.mlp import MLPHead
-from src.components.representation_learners.base import RSSMState
+from src.components.representation_learners.base import LatentSequence, RSSMState
 from src.components.representation_learners.rssm import RSSMRepresentationLearner
 from src.workflows.utils.base import CollectResult
 from src.workflows.dreamer import DreamerV1Workflow, lambda_returns
@@ -36,6 +36,38 @@ class StepCountingOptimizer(torch.optim.Adam):
     def step(self, closure=None):
         self.step_calls += 1
         return super().step(closure)
+
+
+class FixedSequenceRSSM(nn.Module):
+    def __init__(self, latent_values: torch.Tensor) -> None:
+        super().__init__()
+        self.latent_values = latent_values
+        self.dummy = nn.Parameter(torch.zeros(()))
+
+    def observe_sequence(self, features, actions=None, dones=None):
+        del actions, dones
+        values = self.latent_values.to(features.device).expand(features.shape[0], -1)
+        deterministic = values.unsqueeze(-1) + self.dummy * 0.0
+        stochastic = torch.zeros_like(deterministic)
+        std = torch.ones_like(deterministic)
+        state = RSSMState(
+            deterministic=deterministic,
+            stochastic=stochastic,
+            mean=stochastic,
+            std=std,
+        )
+        return LatentSequence(posterior=state, prior=state, last_posterior=state)
+
+
+class FirstLatentRewardHead(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.scale = nn.Parameter(torch.ones(()))
+        self.last_input_shape = None
+
+    def forward(self, latent):
+        self.last_input_shape = tuple(latent.shape)
+        return latent[..., :1] * self.scale
 
 
 def _make_workflow():
@@ -186,6 +218,36 @@ def test_dreamer_world_model_update_returns_finite_losses():
     assert torch.isfinite(torch.tensor(list(metrics.values()))).all()
 
 
+def test_dreamer_world_model_trains_reward_on_successor_latents():
+    rssm = FixedSequenceRSSM(torch.tensor([0.0, 1.0, 2.0, 3.0]))
+    reward = FirstLatentRewardHead()
+
+    workflow = DreamerV1Workflow()
+    workflow.device = "cpu"
+    workflow.rssm = rssm
+    workflow.reward_predictor = reward
+    workflow.continue_predictor = None
+    workflow.world_model_optimizer = torch.optim.Adam(
+        list(rssm.parameters()) + list(reward.parameters()),
+        lr=1e-3,
+    )
+    workflow.free_nats = 0.0
+    workflow.kl_scale = 0.0
+
+    metrics = workflow.update_world_model(
+        {
+            "observations": torch.zeros(1, 4, 4),
+            "actions": torch.zeros(1, 4, 2),
+            "rewards": torch.tensor([[1.0, 2.0, 3.0, 99.0]]),
+            "dones": torch.zeros(1, 4, dtype=torch.bool),
+        },
+        phase={"name": "train_world_model"},
+    )
+
+    assert reward.last_input_shape == (1, 3, 2)
+    assert metrics["world_model/reward_loss"] == 0.0
+
+
 def test_controller_update_changes_actor_and_critic_without_world_model_step():
     workflow = _make_workflow()
     actor_before = _params_clone(workflow.controllers["actor"])
@@ -199,6 +261,31 @@ def test_controller_update_changes_actor_and_critic_without_world_model_step():
     assert _params_changed(actor_before, workflow.controllers["actor"])
     assert _params_changed(critic_before, workflow.controllers["critic"])
     assert workflow.world_model_optimizer.step_calls == world_step_calls
+
+
+def test_controller_update_reports_imagination_diagnostics():
+    workflow = _make_workflow()
+
+    metrics = workflow.update_controller(_fake_batch(), phase={"horizon": 3})
+
+    expected_keys = {
+        "controller/imagined_reward_mean",
+        "controller/imagined_reward_std",
+        "controller/imagined_continue_mean",
+        "controller/imagined_value_mean",
+        "controller/critic_target_mean",
+        "controller/critic_target_std",
+        "controller/critic_value_mean",
+        "controller/critic_value_std",
+        "controller/action_mean",
+        "controller/action_std",
+        "controller/action_abs_mean",
+        "controller/action_abs_max",
+        "controller/lambda_return_std",
+        "controller/bootstrap_mean",
+    }
+    assert expected_keys.issubset(metrics)
+    assert all(torch.isfinite(torch.tensor(metrics[key])) for key in expected_keys)
 
 
 def test_controller_update_reports_and_clips_actor_critic_gradients():

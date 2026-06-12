@@ -16,6 +16,14 @@ def _compose_dreamer_tiny():
         )
 
 
+def _compose_dreamer_100ep():
+    with initialize_config_dir(config_dir=str(CONFIG_DIR), version_base=None):
+        return compose(
+            config_name="config",
+            overrides=["+experiment=dreamer_dmc_cartpole_swingup", "budget=dreamer_dmc_100ep"],
+        )
+
+
 def test_dreamer_dmc_cartpole_config_resolves_core_targets():
     result = validate_experiment_config("dreamer_dmc_cartpole_swingup", budget="dreamer_tiny")
 
@@ -90,3 +98,21 @@ def test_dreamer_dmc_cartpole_phase_hooks_cover_world_model_controller_and_eval(
     assert cfg.training.phases[0].controller == "seed_actor"
     assert cfg.training.phases[3].controller == "actor"
     assert cfg.training.phases[-1].workflow_hooks == ["evaluate"]
+
+
+def test_dreamer_dmc_100ep_uses_larger_state_model_and_five_eval_episodes():
+    cfg = _compose_dreamer_100ep()
+
+    assert cfg._dims.stochastic == 30
+    assert cfg._dims.deterministic == 200
+    assert cfg._dims.representation == 230
+    assert cfg.controllers.actor.hidden_dim == 300
+    assert cfg.controllers.actor.num_layers == 3
+    assert cfg.controllers.critic.hidden_dim == 300
+    assert cfg.controllers.critic.num_layers == 3
+    assert cfg.algorithm.imagination_horizon == 15
+    assert cfg.buffer.capacity == 50000
+    assert cfg.buffer.batch_size == 50
+    assert cfg.buffer.sequence_length == 50
+    assert cfg.training.num_eval_episodes == 5
+    assert cfg.training.resume_mode == "warm_start_optimizer"

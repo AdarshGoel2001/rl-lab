@@ -48,6 +48,8 @@ experiments/
 runs/
 reports/*
 !reports/world_model_runs.csv
+!reports/diagnostics/
+!reports/diagnostics/**
 .hydra/
 outputs/
 local_artifacts/

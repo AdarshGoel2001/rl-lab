@@ -1,0 +1,125 @@
+# @package _global_
+# Tiny pixel Dreamer smoke budget for DMC Cartpole Swingup.
+
+experiment:
+  name: dreamer_pixel_cartpole_tiny
+
+_dims:
+  observation_shape: [3, 64, 64]
+  encoder_output: 128
+  stochastic: 8
+  deterministic: 32
+  representation: 40
+  hidden: 64
+  actor_hidden: 64
+  critic_hidden: 64
+
+algorithm:
+  collect_length: 16
+  imagination_horizon: 5
+  world_model_lr: 6.0e-4
+  actor_lr: 8.0e-5
+  critic_lr: 8.0e-5
+
+components:
+  observation_encoder:
+    _target_: src.components.encoders.dreamer_cnn.DreamerImageEncoder
+    input_shape: ${_dims.observation_shape}
+    output_dim: ${_dims.encoder_output}
+    depth: 8
+    activation: elu
+
+  representation_learner:
+    feature_dim: ${_dims.encoder_output}
+    deterministic_dim: ${_dims.deterministic}
+    stochastic_dim: ${_dims.stochastic}
+    hidden_dim: ${_dims.hidden}
+
+  reward_predictor:
+    input_dim: ${_dims.representation}
+    hidden_dim: ${_dims.hidden}
+
+  continue_predictor:
+    input_dim: ${_dims.representation}
+    hidden_dim: ${_dims.hidden}
+
+  observation_predictor:
+    _target_: src.components.decoders.dreamer_cnn.DreamerImageDecoder
+    input_dim: ${_dims.representation}
+    output_shape: ${_dims.observation_shape}
+    depth: 8
+    activation: elu
+
+controllers:
+  actor:
+    latent_dim: ${_dims.representation}
+    hidden_dim: ${_dims.actor_hidden}
+    num_layers: 2
+
+  critic:
+    latent_dim: ${_dims.representation}
+    hidden_dim: ${_dims.critic_hidden}
+    num_layers: 2
+
+environment:
+  from_pixels: true
+  height: 64
+  width: 64
+  camera_id: 0
+  mujoco_gl: egl
+  num_envs: 1
+
+buffer:
+  capacity: 2048
+  batch_size: 8
+  sequence_length: 8
+  sequence_stride: 1
+  pad_end_of_episode: false
+
+training:
+  total_timesteps: 512
+  checkpoint_frequency: 0
+  eval_frequency: 0
+  num_eval_episodes: 1
+  max_eval_steps: 125
+  resume_path: null
+  resume_mode: exact
+  phases:
+    - name: collect_random_seed
+      type: online
+      buffer: replay
+      duration_steps: 128
+      collect_length: 16
+      controller: seed_actor
+      workflow_hooks:
+        - collect
+
+    - name: train_world_model_seed
+      type: offline
+      buffer: replay
+      duration_updates: 4
+      workflow_hooks:
+        - update_world_model
+
+    - name: train_controller_seed
+      type: offline
+      buffer: replay
+      duration_updates: 4
+      imagination_horizon: ${algorithm.imagination_horizon}
+      workflow_hooks:
+        - update_controller
+
+    - name: collect_with_actor_1
+      type: online
+      buffer: replay
+      duration_steps: 128
+      collect_length: 16
+      controller: actor
+      workflow_hooks:
+        - collect
+
+    - name: final_eval
+      type: eval_only
+      duration_cycles: 1
+      workflow_hooks:
+        - evaluate

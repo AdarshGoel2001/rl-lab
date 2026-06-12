@@ -127,71 +127,74 @@ write_checkpoint_manifest() {
   local root="$1"
   local manifest_path="$2"
   local root_q
-  local rel
-  local remote_file
-  local remote_file_q
-  local kind
-  local size_bytes
-  local sha256
-  local link_target
-  local tsv_path
+  local tmp_manifest
 
   root_q="$(gpu_quote "$root")"
-  tsv_path="$manifest_path.tsv.tmp"
-  : > "$tsv_path"
+  tmp_manifest="$manifest_path.tmp"
+  mkdir -p "$(dirname "$manifest_path")"
 
-  while IFS= read -r rel; do
-    [ -n "$rel" ] || continue
-    remote_file="$root/$rel"
-    remote_file_q="$(gpu_quote "$remote_file")"
-    kind="$(gpu_ssh "if [ -L $remote_file_q ]; then echo symlink; else echo file; fi" </dev/null)"
-    size_bytes="$(gpu_ssh "stat -Lc %s $remote_file_q" </dev/null)"
-    sha256="$(gpu_ssh "if [ -f $remote_file_q ]; then sha256sum $remote_file_q | cut -d ' ' -f1; fi" </dev/null)"
-    link_target="$(gpu_ssh "if [ -L $remote_file_q ]; then readlink $remote_file_q; fi" </dev/null)"
-    printf '%s\t%s\t%s\t%s\t%s\n' "$rel" "$kind" "$size_bytes" "$sha256" "$link_target" >> "$tsv_path"
-  done < <(
-    gpu_ssh "
-      cd $root_q
-      [ -d checkpoints ] && find checkpoints \\( -type f -o -type l \\) -printf '%p\n' | sort
-    "
-  )
-
-  python3 - "$root" "$tsv_path" "$manifest_path" <<'PY'
+  if ! gpu_ssh "RL_LAB_CHECKPOINT_ROOT=$root_q python3 -" > "$tmp_manifest" <<'PY'
+import hashlib
 import json
-import sys
+import os
 from pathlib import Path
 
-remote_root = sys.argv[1]
-tsv_path = Path(sys.argv[2])
-manifest_path = Path(sys.argv[3])
+root = Path(os.environ["RL_LAB_CHECKPOINT_ROOT"])
+checkpoint_dir = root / "checkpoints"
 entries = []
-if tsv_path.exists():
-    for line in tsv_path.read_text(encoding="utf-8").splitlines():
-        fields = (line.split("\t") + ["", "", "", "", ""])[:5]
-        relpath, kind, size_bytes, sha256, link_target = fields
-        entry = {"path": relpath, "kind": kind}
-        if size_bytes:
-            entry["size_bytes"] = int(size_bytes)
-        if sha256:
-            entry["sha256"] = sha256
-        if link_target:
-            entry["link_target"] = link_target
+
+if checkpoint_dir.exists():
+    for path in sorted(checkpoint_dir.iterdir(), key=lambda item: item.name):
+        if not (path.is_file() or path.is_symlink()):
+            continue
+
+        entry = {
+            "path": path.relative_to(root).as_posix(),
+            "kind": "symlink" if path.is_symlink() else "file",
+        }
+
+        if path.is_symlink():
+            entry["link_target"] = os.readlink(path)
+
+        try:
+            stat_result = path.stat()
+            entry["size_bytes"] = int(stat_result.st_size)
+        except FileNotFoundError:
+            entry["size_bytes"] = int(path.lstat().st_size)
+
+        if path.is_file():
+            digest = hashlib.sha256()
+            with path.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            entry["sha256"] = digest.hexdigest()
+
         entries.append(entry)
-manifest_path.write_text(
+
+print(
     json.dumps(
         {
             "schema_version": 1,
-            "remote_run": remote_root,
-            "checkpoint_dir": f"{remote_root}/checkpoints",
+            "remote_run": str(root),
+            "checkpoint_dir": str(checkpoint_dir),
             "entries": entries,
         },
         indent=2,
         sort_keys=True,
-    ),
-    encoding="utf-8",
+    )
 )
 PY
-  rm -f "$tsv_path"
+  then
+    rm -f "$tmp_manifest"
+    return 1
+  fi
+
+  if ! python3 -m json.tool "$tmp_manifest" >/dev/null; then
+    rm -f "$tmp_manifest"
+    return 1
+  fi
+
+  mv "$tmp_manifest" "$manifest_path"
 }
 
 usage() {

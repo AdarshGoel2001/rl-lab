@@ -107,7 +107,9 @@ def test_gpu_scripts_keep_remote_loop_simple():
     assert "PATH_FILTERS" in sync
     assert "--exclude" in sync
     assert "EXCLUDE_FILTERS" in sync
+    assert ".agent_runs" in sync
     assert "--dry-run" in sync
+    assert "--allow-dirty" in sync
     assert "scp" in sync
     assert "gpu_common.sh" in sync
     assert "gpu_ssh" in sync
@@ -115,6 +117,8 @@ def test_gpu_scripts_keep_remote_loop_simple():
     assert "git apply --check" in sync
     assert "--reset-remote" in sync
     assert "git reset --hard" in sync
+    assert "ALLOW_DIRTY" in sync
+    assert "git apply --check" in sync
     assert not re.search(r"(^|[^A-Za-z0-9_])status=", sync)
 
     assert "rsync" in pull
@@ -136,6 +140,10 @@ def test_gpu_scripts_keep_remote_loop_simple():
     assert "/diagnostics/" in pull
     assert "checkpoints/final.json" in pull
     assert "checkpoint_manifest.json" in pull
+    assert "RL_LAB_CHECKPOINT_ROOT" in pull
+    assert "python3 -m json.tool \"$tmp_manifest\"" in pull
+    assert "kind=\"$(gpu_ssh" not in pull
+    assert "stat -Lc %s" not in pull
     assert "/checkpoints/latest.pt" in pull
     assert "/checkpoints/best.pt" in pull
     assert "/checkpoints/best_step_*.pt" in pull

@@ -8,13 +8,45 @@ from hydra import compose, initialize_config_dir
 from scripts.validate_experiment import validate_experiment_config
 from src.components.controllers.mpc_planner import MPCPlanner
 from src.components.prediction_heads.mlp import MLPHead
-from src.components.representation_learners.base import RSSMState
+from src.components.representation_learners.base import LatentSequence, RSSMState
 from src.components.representation_learners.rssm import RSSMRepresentationLearner
 from src.workflows.utils.context import WorkflowContext, WorldModelComponents
 from src.workflows.planet import PlaNetWorkflow
 
 
 CONFIG_DIR = Path(__file__).resolve().parents[1] / "configs"
+
+
+class FixedSequenceRSSM(nn.Module):
+    def __init__(self, latent_values: torch.Tensor) -> None:
+        super().__init__()
+        self.latent_values = latent_values
+        self.dummy = nn.Parameter(torch.zeros(()))
+
+    def observe_sequence(self, features, actions=None, dones=None):
+        del actions, dones
+        values = self.latent_values.to(features.device).expand(features.shape[0], -1)
+        deterministic = values.unsqueeze(-1) + self.dummy * 0.0
+        stochastic = torch.zeros_like(deterministic)
+        std = torch.ones_like(deterministic)
+        state = RSSMState(
+            deterministic=deterministic,
+            stochastic=stochastic,
+            mean=stochastic,
+            std=std,
+        )
+        return LatentSequence(posterior=state, prior=state, last_posterior=state)
+
+
+class FirstLatentRewardHead(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.scale = nn.Parameter(torch.ones(()))
+        self.last_input_shape = None
+
+    def forward(self, latent):
+        self.last_input_shape = tuple(latent.shape)
+        return latent[..., :1] * self.scale
 
 
 def test_mlp_head_forward_backward_with_sequence_inputs():
@@ -171,6 +203,64 @@ def test_planet_world_model_trains_without_continue_predictor():
 
     assert metrics["world_model/total_loss"] > 0.0
     assert "world_model/continue_loss" not in metrics
+
+
+def test_planet_world_model_trains_reward_on_successor_latents():
+    rssm = FixedSequenceRSSM(torch.tensor([0.0, 1.0, 2.0, 3.0]))
+    reward = FirstLatentRewardHead()
+    optimizer = torch.optim.Adam(list(rssm.parameters()) + list(reward.parameters()), lr=1e-3)
+
+    workflow = PlaNetWorkflow()
+    workflow.device = "cpu"
+    workflow.rssm = rssm
+    workflow.reward_predictor = reward
+    workflow.continue_predictor = None
+    workflow.world_model_optimizer = optimizer
+    workflow.free_nats = 0.0
+    workflow.kl_scale = 0.0
+
+    batch = {
+        "observations": torch.zeros(1, 4, 4),
+        "actions": torch.zeros(1, 4, 2),
+        "rewards": torch.tensor([[1.0, 2.0, 3.0, 99.0]]),
+        "dones": torch.zeros(1, 4, dtype=torch.bool),
+    }
+
+    metrics = workflow.update_world_model(batch, phase={"name": "train_world_model"})
+
+    assert reward.last_input_shape == (1, 3, 2)
+    assert metrics["world_model/reward_loss"] == 0.0
+
+
+def test_planet_world_model_trains_continue_on_successor_latents():
+    rssm = FixedSequenceRSSM(torch.tensor([0.0, 1.0, 2.0, 3.0]))
+    reward = FirstLatentRewardHead()
+    continuation = FirstLatentRewardHead()
+    optimizer = torch.optim.Adam(
+        list(rssm.parameters()) + list(reward.parameters()) + list(continuation.parameters()),
+        lr=1e-3,
+    )
+
+    workflow = PlaNetWorkflow()
+    workflow.device = "cpu"
+    workflow.rssm = rssm
+    workflow.reward_predictor = reward
+    workflow.continue_predictor = continuation
+    workflow.world_model_optimizer = optimizer
+    workflow.free_nats = 0.0
+    workflow.kl_scale = 0.0
+
+    batch = {
+        "observations": torch.zeros(1, 4, 4),
+        "actions": torch.zeros(1, 4, 2),
+        "rewards": torch.tensor([[1.0, 2.0, 3.0, 99.0]]),
+        "dones": torch.zeros(1, 4, dtype=torch.bool),
+    }
+
+    workflow.update_world_model(batch, phase={"name": "train_world_model"})
+
+    assert reward.last_input_shape == (1, 3, 2)
+    assert continuation.last_input_shape == (1, 3, 2)
 
 
 def test_planet_world_model_uses_configurable_loss_scales():

@@ -6,6 +6,7 @@ DMC uses MuJoCo physics but provides a different task interface than Gymnasium.
 
 import numpy as np
 import logging
+import os
 from typing import Dict, Any, Tuple, Optional
 
 from src.environments.base import BaseEnvironment, SpaceSpec
@@ -50,6 +51,7 @@ class DMCWrapper(BaseEnvironment):
     def _setup_environment(self):
         """Create the DMC environment."""
         try:
+            self._configure_pixel_render_backend()
             from dm_control import suite
 
             self.env = suite.load(
@@ -78,6 +80,17 @@ class DMCWrapper(BaseEnvironment):
 
     def _flatten_obs(self, obs) -> np.ndarray:
         """Flatten DMC observation dict to single array."""
+        if self.from_pixels:
+            if isinstance(obs, dict):
+                if "pixels" not in obs:
+                    raise KeyError("DMC pixel observation dict does not contain a 'pixels' key.")
+                obs = obs["pixels"]
+            pixels = np.asarray(obs)
+            if pixels.ndim != 3:
+                raise ValueError(f"Expected pixel observation with shape [H, W, C], got {pixels.shape}.")
+            if pixels.shape[-1] in (1, 3):
+                pixels = np.transpose(pixels, (2, 0, 1))
+            return pixels.astype(np.uint8, copy=False)
         if isinstance(obs, dict):
             arrays = []
             for key in sorted(obs.keys()):
@@ -87,6 +100,14 @@ class DMCWrapper(BaseEnvironment):
                 arrays.append(arr.flatten())
             return np.concatenate(arrays)
         return np.asarray(obs, dtype=np.float32)
+
+    def _configure_pixel_render_backend(self) -> None:
+        """Default pixel DMC to headless EGL rendering when no backend is set."""
+        if not self.from_pixels:
+            return
+        if os.environ.get("MUJOCO_GL"):
+            return
+        os.environ["MUJOCO_GL"] = str(self.config.get("mujoco_gl", "egl"))
 
     def _get_obs_dim(self) -> int:
         """Calculate total observation dimension."""

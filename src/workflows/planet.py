@@ -183,9 +183,17 @@ class PlaNetWorkflow(WorldModelWorkflow):
             raise RuntimeError("RSSM did not return prior states.")
 
         latent = posterior.to_tensor()
-        reward_pred = self.reward_predictor(latent)
+        if latent.shape[1] < 2:
+            raise ValueError(
+                "PlaNet world-model training requires sequence_length >= 2 "
+                "to align transition rewards with successor latent states."
+            )
+        transition_latent = latent[:, 1:]
+        transition_rewards = rewards[:, :-1]
+        transition_dones = dones[:, :-1]
+        reward_pred = self.reward_predictor(transition_latent)
 
-        reward_loss = F.mse_loss(reward_pred.squeeze(-1), rewards)
+        reward_loss = F.mse_loss(reward_pred.squeeze(-1), transition_rewards)
         kl_values = kl_divergence(sequence.posterior_dist, sequence.prior_dist)
         if self.free_nats > 0.0:
             kl_values = torch.clamp(kl_values - self.free_nats, min=0.0)
@@ -194,8 +202,8 @@ class PlaNetWorkflow(WorldModelWorkflow):
 
         continue_loss = None
         if self.continue_predictor is not None:
-            continue_logits = self.continue_predictor(latent)
-            continue_target = (~dones).to(torch.float32)
+            continue_logits = self.continue_predictor(transition_latent)
+            continue_target = (~transition_dones).to(torch.float32)
             continue_loss = F.binary_cross_entropy_with_logits(
                 continue_logits.squeeze(-1),
                 continue_target,

@@ -6,9 +6,10 @@ source "$SCRIPT_DIR/gpu_common.sh"
 
 PATCH_PATH="${RL_LAB_GPU_PATCH_PATH:-/tmp/rl-lab-gpu-sync.patch}"
 RESET_REMOTE=0
+ALLOW_DIRTY=0
 DRY_RUN=0
 PATH_FILTERS=()
-EXCLUDE_FILTERS=("remote_artifacts" "experiments" "runs" "datasets")
+EXCLUDE_FILTERS=("remote_artifacts" "experiments" "runs" "datasets" ".agent_runs")
 
 usage() {
   cat <<'USAGE'
@@ -19,6 +20,7 @@ check it with git apply --check, then apply it.
 
 Options:
   --reset-remote   Reset tracked remote code and clean untracked non-artifact files first.
+  --allow-dirty    Allow applying onto a dirty remote tree; still requires git apply --check.
   --paths LIST     Space-separated path allowlist, for example: --paths "src scripts tests".
   --path PATH      Add one path to the allowlist. May be repeated.
   --exclude PATH   Exclude a path from the patch. May be repeated.
@@ -35,6 +37,10 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --reset-remote)
       RESET_REMOTE=1
+      shift
+      ;;
+    --allow-dirty)
+      ALLOW_DIRTY=1
       shift
       ;;
     --paths)
@@ -118,11 +124,11 @@ gpu_ssh "
 
   if [ '$RESET_REMOTE' = '1' ]; then
     git reset --hard
-    git clean -fd -- . ':(exclude)experiments' ':(exclude)runs' ':(exclude)datasets'
-  else
-    repo_status=\$(git status --porcelain -- . ':(exclude)experiments' ':(exclude)runs' ':(exclude)datasets')
+    git clean -fd -- . ':(exclude)experiments' ':(exclude)runs' ':(exclude)datasets' ':(exclude).agent_runs'
+  elif [ '$ALLOW_DIRTY' != '1' ]; then
+    repo_status=\$(git status --porcelain -- . ':(exclude)experiments' ':(exclude)runs' ':(exclude)datasets' ':(exclude).agent_runs')
     if [ -n \"\$repo_status\" ]; then
-      echo 'remote repo has source/config/test/doc changes; rerun with --reset-remote if Mac is source of truth' >&2
+      echo 'remote repo has source/config/test/doc changes; rerun with --reset-remote if Mac is source of truth, or --allow-dirty for an independent patch' >&2
       echo \"\$repo_status\" >&2
       exit 1
     fi
