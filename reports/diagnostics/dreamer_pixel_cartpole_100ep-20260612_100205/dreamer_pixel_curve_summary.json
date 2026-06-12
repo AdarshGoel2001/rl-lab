@@ -1,0 +1,18 @@
+{
+  "output_dir": "experiments/dreamer_pixel_cartpole_100ep-20260612_100205/diagnostics/dreamer_pixel_curves",
+  "plots": [
+    "experiments/dreamer_pixel_cartpole_100ep-20260612_100205/diagnostics/dreamer_pixel_curves/eval_return.png"
+  ],
+  "run_dir": "experiments/dreamer_pixel_cartpole_100ep-20260612_100205",
+  "tags": {
+    "eval/return_mean": {
+      "count": 4,
+      "first_step": 4096,
+      "first_value": 151.21099853515625,
+      "last_step": 16396,
+      "last_value": 74.27764892578125,
+      "max": 218.28428649902344,
+      "min": 74.27764892578125
+    }
+  }
+}

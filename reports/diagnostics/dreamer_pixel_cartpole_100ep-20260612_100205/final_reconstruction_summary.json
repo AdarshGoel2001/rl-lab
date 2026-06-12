@@ -1,0 +1,14 @@
+{
+  "actual_max": 0.9529412388801575,
+  "actual_min": 0.0470588281750679,
+  "budget": "dreamer_pixel_100ep",
+  "checkpoint": "experiments/dreamer_pixel_cartpole_100ep-20260612_100205/checkpoints/final.pt",
+  "experiment": "dreamer_dmc_cartpole_swingup",
+  "num_frames": 32,
+  "reconstruction_mae": 0.011374826543033123,
+  "reconstruction_max": 0.6494428515434265,
+  "reconstruction_min": 0.05524957925081253,
+  "reconstruction_mse": 0.0017894727643579245,
+  "schema_version": 1,
+  "steps": 32
+}

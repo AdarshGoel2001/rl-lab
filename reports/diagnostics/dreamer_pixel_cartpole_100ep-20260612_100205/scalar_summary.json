@@ -1,0 +1,440 @@
+{
+  "event_files": [
+    "experiments/dreamer_pixel_cartpole_100ep-20260612_100205/diagnostics/dreamer_pixel_reconstruction/tensorboard/events.out.tfevents.1781264005.ASUS-TUF.508568.0",
+    "experiments/dreamer_pixel_cartpole_100ep-20260612_100205/diagnostics/dreamer_pixel_reconstruction_final/tensorboard/events.out.tfevents.1781264185.ASUS-TUF.519189.0",
+    "experiments/dreamer_pixel_cartpole_100ep-20260612_100205/runs/dreamer_pixel_cartpole_100ep-20260612_100205/20260612_100208/events.out.tfevents.1781258528.ASUS-TUF.228005.0"
+  ],
+  "groups": {
+    "collect": [
+      "collect/duration",
+      "collect/mean_step_reward"
+    ],
+    "eval": [
+      "eval/episodes",
+      "eval/eval_episode_batches",
+      "eval/eval_num_envs",
+      "eval/eval_total_episodes",
+      "eval/length_mean",
+      "eval/return_max",
+      "eval/return_mean",
+      "eval/return_min",
+      "eval/return_std"
+    ],
+    "eval_return": [
+      "eval/return_max",
+      "eval/return_mean",
+      "eval/return_min",
+      "eval/return_std"
+    ],
+    "loss": [
+      "controller/actor_loss",
+      "controller/critic_loss",
+      "train/world_model/continue_loss",
+      "train/world_model/continue_loss_scale",
+      "train/world_model/kl_loss",
+      "train/world_model/observation_loss",
+      "train/world_model/observation_loss_scale",
+      "train/world_model/reward_loss",
+      "train/world_model/reward_loss_scale",
+      "train/world_model/total_loss"
+    ]
+  },
+  "tags": {
+    "collect/duration": {
+      "count": 750,
+      "first_step": 0,
+      "first_value": 0.9997291564941406,
+      "last_step": 19984,
+      "last_value": 1.1636040210723877,
+      "max": 3.6414403915405273,
+      "min": 0.8879721164703369
+    },
+    "collect/mean_step_reward": {
+      "count": 750,
+      "first_step": 0,
+      "first_value": 0.343146950006485,
+      "last_step": 19984,
+      "last_value": 0.7471185922622681,
+      "max": 3.752845048904419,
+      "min": 0.01803644560277462
+    },
+    "controller/action_abs_max": {
+      "count": 5000,
+      "first_step": 2024,
+      "first_value": 0.7735105752944946,
+      "last_step": 17215,
+      "last_value": 0.9999092221260071,
+      "max": 1.0,
+      "min": 0.7272783517837524
+    },
+    "controller/action_abs_mean": {
+      "count": 5000,
+      "first_step": 2024,
+      "first_value": 0.23991388082504272,
+      "last_step": 17215,
+      "last_value": 0.9932242631912231,
+      "max": 0.9994663596153259,
+      "min": 0.22287064790725708
+    },
+    "controller/action_mean": {
+      "count": 5000,
+      "first_step": 2024,
+      "first_value": -0.019025927409529686,
+      "last_step": 17215,
+      "last_value": 0.9928680062294006,
+      "max": 0.9994663596153259,
+      "min": -0.9258632659912109
+    },
+    "controller/action_std": {
+      "count": 5000,
+      "first_step": 2024,
+      "first_value": 0.2867330014705658,
+      "last_step": 17215,
+      "last_value": 0.05932166799902916,
+      "max": 0.9765322804450989,
+      "min": 0.0019875518046319485
+    },
+    "controller/actor_grad_norm": {
+      "count": 5000,
+      "first_step": 2024,
+      "first_value": 0.7830535173416138,
+      "last_step": 17215,
+      "last_value": 0.03537534549832344,
+      "max": 17.86956214904785,
+      "min": 0.010618599131703377
+    },
+    "controller/actor_loss": {
+      "count": 5000,
+      "first_step": 2024,
+      "first_value": -6.668417930603027,
+      "last_step": 17215,
+      "last_value": -138.44265747070312,
+      "max": -6.475725173950195,
+      "min": -217.66629028320312
+    },
+    "controller/bootstrap_mean": {
+      "count": 5000,
+      "first_step": 2024,
+      "first_value": -0.030657049268484116,
+      "last_step": 17215,
+      "last_value": 138.49183654785156,
+      "max": 226.640625,
+      "min": -0.030657049268484116
+    },
+    "controller/critic_grad_norm": {
+      "count": 5000,
+      "first_step": 2024,
+      "first_value": 27.59893035888672,
+      "last_step": 17215,
+      "last_value": 7.998673915863037,
+      "max": 9069.6357421875,
+      "min": 4.688836097717285
+    },
+    "controller/critic_loss": {
+      "count": 5000,
+      "first_step": 2024,
+      "first_value": 58.11991500854492,
+      "last_step": 17215,
+      "last_value": 0.4166072905063629,
+      "max": 4056.72265625,
+      "min": 0.3901245892047882
+    },
+    "controller/critic_target_mean": {
+      "count": 5000,
+      "first_step": 2024,
+      "first_value": 6.1703925132751465,
+      "last_step": 17215,
+      "last_value": 138.69171142578125,
+      "max": 216.58291625976562,
+      "min": 5.892610549926758
+    },
+    "controller/critic_target_std": {
+      "count": 5000,
+      "first_step": 2024,
+      "first_value": 4.389762878417969,
+      "last_step": 17215,
+      "last_value": 0.5842972993850708,
+      "max": 38.564640045166016,
+      "min": 0.46238839626312256
+    },
+    "controller/critic_value_mean": {
+      "count": 5000,
+      "first_step": 2024,
+      "first_value": -0.06671406328678131,
+      "last_step": 17215,
+      "last_value": 138.70486450195312,
+      "max": 216.37530517578125,
+      "min": -0.06671406328678131
+    },
+    "controller/critic_value_std": {
+      "count": 5000,
+      "first_step": 2024,
+      "first_value": 0.04355309158563614,
+      "last_step": 17215,
+      "last_value": 0.5426904559135437,
+      "max": 54.224510192871094,
+      "min": 0.041316110640764236
+    },
+    "controller/imagination_horizon": {
+      "count": 5000,
+      "first_step": 2024,
+      "first_value": 15.0,
+      "last_step": 17215,
+      "last_value": 15.0,
+      "max": 15.0,
+      "min": 15.0
+    },
+    "controller/imagined_continue_mean": {
+      "count": 5000,
+      "first_step": 2024,
+      "first_value": 0.9999989867210388,
+      "last_step": 17215,
+      "last_value": 0.9999977946281433,
+      "max": 1.0,
+      "min": 0.998856246471405
+    },
+    "controller/imagined_reward_mean": {
+      "count": 5000,
+      "first_step": 2024,
+      "first_value": 1.0961896181106567,
+      "last_step": 17215,
+      "last_value": 1.3646035194396973,
+      "max": 1.6460336446762085,
+      "min": 0.8244141936302185
+    },
+    "controller/imagined_reward_std": {
+      "count": 5000,
+      "first_step": 2024,
+      "first_value": 1.0324424505233765,
+      "last_step": 17215,
+      "last_value": 0.17944437265396118,
+      "max": 1.292149305343628,
+      "min": 0.16345123946666718
+    },
+    "controller/imagined_value_mean": {
+      "count": 5000,
+      "first_step": 2024,
+      "first_value": -0.02457192912697792,
+      "last_step": 17215,
+      "last_value": 138.5423583984375,
+      "max": 215.99032592773438,
+      "min": -0.02457192912697792
+    },
+    "controller/lambda_return_mean": {
+      "count": 5000,
+      "first_step": 2024,
+      "first_value": 6.668417930603027,
+      "last_step": 17215,
+      "last_value": 138.44265747070312,
+      "max": 217.66629028320312,
+      "min": 6.475725173950195
+    },
+    "controller/lambda_return_std": {
+      "count": 5000,
+      "first_step": 2024,
+      "first_value": 5.046632766723633,
+      "last_step": 17215,
+      "last_value": 0.6267774105072021,
+      "max": 42.26217269897461,
+      "min": 0.4943108558654785
+    },
+    "diagnostics/pixel/reconstruction_mae": {
+      "count": 2,
+      "first_step": 32,
+      "first_value": 0.00887594185769558,
+      "last_step": 32,
+      "last_value": 0.011374826543033123,
+      "max": 0.011374826543033123,
+      "min": 0.00887594185769558
+    },
+    "diagnostics/pixel/reconstruction_mse": {
+      "count": 2,
+      "first_step": 32,
+      "first_value": 0.0012718967627733946,
+      "last_step": 32,
+      "last_value": 0.0017894727643579245,
+      "max": 0.0017894727643579245,
+      "min": 0.0012718967627733946
+    },
+    "eval/episodes": {
+      "count": 4,
+      "first_step": 4096,
+      "first_value": 5.0,
+      "last_step": 16396,
+      "last_value": 5.0,
+      "max": 5.0,
+      "min": 5.0
+    },
+    "eval/eval_episode_batches": {
+      "count": 4,
+      "first_step": 4096,
+      "first_value": 5.0,
+      "last_step": 16396,
+      "last_value": 5.0,
+      "max": 5.0,
+      "min": 5.0
+    },
+    "eval/eval_num_envs": {
+      "count": 4,
+      "first_step": 4096,
+      "first_value": 1.0,
+      "last_step": 16396,
+      "last_value": 1.0,
+      "max": 1.0,
+      "min": 1.0
+    },
+    "eval/eval_total_episodes": {
+      "count": 4,
+      "first_step": 4096,
+      "first_value": 5.0,
+      "last_step": 16396,
+      "last_value": 5.0,
+      "max": 5.0,
+      "min": 5.0
+    },
+    "eval/length_mean": {
+      "count": 4,
+      "first_step": 4096,
+      "first_value": 125.0,
+      "last_step": 16396,
+      "last_value": 125.0,
+      "max": 125.0,
+      "min": 125.0
+    },
+    "eval/return_max": {
+      "count": 4,
+      "first_step": 4096,
+      "first_value": 185.61105346679688,
+      "last_step": 16396,
+      "last_value": 75.18260955810547,
+      "max": 300.791015625,
+      "min": 75.18260955810547
+    },
+    "eval/return_mean": {
+      "count": 4,
+      "first_step": 4096,
+      "first_value": 151.21099853515625,
+      "last_step": 16396,
+      "last_value": 74.27764892578125,
+      "max": 218.28428649902344,
+      "min": 74.27764892578125
+    },
+    "eval/return_min": {
+      "count": 4,
+      "first_step": 4096,
+      "first_value": 95.52696228027344,
+      "last_step": 16396,
+      "last_value": 72.70114135742188,
+      "max": 185.2890167236328,
+      "min": 41.73347473144531
+    },
+    "eval/return_std": {
+      "count": 4,
+      "first_step": 4096,
+      "first_value": 33.73936080932617,
+      "last_step": 16396,
+      "last_value": 0.8865455389022827,
+      "max": 66.32582092285156,
+      "min": 0.8865455389022827
+    },
+    "train/world_model/continue_loss": {
+      "count": 3000,
+      "first_step": 1024,
+      "first_value": 0.7020224332809448,
+      "last_step": 16215,
+      "last_value": 0.0007378442096523941,
+      "max": 5.646164894104004,
+      "min": 5.287417025101604e-06
+    },
+    "train/world_model/continue_loss_scale": {
+      "count": 3000,
+      "first_step": 1024,
+      "first_value": 1.0,
+      "last_step": 16215,
+      "last_value": 1.0,
+      "max": 1.0,
+      "min": 1.0
+    },
+    "train/world_model/kl_loss": {
+      "count": 3000,
+      "first_step": 1024,
+      "first_value": 0.0,
+      "last_step": 16215,
+      "last_value": 0.0002463971031829715,
+      "max": 25011.248046875,
+      "min": 0.0
+    },
+    "train/world_model/kl_scale": {
+      "count": 3000,
+      "first_step": 1024,
+      "first_value": 1.0,
+      "last_step": 16215,
+      "last_value": 1.0,
+      "max": 1.0,
+      "min": 1.0
+    },
+    "train/world_model/observation_loss": {
+      "count": 3000,
+      "first_step": 1024,
+      "first_value": 0.06276077777147293,
+      "last_step": 16215,
+      "last_value": 0.0011105870362371206,
+      "max": 0.22828063368797302,
+      "min": 0.0005657178699038923
+    },
+    "train/world_model/observation_loss_scale": {
+      "count": 3000,
+      "first_step": 1024,
+      "first_value": 1.0,
+      "last_step": 16215,
+      "last_value": 1.0,
+      "max": 1.0,
+      "min": 1.0
+    },
+    "train/world_model/reward_loss": {
+      "count": 3000,
+      "first_step": 1024,
+      "first_value": 3.04341197013855,
+      "last_step": 16215,
+      "last_value": 1.5100919008255005,
+      "max": 8.251310348510742,
+      "min": 0.02982175163924694
+    },
+    "train/world_model/reward_loss_scale": {
+      "count": 3000,
+      "first_step": 1024,
+      "first_value": 1.0,
+      "last_step": 16215,
+      "last_value": 1.0,
+      "max": 1.0,
+      "min": 1.0
+    },
+    "train/world_model/total_loss": {
+      "count": 3000,
+      "first_step": 1024,
+      "first_value": 3.808195114135742,
+      "last_step": 16215,
+      "last_value": 1.5121866464614868,
+      "max": 25019.8203125,
+      "min": 0.030853383243083954
+    },
+    "workflow/controller_updates": {
+      "count": 8751,
+      "first_step": 16,
+      "first_value": 0.0,
+      "last_step": 20000,
+      "last_value": 5000.0,
+      "max": 5000.0,
+      "min": 0.0
+    },
+    "workflow/world_model_updates": {
+      "count": 8751,
+      "first_step": 16,
+      "first_value": 0.0,
+      "last_step": 20000,
+      "last_value": 3000.0,
+      "max": 3000.0,
+      "min": 0.0
+    }
+  }
+}
