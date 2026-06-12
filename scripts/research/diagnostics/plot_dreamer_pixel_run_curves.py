@@ -15,15 +15,20 @@ from tensorboard.backend.event_processing import event_accumulator
 
 DEFAULT_TAGS = (
     "eval/return_mean",
-    "world_model/total_loss",
-    "world_model/observation_loss",
-    "world_model/reward_loss",
-    "world_model/continue_loss",
-    "world_model/kl_loss",
-    "actor/loss",
-    "critic/loss",
-    "actor/action_abs_mean",
-    "actor/action_abs_max",
+    "collect/mean_step_reward",
+    "train/world_model/total_loss",
+    "train/world_model/observation_loss",
+    "train/world_model/reward_loss",
+    "train/world_model/continue_loss",
+    "train/world_model/kl_loss",
+    "controller/actor_loss",
+    "controller/critic_loss",
+    "controller/action_abs_mean",
+    "controller/action_abs_max",
+    "controller/imagined_reward_mean",
+    "controller/lambda_return_mean",
+    "controller/critic_target_mean",
+    "controller/critic_value_mean",
 )
 
 
@@ -93,16 +98,22 @@ def _plot_groups(rows: dict[str, list[tuple[int, float]]], output_dir: Path) -> 
     import matplotlib.pyplot as plt
 
     groups = {
-        "eval_return": ("eval/return_mean",),
+        "eval_and_collect_return": ("eval/return_mean", "collect/mean_step_reward"),
         "world_model_losses": (
-            "world_model/total_loss",
-            "world_model/observation_loss",
-            "world_model/reward_loss",
-            "world_model/continue_loss",
-            "world_model/kl_loss",
+            "train/world_model/total_loss",
+            "train/world_model/observation_loss",
+            "train/world_model/reward_loss",
+            "train/world_model/continue_loss",
+            "train/world_model/kl_loss",
         ),
-        "controller_losses": ("actor/loss", "critic/loss"),
-        "actor_actions": ("actor/action_abs_mean", "actor/action_abs_max"),
+        "controller_losses": ("controller/actor_loss", "controller/critic_loss"),
+        "actor_actions": ("controller/action_abs_mean", "controller/action_abs_max"),
+        "imagined_returns": (
+            "controller/imagined_reward_mean",
+            "controller/lambda_return_mean",
+            "controller/critic_target_mean",
+            "controller/critic_value_mean",
+        ),
     }
 
     written: list[Path] = []
